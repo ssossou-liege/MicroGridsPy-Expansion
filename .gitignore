@@ -36,6 +36,16 @@ docs/formulation/*.pdf
 # data/**
 # !data/README.md
 
+# Supervisor follow-up and presentations -- kept local, never pushed.
+# The public repository stays strictly about the model.
+docs/suivi/
+docs/figs/
+docs/figs_*.py
+docs/template/
+*.odp
+*.pptx
+*.docx
+
 # OS / editor
 .DS_Store
 .vscode/

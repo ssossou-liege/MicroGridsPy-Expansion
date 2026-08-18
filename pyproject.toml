@@ -12,9 +12,11 @@ authors = [{ name = "Scherif Sossou" }]
 dependencies = [
     "numpy",
     "pandas",
+    "pyarrow",
     "xarray",
     "scipy",
     "scikit-learn",
+    "matplotlib",
     "linopy",
     "highspy",
     "cdsapi",
@@ -24,8 +26,8 @@ dependencies = [
 
 [project.optional-dependencies]
 solver = ["gurobipy"]
-kmedoids = ["scikit-learn-extra"]
 demand = ["rampdemand"]
+docs = ["python-docx"]
 dev = ["pytest"]
 
 [tool.setuptools.packages.find]

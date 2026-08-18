@@ -5,6 +5,7 @@ dependencies:
   - python=3.11
   - numpy
   - pandas
+  - pyarrow            # parquet backend for the meter-reading datasets
   - xarray
   - scipy
   - scikit-learn
@@ -15,9 +16,9 @@ dependencies:
       - -e .
       - linopy
       - highspy            # open-source MILP solver backend for linopy
-      - scikit-learn-extra  # k-medoids (representative days / scenario reduction)
-      - rampdemand          # RAMP stochastic load-profile generator
-      - gurobipy          # optional commercial solver (requires a licence)
-      - cdsapi            # API for downloading ERA5 data from Copernicus Climate Data Store
-      - netcdf4            # for reading ERA5 data
-      - dask              # for parallel computing 
+      - rampdemand         # RAMP stochastic load-profile generator
+      - gurobipy           # optional commercial solver (requires a licence)
+      - cdsapi             # Copernicus Climate Data Store API (ERA5 / CMIP6)
+      - netcdf4            # reading the downloaded climate files
+      - dask               # out-of-core / parallel array operations
+      - python-docx        # generation of the French research-tracking document

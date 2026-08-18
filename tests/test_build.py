@@ -1,7 +1,7 @@
 """Assembly / shape check.
 
 Build a minimal tree (single node, single representative day) and confirm the linopy
-model assembles, solves, and reproduces the THESIS stage-3 dispatch on identical
+model assembles, solves, and reproduces the reference stage-3 dispatch on identical
 inputs under the ``baseline`` variant. (Verification step 1 in the plan.)
 """
 import pytest

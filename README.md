@@ -15,14 +15,18 @@ tree and solved as a single deterministic-equivalent MILP with
 ```
 docs/formulation/model.tex   Academic formulation (sets, parameters, variables,
                              constraints, objective, scenario construction).
-data/                        Inputs imported from the THESIS repository (see data/README.md).
+data/                        Measured and calibrated inputs (see data/README.md).
 src/microgrid_expansion/     Implementation:
-  scenarios/                 Monte-Carlo sampling of the five uncertainty axes.
+  scenarios/                 Monte-Carlo sampling of the four uncertainty families.
   tree/                      Scenario reduction and scenario-tree construction.
   timedomain/                Representative-day (k-medoids) time-domain reduction.
   model/                     linopy variables, constraints, economics, model assembly.
   solve/                     Solver driver (HiGHS / Gurobi).
   post/                      Solution extraction, KPIs (NPC / LCOE), reporting.
+  demand/                    Behavioural clustering and mixture probabilities from
+                             measured meter readings (calibration of the RAMP inputs).
+  exact/                     Certified sizing under the rule-based controller:
+                             dispatch oracles and branch-and-simulate.
   run.py                     End-to-end orchestrator.
 tests/                       Assembly, dispatch-fidelity and benchmark checks.
 ```

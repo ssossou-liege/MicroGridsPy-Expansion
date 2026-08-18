@@ -1,9 +1,8 @@
 """Demand realisations from the calibrated RAMP generator.
 
-Wraps the THESIS RAMP calibration (``src/demand_modeling/ramp_models.py``,
-``ramp_evolution_extension.py``) to draw a stochastic 8760-hour demand profile for
-each stage of a scenario path, given the demand-axis draw (connections, appliance
-stock, usage patterns) and the Markov tier-transition growth between stages.
+Draws a stochastic 8760-hour demand profile for each stage of a scenario path from
+the calibrated appliance parameters in ``data/ramp_params/`` (behavioural clusters,
+appliance stock, usage patterns) together with the connection growth between stages.
 
 Produces, per stage, the array ``D`` [kW] entering the formulation (parameter
 ``D_{n,t,h}`` after time-domain reduction).
@@ -22,9 +21,10 @@ def simulate_stage_demand(
 ) -> np.ndarray:
     """Return an 8760-hour demand profile [kW] for one stage.
 
-    Intended to call ``CalibratedModels.simulate(period, cluster, seed=...)`` from
-    THESIS, applying the evolution scaling for ``stage_year``. Stub for the skeleton.
+    Draws a community composition from the calibrated cluster mixture, simulates each
+    cluster's appliance usage with RAMP, and applies the connection growth for
+    ``stage_year``. Stub for the skeleton.
     """
     raise NotImplementedError(
-        "Wire to THESIS CalibratedModels / ramp_evolution_extension."
+        "Wire to the calibrated RAMP cluster generator (data/ramp_params/)."
     )

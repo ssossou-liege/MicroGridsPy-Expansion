@@ -8,6 +8,6 @@ costs match full-year costs within tolerance (~5%). (Verification step 2 in the 
 import pytest
 
 
-@pytest.mark.skip(reason="Skeleton: requires THESIS uGrid GenControl + filled model.")
+@pytest.mark.skip(reason="Skeleton: requires the ported uGrid GenControl + filled model.")
 def test_milp_matches_gencontrol_simulator():
     raise NotImplementedError

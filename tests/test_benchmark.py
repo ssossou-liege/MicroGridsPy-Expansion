@@ -1,7 +1,7 @@
 """Benchmark anchor.
 
 On a degenerate single-scenario tree, compare the optimal sizing and LCOE against the
-THESIS MILP benchmark (PV 8.2 kW, battery 17.2 kWh, generator 5.85 kW,
+reference MILP benchmark (PV 8.2 kW, battery 17.2 kWh, generator 5.85 kW,
 LCOE 0.3211 $/kWh). (Verification step 3 in the plan.)
 """
 import pytest

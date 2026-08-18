@@ -1,6 +1,6 @@
 """Key performance indicators: net present cost and levelised cost of electricity.
 
-Reuses the THESIS net-present-cost accounting (``src/dispatch_assessment/stage2.py``):
+Net-present-cost accounting:
 capital cost, O&M, fuel, periodic battery replacement and end-of-horizon salvage,
 annualised through the capital recovery factor. KPIs are reported per node and as the
 probability-weighted expectation over the tree.

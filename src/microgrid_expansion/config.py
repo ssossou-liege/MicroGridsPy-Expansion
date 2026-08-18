@@ -1,10 +1,9 @@
 """Configuration: stage calendar, technology catalogues, economic constants and
 solver settings.
 
-Economic and technical constants are ported from the THESIS dispatch-assessment
-configuration (``src/dispatch_assessment/config.py``) so this repository is
-self-contained. Symbols map onto the formulation in
-``docs/formulation/model.tex`` as annotated.
+Economic and technical constants are those of the reference Benin mini-grid
+dispatch assessment, restated here so this repository is self-contained. Symbols map
+onto the formulation in ``docs/formulation/model.tex`` as annotated.
 """
 from __future__ import annotations
 
@@ -12,7 +11,7 @@ from dataclasses import dataclass, field
 
 
 # ---------------------------------------------------------------------------
-# Economic constants (ported from THESIS dispatch_assessment/config.py)
+# Economic constants (reference Benin mini-grid dispatch assessment)
 # ---------------------------------------------------------------------------
 DISCOUNT_RATE = 0.12          # r   -- annual discount rate
 PROJECT_YEARS = 25            # planning horizon [yr]

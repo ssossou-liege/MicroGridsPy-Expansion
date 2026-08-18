@@ -36,6 +36,9 @@ docs/formulation/*.pdf
 # data/**
 # !data/README.md
 
+# Climate Data Store download cache: reproducible from the CDS, so not versioned.
+data/irradiance/raw/
+
 # Supervisor follow-up and presentations -- kept local, never pushed.
 # The public repository stays strictly about the model.
 docs/suivi/

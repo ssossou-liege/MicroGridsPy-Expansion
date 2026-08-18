@@ -12,9 +12,12 @@ from, and what produces it.
 | `demand/sam_meter_readings.parquet` | Smart-meter archive, Samionta | Quarter-hourly per-customer power readings | ✅ |
 | `ramp_params/reference/*.csv` | Produced by `src/microgrid_expansion/demand/` | Monthly household features, behavioural cluster assignments, per-site monthly cluster summaries, global cluster profiles, and the hierarchical mixture probabilities | ✅ |
 | `ramp_params/reference/cluster_params.csv` | RAMP calibration on the same meter data | Appliance parameters (power, count, functioning time, use windows, duty cycle) for each of the 4 behavioural clusters | ✅ |
-| `irradiance/sam_solar_irradiance_hourly_2016_2025.csv` | ERA5 reanalysis via the Copernicus Climate Data Store | Hourly global horizontal irradiance, Samionta, 2016–2025 | ✅ |
-| `irradiance/download.py` | ERA5 + CMIP6 multi-model ensemble | Downscaling framework producing SSP-consistent hourly irradiance, air temperature and wind (see `irradiance/README.md`) | ✅ script, ⬜ outputs |
-| `irradiance/` per-SSP series | Output of `download.py` | SSP1-2.6 / SSP2-4.5 / SSP3-7.0 hourly profiles per milestone year | ⬜ pending |
+| `irradiance/samionta_weather_hourly_2016_2025.csv` | ERA5-Land via the Copernicus Climate Data Store | Hourly irradiance, 2 m air temperature and 10 m wind, Samionta (7.0955 N, 2.2446 E), 2016–2025 | ✅ |
+| `irradiance/gbowele_weather_hourly_2016_2025.csv` | ERA5-Land via the Copernicus Climate Data Store | Same quantities for Gbowele (7.62 N, 2.20 E) | ✅ |
+| `irradiance/raw/` | Climate Data Store downloads | Cached NetCDF archives, so reprocessing never re-queues a request | ✅ (not committed) |
+| `irradiance/download.py` | CLI over `microgrid_expansion.resource.{era5,cmip6}` | Acquisition of the historical series and of the SSP projections | ✅ |
+| `irradiance/` per-SSP series | Output of `download.py cmip6` | SSP1-2.6 / SSP2-4.5 / SSP3-7.0 hourly profiles per milestone year | ⬜ pending (layer L4) |
+| `ramp_params/reference/archetype_scaling.csv` | Fitted by `microgrid_expansion.demand.calibration` | Power and duration factors reconciling the appliance calibration with the measured archetype statistics | ✅ |
 | `costs/` | Economic constants, currently in `src/microgrid_expansion/config.py` | Capital-cost and fuel-price trajectories | ⬜ pending |
 
 ## Reproducibility
@@ -40,8 +43,16 @@ mismatch would silently segment the same households two different ways.
 - The census totals used to scale the sampled households to the full communities are
   declared in `build_monthly_household_clusters.py` (Gbowele: 143 HH1, 5 HH2, 11 HH3;
   Samionta: 231 HH1).
-- Climate scenarios are not yet generated; the available irradiance is the historical
-  ERA5 series. SSP-downscaled irradiance is added here as `download.py` is run.
+- The meteorological series are produced by
+  `python data/irradiance/download.py era5 --site <name>`. Two conventions in that
+  conversion were verified against the site's computed solar noon and are pinned by
+  `tests/test_era5_acquisition.py`: the time-series product accumulates irradiance **over
+  each hour** (so the flux is the value divided by 3600, not a first difference), and it
+  labels each value by the **end** of that hour (so relabelling to local hour-beginning
+  means subtracting one hour and adding the UTC offset — which cancel exactly for West
+  Africa Time). Getting either wrong distorts or displaces the day without raising.
+- Climate scenarios are not yet generated; the available series are the historical ERA5
+  reanalysis. SSP-downscaled series are added here as `download.py cmip6` is run.
 - Three pathways are retained (SSP1-2.6, SSP2-4.5, SSP3-7.0). SSP5-8.5 is deliberately
   excluded as an implausible high-forcing trajectory rather than a business-as-usual
   baseline; see the formulation's uncertainty-space section.

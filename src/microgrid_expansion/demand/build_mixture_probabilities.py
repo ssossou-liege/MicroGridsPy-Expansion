@@ -8,7 +8,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-import build_monthly_household_clusters as clustering
+from . import build_monthly_household_clusters as clustering
+from ..paths import DEMAND_DIR, REFERENCE_DIR
 
 # Fixed reference cluster profiles (C0..C3) from RAMP calibration.
 REFERENCE_CLUSTER_FEATURES = {
@@ -28,13 +29,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data-dir",
         type=Path,
-        default=Path.cwd().resolve().parent[3] / "data" / "demand",
+        default=DEMAND_DIR,
         help="Directory with meter readings and household_customers.csv.",
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path.cwd().resolve().parent[3] / "data" / "ramp_params" / "reference",
+        default=REFERENCE_DIR,
         help="Directory where output CSV files are written.",
     )
     parser.add_argument("--n-clusters", type=int, default=4)

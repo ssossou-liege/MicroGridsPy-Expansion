@@ -8,6 +8,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from ..paths import DEMAND_DIR, REFERENCE_DIR
+
 
 SITE_FILES = {
     "Gbowele": "gbo_meter_readings.parquet",
@@ -33,13 +35,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data-dir",
         type=Path,
-        default=Path.cwd().resolve().parent[3] / "data" / "demand",
+        default=DEMAND_DIR,
         help="Directory containing parquet readings and household_customers.csv.",
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path.cwd().resolve().parent[3] / "data" / "ramp_params" / "reference",
+        default=REFERENCE_DIR,
         help="Directory where CSV outputs will be written.",
     )
     parser.add_argument(
@@ -63,10 +65,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--outlier-mad-threshold",
         type=float,
-        default=4.0,
+        default=4.5,
         help=(
             "Threshold on the maximum absolute robust z-score used to label a monthly "
-            "observation as an outlier before K-means."
+            "observation as an outlier before K-means. Must match the value used by "
+            "build_mixture_probabilities.py, since the two segmentations have to agree."
         ),
     )
     return parser.parse_args()

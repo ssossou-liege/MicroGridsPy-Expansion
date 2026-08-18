@@ -1,12 +1,12 @@
 """Photovoltaic specific-yield profiles per climate scenario.
 
-Maps an SSP pathway (ssp126/245/370/585) and stage year to an 8760-hour specific-
+Maps an SSP pathway (ssp126/245/370) and stage year to an 8760-hour specific-
 yield profile ``rho`` [kW per installed kW] and the corresponding ambient-temperature
 series (used downstream for battery self-discharge and capacity derating).
 
-Baseline data are the historical TMY irradiance imported from THESIS
-(``data/raw/*solar_irradiance*.csv``); SSP-downscaled irradiance is substituted when
-available (see ``data/README.md``).
+Baseline data are the historical hourly irradiance series in
+``data/irradiance/``; SSP-downscaled irradiance is substituted when available
+(see ``data/irradiance/README.md``).
 """
 from __future__ import annotations
 

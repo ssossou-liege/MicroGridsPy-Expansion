@@ -23,7 +23,10 @@ current_year = datetime.now().year
 HIST_YEARS = list(range(current_year - 5, current_year))  # Last 5 years for historical calibration
 SIMULATION_YEARS = [current_year + (5 * i) for i in range(5)] # Next 20 years in 5-year increments
 
-SCENARIOS = ["ssp1_2_6", "ssp2_4_5", "ssp3_7_0", "ssp5_8_5"]
+# SSP5-8.5 is deliberately excluded: its emission trajectory is now widely regarded as
+# implausible rather than as a business-as-usual baseline, so it would widen the spread of
+# the resource scenarios without informing the sizing decision.
+SCENARIOS = ["ssp1_2_6", "ssp2_4_5", "ssp3_7_0"]
 GCM_MODELS = ["ipsl_cm6a_lr", "ec_earth3", "gfdl_esm4"]
 
 output_dir = Path.cwd().resolve() / "downloaded_data"

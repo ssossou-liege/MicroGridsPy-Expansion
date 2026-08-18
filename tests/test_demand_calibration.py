@@ -36,6 +36,19 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+def _normalise(frame: pd.DataFrame) -> pd.DataFrame:
+    """Make a computed frame comparable with the same table read back from CSV.
+
+    Round-tripping through CSV turns timestamps and cluster labels into strings, so both
+    sides are cast to text before comparison; the numeric columns are compared as numbers.
+    """
+    out = frame.reset_index(drop=True).copy()
+    for column in ("connection_date", "cluster", "month"):
+        if column in out.columns:
+            out[column] = out[column].astype(str)
+    return out
+
+
 @pytest.fixture(scope="module")
 def clustering():
     """Re-run the segmentation from the raw readings with the default settings."""
@@ -79,6 +92,31 @@ def test_monthly_summaries_reproduce_committed_reference(clustering, site, filen
     expected = pd.read_csv(REFERENCE_DIR / filename)
     got["cluster"] = got["cluster"].astype(str)
     expected["cluster"] = expected["cluster"].astype(str)
+    pd.testing.assert_frame_equal(got, expected, check_dtype=False, rtol=1e-9)
+
+
+def test_monthly_features_reproduce_committed_reference(clustering):
+    """The per-observation feature table must match the committed calibration."""
+    customers = clustering[0]
+    readings = load_meter_readings(DEMAND_DIR, customers)
+    got = _normalise(compute_monthly_features(readings, customers))
+    expected = _normalise(pd.read_csv(REFERENCE_DIR / "monthly_household_features.csv"))
+    pd.testing.assert_frame_equal(got, expected, check_dtype=False, rtol=1e-9)
+
+
+def test_cluster_assignments_reproduce_committed_reference(clustering):
+    """The per-observation cluster assignment must match the committed calibration.
+
+    This table is the bridge between the segmentation and everything estimated from it;
+    a stale copy would describe a different partition of the same households while every
+    aggregate table still looked right.
+    """
+    _, clustered, _ = clustering
+    columns = list(pd.read_csv(REFERENCE_DIR / "monthly_household_cluster_assignments.csv").columns)
+    got = _normalise(clustered[columns].sort_values(
+        ["site_name", "month", "customer_code"]))
+    expected = _normalise(
+        pd.read_csv(REFERENCE_DIR / "monthly_household_cluster_assignments.csv"))
     pd.testing.assert_frame_equal(got, expected, check_dtype=False, rtol=1e-9)
 
 

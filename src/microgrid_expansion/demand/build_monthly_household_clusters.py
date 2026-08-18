@@ -423,6 +423,30 @@ def main() -> None:
     gbowele_summary_path = args.output_dir / "gbowele_monthly_cluster_summary.csv"
     samionta_summary_path = args.output_dir / "samionta_monthly_cluster_summary.csv"
     cluster_profiles_path = args.output_dir / "global_cluster_profiles.csv"
+    features_path = args.output_dir / "monthly_household_features.csv"
+    assignments_path = args.output_dir / "monthly_household_cluster_assignments.csv"
+
+    # The per-observation tables are outputs of this script too: leaving them to be
+    # produced by hand is how a stale segmentation survives a recalibration.
+    monthly_features.to_csv(features_path, index=False)
+    clustered[
+        [
+            "site_name",
+            "month",
+            "customer_code",
+            "customer_type",
+            "mean_daily_kWh",
+            "peak_power",
+            "load_factor",
+            "total_kWh",
+            "observed_days",
+            "reading_count",
+            "connection_date",
+            "cluster",
+        ]
+    ].sort_values(["site_name", "month", "customer_code"]).to_csv(
+        assignments_path, index=False
+    )
 
     gbowele_summary = build_cluster_summary(clustered, customers, "Gbowele")
     samionta_summary = build_cluster_summary(clustered, customers, "Samionta")
@@ -434,6 +458,8 @@ def main() -> None:
     print("Gbowele summary written to", gbowele_summary_path)
     print("Samionta summary written to", samionta_summary_path)
     print("Global cluster profiles written to", cluster_profiles_path)
+    print("Monthly household features written to", features_path)
+    print("Cluster assignments written to", assignments_path)
     print("Sampled households found in household_customers.csv:")
     print(sampled_counts)
     print("Reference census totals used for normalization:")

@@ -27,6 +27,14 @@ from .build_monthly_household_clusters import (
     load_census,
     load_meter_readings,
 )
+from .generator import (
+    ArchetypeScaling,
+    DemandYear,
+    load_archetype_appliances,
+    load_monthly_mixture,
+    sample_composition,
+    simulate_demand_year,
+)
 from .build_mixture_probabilities import (
     REFERENCE_CLUSTER_FEATURES,
     assign_clusters_from_reference_profiles,
@@ -34,6 +42,12 @@ from .build_mixture_probabilities import (
 )
 
 __all__ = [
+    "ArchetypeScaling",
+    "DemandYear",
+    "load_archetype_appliances",
+    "load_monthly_mixture",
+    "sample_composition",
+    "simulate_demand_year",
     "CENSUS_TOTALS",
     "HOUSEHOLD_TYPES",
     "SITE_FILES",

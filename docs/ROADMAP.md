@@ -33,9 +33,9 @@ phase numbering.
   `data/ramp_params/reference/`.
 - ✅ RAMP appliance calibration per behavioural cluster —
   `data/ramp_params/reference/cluster_params.csv` (4 clusters, 7 appliance classes).
-- ✅ Hourly irradiance series 2016–2025 for Samionta, and the ERA5/CMIP6 downscaling
-  script producing SSP-consistent irradiance, temperature and wind
-  (`data/irradiance/`).
+- ✅ Hourly ERA5-Land series 2016–2025 for both sites — irradiance, temperature and wind
+  — plus the CMIP6 downscaling chain for the scenario tree (`resource/era5.py`,
+  `resource/cmip6.py`, `data/irradiance/`).
 - ✅ Literature scan: contribution confirmed novel.
 
 **Not yet working**
@@ -74,24 +74,44 @@ phase numbering.
 
 ---
 
-## L1 — Data layer: one site, one year (P0)
+## L1 — Data layer: one site, one year (P0, largely done 2026-08-18)
 
 Goal: for a given site and calendar year, produce the two 8760-hour series the model
 consumes — community demand `D` [kW] and photovoltaic specific yield `Y` [kW/kW] — from
 the measured and calibrated inputs, reproducibly and with a seed.
 
-- [ ] **Demand generator.** Draw a community composition from the posterior mixture
-  probabilities `P(C = c | T = t, m)`, simulate each behavioural cluster's appliance usage
-  with RAMP from `cluster_params.csv`, aggregate over the census counts, and return an
-  8760-hour community profile. *Done when* the generated annual energy and load factor
-  reproduce the measured monthly statistics of the site within a stated tolerance.
-- [ ] **Specific-yield converter.** Turn the hourly irradiance (and ambient temperature)
-  series into `Y` through a cell-temperature and module-efficiency model, and expose the
-  self-discharge `A` and usable-capacity factor `F^e` the battery constraints require.
-  *Done when* the annual specific yield falls in the expected range for the site's latitude.
-- [ ] **Site registry.** A single declarative description per site (coordinates, census by
-  household type, data files) so the pipeline is site-agnostic. Samionta first, then
-  Gbowele. *Done when* both sites resolve through the same call.
+- [x] **Site registry** (`sites.py`). Census, data files and coordinates per site; the
+  pipeline resolves everything through `get_site(name)`. Samionta and Gbowele both
+  registered. Two gaps recorded rather than guessed: Samionta's coordinates are unknown,
+  and Gbowele has no irradiance series yet.
+- [x] **Demand generator** (`demand/generator.py`). Community composition drawn from the
+  twelve monthly posterior mixtures, one RAMP user per household so the fractional
+  calibrated appliance counts are honoured in expectation, minute-resolution simulation
+  aggregated to hourly kW, twelve months concatenated into a year. Runs in ~75 s.
+  Validation (`python -m microgrid_expansion.demand.validate`): annual energy **+7.0 %**
+  against the measured extrapolation, seasonal amplitude 2.22x against 2.09x measured,
+  month-to-month correlation **0.863**.
+- [x] **Archetype moment-matching** (`demand/calibration.py`). The appliance calibration
+  does not on its own reproduce the measured archetype statistics (see below), so two
+  factors per archetype — a power scale and a duration scale — are fitted against the
+  measured daily energy and peak. Residuals after fitting: ~8 % on energy, ~10 % on peak.
+  Factors stored in `data/ramp_params/reference/archetype_scaling.csv`.
+- [x] **Specific-yield converter** (`resource/yield_model.py`). NOCT cell-temperature
+  model, module temperature coefficient and derating; also exposes the battery
+  usable-capacity factor `F^e` and self-discharge `A`. Samionta 2024 under a stated
+  isothermal assumption: **1 394 kWh/kW**, capacity factor 0.159 — plausible at 7.6° N.
+- [x] **Meteorological series re-acquired from ERA5-Land** for both sites, carrying
+  irradiance, two-metre temperature and ten-metre wind (2016–2025, 87 672 h). The
+  acquisition moved into the package (`resource/era5.py`, `resource/cmip6.py`) with the
+  script reduced to a CLI over it. Two conversion conventions were verified against the
+  computed solar noon and are now pinned by tests. Specific yield with measured
+  temperature and wind through a Faiman cell model: Samionta 1 389–1 453 kWh/kW,
+  Gbowele 1 440–1 508 kWh/kW.
+- [ ] **Re-calibrate the appliance sets of C0 and C3.** Their calibrated stock amounts to
+  85 W and 83 W installed against measured peaks of 413 W and 200 W: the appliance list
+  cannot physically produce the observed peaks, so high-power appliances are missing. The
+  moment-matching correction compensates in aggregate (power factors 9.4 and 5.2) but a
+  scale factor is not a substitute for the missing appliances.
 
 ---
 

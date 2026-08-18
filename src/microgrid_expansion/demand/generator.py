@@ -120,6 +120,7 @@ def sample_composition(
     census: dict[str, int],
     month: int,
     rng: np.random.Generator,
+    by_maturity: bool = False,
 ) -> dict[str, int]:
     """Draw how many households of the community sit in each behavioural state.
 
@@ -132,11 +133,13 @@ def sample_composition(
         if n_households <= 0:
             continue
         try:
-            weights = mixture.loc[(month, customer_type)]
+            weights = mixture.loc[customer_type] if by_maturity \
+                else mixture.loc[(month, customer_type)]
         except KeyError:
-            # No calibration for this category in this month: fall back to the
-            # community-wide law for the month rather than dropping the households.
-            weights = mixture.xs(month, level="month").mean(axis=0)
+            # No calibration for this category: fall back to the law averaged over the
+            # categories rather than dropping the households.
+            weights = (mixture.mean(axis=0) if by_maturity
+                       else mixture.xs(month, level="month").mean(axis=0))
         weights = _redistribute_outliers(weights)
         states = list(weights.index)
         draw = rng.multinomial(n_households, weights.to_numpy())
@@ -369,27 +372,48 @@ def simulate_demand_year(
     site: Site,
     year: int = 2025,
     seed: int = 0,
+    maturity_months: int = 0,
+    trajectory: str = "centrale",
     scaling: ArchetypeScaling | None = None,
+    apply_seasonality: bool = True,
 ) -> DemandYear:
     """Draw one community load profile for ``site`` over the calendar year ``year``.
 
-    The twelve monthly mixture laws are used in turn, so the resulting profile carries
-    the seasonal variation of behaviour that a single annual law would average away.
+    The behavioural composition is resolved from the *maturity* of the connection rather
+    than from the site's identity, so a locality with no meter record of its own can be
+    simulated from its census alone -- which is the situation of every site the model is
+    meant to size. ``maturity_months`` is the age of the connection at the start of the
+    simulated year, and the community ages month by month through it.
+
+    ``trajectory`` selects which of the observed growth behaviours to apply; the two
+    reference villages bracket a factor of two after two years, so a sizing should be
+    computed under both bounds rather than under the central case alone. Genuine calendar
+    seasonality is restored afterwards through the residual seasonal index, the part of the
+    monthly variation that survives conditioning on maturity.
     """
-    mixture = load_monthly_mixture(site)
+    from .growth import maturity_band, seasonal_index, trajectory_law
+
+    law = trajectory_law(trajectory)
     appliances = load_archetype_appliances()
     scaling = ArchetypeScaling.load() if scaling is None else scaling
+    season = seasonal_index() if apply_seasonality else None
     rng = np.random.default_rng(seed)
 
     hourly: list[np.ndarray] = []
     composition: dict[int, dict[str, int]] = {}
     for month in range(1, 13):
-        counts = sample_composition(mixture, site.census, month, rng)
+        band = maturity_band(maturity_months + month - 1)
+        weights = law.xs(band, level="maturity")
+        counts = sample_composition(weights, site.census, month, rng,
+                                    by_maturity=True)
         composition[month] = counts
         minutes = _simulate_month(counts, appliances, year, month,
                                   seed=int(rng.integers(0, 2**31 - 1)), rng=rng,
                                   scaling=scaling)
-        hourly.append(_to_hourly_kw(minutes))
+        profile = _to_hourly_kw(minutes)
+        if season is not None:
+            profile = profile * float(season.get(month, 1.0))
+        hourly.append(profile)
 
     return DemandYear(
         site=site.name,

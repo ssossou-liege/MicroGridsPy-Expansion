@@ -36,6 +36,7 @@ from .generator import (
     _build_households,
     load_archetype_appliances,
 )
+from .partition import archetype_profiles
 
 #: Metering interval of the reference readings [minutes]. The measured peak is a mean over
 #: this interval, so the simulated peak must be taken at the same resolution to be
@@ -60,12 +61,14 @@ class ArchetypeStatistics:
 
 
 def measured_statistics() -> pd.DataFrame:
-    """Measured per-household statistics of each archetype, from the segmentation."""
-    profiles = pd.read_csv(REFERENCE_DIR / "global_cluster_profiles.csv")
-    profiles["cluster"] = profiles["cluster"].astype(str)
-    profiles = profiles[profiles["cluster"].isin(ARCHETYPES)].set_index("cluster")
-    return profiles[["cluster_mean_daily_kWh", "cluster_mean_peak_power",
-                     "cluster_mean_load_factor"]]
+    """Measured per-household statistics of each archetype.
+
+    Taken from the *operative* partition -- the one the appliance parameters are
+    calibrated against. Using the exploratory k-means partition here instead compares
+    appliance sets with the statistics of a different population, which manufactures an
+    apparent calibration gap where there is none.
+    """
+    return archetype_profiles()
 
 
 def simulate_archetype(
@@ -125,10 +128,14 @@ def fit_scaling(
     for iteration in range(n_iterations):
         scaling = ArchetypeScaling(power=dict(power), time=dict(time))
         for archetype in ARCHETYPES:
+            if not bool(measured.loc[archetype, "has_support"]):
+                # Too few measured households to fit against; the calibrated appliance
+                # parameters are kept as they stand rather than tuned to noise.
+                continue
             stats = simulate_archetype(archetype, appliances[archetype], scaling,
                                        n_households, n_days, seed)
-            target_energy = float(measured.loc[archetype, "cluster_mean_daily_kWh"])
-            target_peak = float(measured.loc[archetype, "cluster_mean_peak_power"])
+            target_energy = float(measured.loc[archetype, "mean_daily_kwh"])
+            target_peak = float(measured.loc[archetype, "mean_peak_w"])
             if stats.peak_w <= 0 or stats.daily_energy_kwh <= 0:
                 continue
             # Peak is set by power alone; energy by the product of both factors.
@@ -172,8 +179,8 @@ def main() -> int:
     for archetype in ARCHETYPES:
         stats = simulate_archetype(archetype, appliances[archetype], scaling,
                                    n_households=60, seed=99)
-        e_ref = float(measured.loc[archetype, "cluster_mean_daily_kWh"])
-        p_ref = float(measured.loc[archetype, "cluster_mean_peak_power"])
+        e_ref = float(measured.loc[archetype, "mean_daily_kwh"])
+        p_ref = float(measured.loc[archetype, "mean_peak_w"])
         print(f"C{archetype:>4s}{stats.daily_energy_kwh:11.3f}{e_ref:10.3f}"
               f"{100 * (stats.daily_energy_kwh - e_ref) / e_ref:+7.1f}%"
               f"{stats.peak_w:10.0f}{p_ref:8.0f}"

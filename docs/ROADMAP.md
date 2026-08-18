@@ -84,18 +84,29 @@ the measured and calibrated inputs, reproducibly and with a seed.
   pipeline resolves everything through `get_site(name)`. Samionta and Gbowele both
   registered. Two gaps recorded rather than guessed: Samionta's coordinates are unknown,
   and Gbowele has no irradiance series yet.
-- [x] **Demand generator** (`demand/generator.py`). Community composition drawn from the
-  twelve monthly posterior mixtures, one RAMP user per household so the fractional
-  calibrated appliance counts are honoured in expectation, minute-resolution simulation
-  aggregated to hourly kW, twelve months concatenated into a year. Runs in ~75 s.
-  Validation (`python -m microgrid_expansion.demand.validate`): annual energy **+7.0 %**
-  against the measured extrapolation, seasonal amplitude 2.22x against 2.09x measured,
-  month-to-month correlation **0.863**.
-- [x] **Archetype moment-matching** (`demand/calibration.py`). The appliance calibration
-  does not on its own reproduce the measured archetype statistics (see below), so two
-  factors per archetype — a power scale and a duration scale — are fitted against the
-  measured daily energy and peak. Residuals after fitting: ~8 % on energy, ~10 % on peak.
-  Factors stored in `data/ramp_params/reference/archetype_scaling.csv`.
+- [x] **Demand generator** (`demand/generator.py`). One RAMP user per household so the
+  fractional calibrated appliance counts are honoured in expectation, minute-resolution
+  simulation aggregated to hourly kW, twelve months concatenated into a year. Runs in ~75 s.
+- [x] **Transferability to sites without meter data** (`demand/maturity.py`,
+  `demand/growth.py`). The first calibration conditioned the mixture on *site* and calendar
+  month, which does not transfer: predicting either reference village from the other gives
+  **50 %** and **130 %** error on daily energy. Conditioning on **months since connection**
+  instead resolves why — the two villages agree to **5 %** at connection and diverge
+  afterwards, one growing **×2.31** over two years and the other **×1.12**. The mixture is
+  now `P(C | T, maturity)` pooled across sites with equal site weight, so a locality with a
+  census and no meter record can be simulated, which is the situation of every site the
+  model is meant to size.
+- [x] **One authoritative partition** (`demand/partition.py`). Two segmentations coexisted
+  — k-means (which discovered the archetypes) and nearest-reference-profile (which the RAMP
+  appliance parameters are calibrated against). They agree exactly on inactive and atypical
+  observations but on only **57 % of archetype labels**. Comparing appliance sets with the
+  k-means statistics manufactured an apparent calibration gap that does not exist: on the
+  operative partition the appliance sets reproduce their own archetypes to **1.00 and 1.01**
+  for the two largest. Everything downstream now resolves the partition through one module.
+- [x] **Archetype moment-matching** (`demand/calibration.py`). Two factors per archetype —
+  a power scale and a duration scale — fitted against the operative partition's measured
+  energy and peak. Residuals: **C0 +5.5 %/−3.6 %, C1 −3.4 %/+2.6 %, C2 +1.2 %/−0.5 %**.
+  C3 is left uncorrected: it holds 4 observations out of 1 818, too few to fit against.
 - [x] **Specific-yield converter** (`resource/yield_model.py`). NOCT cell-temperature
   model, module temperature coefficient and derating; also exposes the battery
   usable-capacity factor `F^e` and self-discharge `A`. Samionta 2024 under a stated
@@ -107,11 +118,28 @@ the measured and calibrated inputs, reproducibly and with a seed.
   computed solar noon and are now pinned by tests. Specific yield with measured
   temperature and wind through a Faiman cell model: Samionta 1 389–1 453 kWh/kW,
   Gbowele 1 440–1 508 kWh/kW.
-- [ ] **Re-calibrate the appliance sets of C0 and C3.** Their calibrated stock amounts to
-  85 W and 83 W installed against measured peaks of 413 W and 200 W: the appliance list
-  cannot physically produce the observed peaks, so high-power appliances are missing. The
-  moment-matching correction compensates in aggregate (power factors 9.4 and 5.2) but a
-  scale factor is not a substitute for the missing appliances.
+- [ ] **Give archetype C3 empirical support.** It carries calibrated appliance parameters
+  but only 4 of the 1 818 measured household-months fall into it, so nothing validates it
+  and nothing corrects it. Either it is an archetype these two villages do not exhibit, and
+  should be dropped or re-derived, or the reference profile that defines it is misplaced.
+
+---
+
+### Growth uncertainty — an explicit axis, not a point estimate
+
+With two reference villages one cannot estimate how a third will grow: there is one that
+grows and one that does not. Rather than average them into a trajectory describing neither,
+the two behaviours are carried as an envelope — `lente` (Samionta), `rapide` (Gbowele) and a
+site-balanced `centrale` — each being a mixture law measured at a real site, so nothing is
+extrapolated. **A sizing must be computed at both bounds**, and the width of the resulting
+bracket is an honest statement of what two calibration sites can support.
+
+- [ ] **Widen the calibration base.** The growth envelope rests on two villages. A third
+  and fourth reference site would let the between-site variance be estimated rather than
+  merely bracketed, and would give household categories HH2 and HH3 — 13 households at one
+  site today — some support of their own.
+- [ ] **Carry the trajectory into the scenario tree.** The growth envelope is the natural
+  demand axis of the L4 tree; the branches are already measured.
 
 ---
 

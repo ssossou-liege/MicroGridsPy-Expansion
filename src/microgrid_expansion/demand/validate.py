@@ -25,28 +25,24 @@ from .generator import (
 )
 
 
-def measured_monthly_energy(site) -> pd.Series:
-    """Mean measured daily energy per household, by calendar month [kWh/household/day]."""
-    features = pd.read_csv(REFERENCE_DIR / "monthly_household_features.csv")
-    features = features[features["site_name"] == site.name].copy()
-    features["calendar_month"] = pd.PeriodIndex(features["month"], freq="M").month
-    return features.groupby("calendar_month")["mean_daily_kWh"].mean()
+def measured_energy_by_maturity(site) -> pd.Series:
+    """Measured daily energy per household by maturity band [kWh/household/day]."""
+    from .maturity import MATURITY_LABELS, STATES, _composition, with_maturity
+    from .partition import load_archetype_profiles
 
+    frame = with_maturity()
+    frame = frame[frame["site_name"] == site.name]
+    energy = load_archetype_profiles()["mean_daily_kwh"].to_dict()
+    energy["inactive"] = 0.0
+    energy.setdefault("outlier", 0.0)
 
-def mixture_predicted_energy(site) -> pd.Series:
-    """Daily energy per household implied by the monthly mixture [kWh/household/day]."""
-    mixture = load_monthly_mixture(site)
-    profiles = pd.read_csv(REFERENCE_DIR / "global_cluster_profiles.csv")
-    profiles["cluster"] = profiles["cluster"].astype(str)
-    profiles = profiles.set_index("cluster")["cluster_mean_daily_kWh"]
-
-    predicted = {}
-    for month in range(1, 13):
-        weights = mixture.xs(month, level="month").mean(axis=0)
-        weights = _redistribute_outliers(weights)
-        predicted[month] = sum(float(weights.get(c, 0.0)) * float(profiles[c])
-                               for c in ARCHETYPES)
-    return pd.Series(predicted)
+    levels = {}
+    for band in MATURITY_LABELS:
+        rows = frame[frame["maturity"] == band]
+        if rows.empty:
+            continue
+        levels[band] = float(rows["mean_daily_kWh"].mean())
+    return pd.Series(levels)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -54,31 +50,38 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--site", default="Samionta")
     parser.add_argument("--year", type=int, default=2025)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--maturity-months", type=int, default=12)
     args = parser.parse_args(argv)
     site = get_site(args.site)
 
-    measured = measured_monthly_energy(site)
-    predicted = mixture_predicted_energy(site)
-    comparison = pd.DataFrame({"mesuré": measured, "mélange": predicted})
-    comparison["écart %"] = 100 * (comparison["mélange"] - comparison["mesuré"]) / comparison["mesuré"]
+    from .growth import TRAJECTORIES, growth_envelope
 
-    print(f"=== {site.name} — la loi de mélange mensuelle reproduit-elle la saison ? ===")
-    print(comparison.round(3).to_string())
-    correlation = comparison["mélange"].corr(comparison["mesuré"])
-    print(f"\ncorrélation                : {correlation:.3f}")
-    print(f"amplitude saisonnière mesurée : {measured.max() / measured.min():.2f}x")
-    print(f"amplitude saisonnière simulée : {predicted.max() / predicted.min():.2f}x")
+    print(f"=== {site.name} — énergie mesurée selon l'ancienneté de raccordement ===")
+    measured = measured_energy_by_maturity(site)
+    print(measured.round(3).to_string())
 
-    print(f"\n=== année stochastique complète (graine {args.seed}) ===")
-    year = simulate_demand_year(site, year=args.year, seed=args.seed)
-    days = {m: calendar.monthrange(args.year, m)[1] for m in range(1, 13)}
-    measured_year = sum(measured[m] * site.n_households * days[m] for m in range(1, 13))
-    print(f"heures                   : {year.hourly_kw.size}")
-    print(f"énergie simulée          : {year.annual_energy_kwh:>10,.0f} kWh")
-    print(f"énergie mesurée (extrap.): {measured_year:>10,.0f} kWh")
-    print(f"écart                    : {100 * (year.annual_energy_kwh - measured_year) / measured_year:>+9.1f} %")
-    print(f"pointe                   : {year.peak_kw:.2f} kW")
-    print(f"facteur de charge        : {year.load_factor:.3f}")
+    print("\n=== enveloppe de croissance mesurée sur les deux sites de référence ===")
+    envelope = growth_envelope()
+    print(envelope.factors.round(2).to_string())
+    print(f"éventail le plus large : x{envelope.spread:.2f}")
+
+    print(f"\n=== année simulée à {args.maturity_months} mois d'ancienneté, "
+          f"par trajectoire (graine {args.seed}) ===")
+    print(f"{'trajectoire':>12s}{'énergie kWh':>14s}{'pointe kW':>12s}{'fc':>8s}"
+          f"{'kWh/ménage/j':>15s}")
+    results = {}
+    for trajectory in TRAJECTORIES:
+        year = simulate_demand_year(site, year=args.year, seed=args.seed,
+                                    maturity_months=args.maturity_months,
+                                    trajectory=trajectory)
+        per_household_day = year.annual_energy_kwh / site.n_households / 365.0
+        results[trajectory] = year.annual_energy_kwh
+        print(f"{trajectory:>12s}{year.annual_energy_kwh:14,.0f}{year.peak_kw:12.2f}"
+              f"{year.load_factor:8.3f}{per_household_day:15.3f}")
+
+    spread = max(results.values()) / min(results.values())
+    print(f"\néventail du dimensionnement induit : x{spread:.2f}")
+    print("Une sélection de capacité doit être calculée aux deux bornes, non au seul cas central.")
     return 0
 
 

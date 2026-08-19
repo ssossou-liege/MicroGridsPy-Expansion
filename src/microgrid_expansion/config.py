@@ -40,6 +40,11 @@ BATT_LIFETIME_Y = 16
 # ---------------------------------------------------------------------------
 # Battery technical parameters
 # ---------------------------------------------------------------------------
+# Storage chemistry. It sets the temperature response of the usable capacity and of the
+# self-discharge, which the controller reacts to and the bound is computed over; see
+# microgrid_expansion.battery. Must match the pack actually specified above.
+BATTERY_CHEMISTRY = "lfp"     # BYD LV Flex LFP
+
 ETA_CHARGE = 0.975            # eta^c
 ETA_DISCHARGE = 0.975         # eta^d
 SOC_MIN_FRAC = 0.05           # underline{e}  -- protective discharge trip
@@ -109,6 +114,9 @@ class ModelConfig:
     initial_inv_kw: float = INITIAL_INV_KW
     gen_initial_kw: float = GEN_INITIAL_KW
 
+    # --- Storage chemistry ---
+    battery_chemistry: str = BATTERY_CHEMISTRY
+
     # --- Economics ---
     discount_rate: float = DISCOUNT_RATE
 
@@ -122,6 +130,11 @@ class ModelConfig:
             raise ValueError("dispatch_variant must be 'rule_faithful' or 'baseline'")
         if self.gen_initial_kw not in (0.0, *self.gen_catalog_kw):
             raise ValueError("gen_initial_kw must be 0 or a catalogue size")
+        from .battery import CHEMISTRIES
+        if self.battery_chemistry not in CHEMISTRIES:
+            raise ValueError(
+                f"battery_chemistry must be one of {sorted(CHEMISTRIES)}, "
+                f"not {self.battery_chemistry!r}")
 
 
 def crf(r: float = DISCOUNT_RATE, n: int = PROJECT_YEARS) -> float:

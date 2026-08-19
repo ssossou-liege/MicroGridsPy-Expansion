@@ -100,29 +100,24 @@ def specific_yield(
     return np.clip(ghi / G_STC * module.derate * correction, 0.0, None)
 
 
-def battery_usable_fraction(t_amb_c: np.ndarray) -> np.ndarray:
-    """Fraction of nameplate energy a lithium-iron-phosphate pack can hold [-].
+def battery_usable_fraction(t_amb_c: np.ndarray, chemistry=None) -> np.ndarray:
+    """Fraction of nameplate energy the pack can hold [-].
 
-    Full capacity is available across the temperate band and falls off at both ends: below
-    about 15 degC the pack loses capacity to internal resistance, above about 35 degC the
-    management system derates it to protect the cells. Both slopes are linear
-    approximations of the manufacturer's derating curves.
+    Delegates to the single definition in :mod:`microgrid_expansion.battery`: the
+    controller reacts to this ceiling and the cost-optimal problem is bounded by it, so the
+    two must be the same curve, for the same chemistry.
     """
-    t = np.asarray(t_amb_c, dtype=float)
-    cold = np.clip(1.0 - 0.010 * (15.0 - t), 0.6, 1.0)
-    hot = np.clip(1.0 - 0.005 * (t - 35.0), 0.8, 1.0)
-    return np.minimum(cold, hot)
+    from ..battery import usable_fraction
+    return usable_fraction(t_amb_c, chemistry)
 
 
-def battery_self_discharge(t_amb_c: np.ndarray) -> np.ndarray:
+def battery_self_discharge(t_amb_c: np.ndarray, chemistry=None) -> np.ndarray:
     """Fractional self-discharge over one hour [-].
 
-    Roughly 2 % of the stored energy per month at 25 degC, doubling for every 10 K above
-    it, which is the usual rule of thumb for the electrochemistry of these cells.
+    Delegates to the single definition in :mod:`microgrid_expansion.battery`.
     """
-    t = np.asarray(t_amb_c, dtype=float)
-    monthly = 0.02 * 2.0 ** ((t - T_STC) / 10.0)
-    return np.clip(monthly / (30.0 * 24.0), 0.0, 1.0)
+    from ..battery import self_discharge_fraction
+    return self_discharge_fraction(t_amb_c, chemistry)
 
 
 def load_irradiance(site: Site) -> pd.DataFrame:
@@ -165,6 +160,7 @@ def simulate_resource_year(
     year: int,
     module: ModuleSpec = ModuleSpec(),
     t_amb_c: float | np.ndarray | None = None,
+    chemistry=None,
 ) -> ResourceYear:
     """Build the resource year for ``site``.
 
@@ -214,8 +210,8 @@ def simulate_resource_year(
         year=year,
         specific_yield=specific_yield(ghi, temperature, module, wind_m_s=wind),
         t_amb_c=temperature,
-        usable_fraction=battery_usable_fraction(temperature),
-        self_discharge=battery_self_discharge(temperature),
+        usable_fraction=battery_usable_fraction(temperature, chemistry),
+        self_discharge=battery_self_discharge(temperature, chemistry),
         isothermal=isothermal,
         cell_model="faiman" if wind is not None else "noct",
     )

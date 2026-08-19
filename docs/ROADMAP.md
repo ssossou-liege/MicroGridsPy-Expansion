@@ -143,23 +143,55 @@ bracket is an honest statement of what two calibration sites can support.
 
 ---
 
-## L2 — Real oracles and real economics on one site (P0)
+## L2 — Real oracles and real economics on one site (P0, largely done 2026-08-19)
 
 Goal: replace the toy instance with the real ones, on L1's data, single scenario. This is
 the minimum publishable result.
 
-- [ ] **Rule-based simulator (upper-bound oracle).** Port the uGrid `GenControl()`
-  faithfully: battery temperature effects and self-discharge, quadratic generator fuel
-  characteristic, and the night-reserve look-ahead. *Done when* it reproduces the reference
-  controller's dispatch on a shared 8760 within tolerance, and its trajectory is verified
-  to satisfy `F(x)` (Assumption 1).
-- [ ] **Cost-optimal dispatch (lower-bound oracle).** The representative-day MILP in
-  linopy, capacities as box-bounded variables, in two modes: LP relaxation (fast, valid
-  bound) and MILP (tight bound). *Done when* LP ≤ MILP ≤ rule at every sample point.
-- [ ] **Net-present-cost accounting.** Capital recovery, replacement, salvage, NPC and
-  LCOE in `post/kpis.py`, feeding annualised cost into both oracles.
-  *Done when* one sizing reproduces the reference benchmark
-  (PV 8.2 kW, batt 17.2 kWh, gen 5.85 kW, LCOE 0.3211).
+- [x] **Rule-based simulator, the upper-bound oracle** (`exact/simulator.py`). The
+  generation-balance decision rule ported faithfully — priority order, night-reserve
+  look-ahead, temperature-dependent capacity and self-discharge, quadratic part-load
+  efficiency — but applied under the model's own physics. The reference implementation
+  updates storage without round-trip losses, has no minimum stable loading and lets an
+  uncoverable deficit vanish; all three would put the trajectory outside `F(x)` and void
+  the bound. Fuel reproduces the manufacturer's curve to **0.4 %** at 50, 75 and 100 % load.
+- [x] **Cost-optimal dispatch, the lower-bound oracle** (`exact/lower_bound.py`). Capacities
+  box-bounded, commitment relaxed or integral, in linopy. The linear fuel curve is fitted
+  as a **minorant** of the true consumption rather than through it — the tangent parallel to
+  the chord, touching at 75 % load, valid everywhere with a 2.2 % mean gap. A least-squares
+  fit would overestimate consumption at some outputs and could prune the optimal design.
+- [x] **Life-cycle accounting** (`post/economics.py`). Capital, maintenance, replacement of
+  each asset whose life expires within the horizon, and straight-line salvage of the last
+  vintage. At the published reference sizing under plausible operation the levelised cost
+  lands within **2.4 %** of the published 0.3211 $/kWh.
+- [x] **Proposition 1 verified on real data** (`exact/verify_bound.py`): relaxation ≤
+  mixed-integer ≤ rule at every sampled design, with Assumption 1 holding throughout.
+  Gap between rule and optimum: **0 to 6.3 %**.
+
+### Two findings that change the formulation
+
+- **The cyclic closure is incompatible with a causal controller.** The formulation closes
+  each representative day on its state of charge. A controller does not: it ends where its
+  decisions leave it, generally poorer. Imposing the closure on the *bound* constrains it
+  where the controller is unconstrained, and the bound then exceeds the quantity it bounds —
+  observed here, worth up to 15 % of the operating cost over a week. The lower bound
+  therefore leaves the terminal state free by default; `model.tex` needs a note.
+- **The battery temperature model must be defined once.** The resource layer and the
+  controller carried different curves for the same usable-capacity ceiling, which put the
+  simulated trajectory outside the set the bound was computed over — Assumption 1 failed on
+  1.55 % of hours. Both now delegate to `battery.py`.
+
+- [x] **Battery chemistry is selected, not inherited** (`battery.py`). Unifying the two
+  conflicting capacity curves, the *ported* one was kept — IEEE 485, which describes a
+  lead-acid pack — although the configuration specifies a lithium-iron-phosphate pack. That
+  privileged the provenance of a curve over its applicability. The chemistry is now an
+  explicit setting validated against the pack: **LFP is the default**, flat across the
+  temperate band and derating at both ends; lead-acid is retained because reproducing the
+  reference controller requires it. Both the resource layer and the controller resolve the
+  same curve for the same chemistry, and the instance cache distinguishes them.
+- [ ] **Full-year mixed-integer solve.** 8 760 commitment binaries is impractical
+  (minutes to hours); the ordering was verified over ten-day windows. Representative days
+  (L3) are what make the tight bound tractable over a year.
 
 ---
 

@@ -168,14 +168,33 @@ def test_hotter_cells_produce_less():
 
 
 def test_battery_derating_and_self_discharge_follow_temperature():
+    """The default chemistry is lithium iron phosphate, as the configuration specifies.
+
+    Its usable capacity is flat across the temperate band and falls at both ends — cold
+    costs the most, heat derates through the management system. Self-discharge doubles
+    every ten degrees.
+    """
     mild = battery_usable_fraction(np.array([25.0]))[0]
-    assert mild == pytest.approx(1.0)
-    assert battery_usable_fraction(np.array([0.0]))[0] < mild      # cold derating
-    assert battery_usable_fraction(np.array([50.0]))[0] < mild     # hot derating
+    assert mild == pytest.approx(1.0, abs=0.01)
+    assert battery_usable_fraction(np.array([0.0]))[0] < mild       # cold derating
+    assert battery_usable_fraction(np.array([45.0]))[0] < mild      # hot derating
+
     a25 = battery_self_discharge(np.array([25.0]))[0]
     a35 = battery_self_discharge(np.array([35.0]))[0]
-    assert a35 == pytest.approx(2.0 * a25, rel=1e-6)               # doubles per 10 K
+    assert a35 == pytest.approx(2.0 * a25, rel=1e-6)                # doubles per 10 K
     assert 0.0 < a25 < 1.0
+
+
+def test_the_battery_temperature_model_has_a_single_definition():
+    """The controller reacts to this ceiling and the bound is computed over it."""
+    from microgrid_expansion.battery import usable_fraction
+    from microgrid_expansion.exact.simulator import BatteryModel
+
+    temperatures = np.linspace(5.0, 45.0, 40)
+    assert np.allclose(battery_usable_fraction(temperatures),
+                       usable_fraction(temperatures))
+    assert np.allclose(BatteryModel().usable_fraction(temperatures),
+                       usable_fraction(temperatures))
 
 
 def test_resource_year_requires_a_stated_temperature():

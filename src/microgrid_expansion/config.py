@@ -1,75 +1,61 @@
-"""Configuration: stage calendar, technology catalogues, economic constants and
-solver settings.
+"""Named constants, derived from the project settings.
 
-Economic and technical constants are those of the reference Benin mini-grid
-dispatch assessment, restated here so this repository is self-contained. Symbols map
-onto the formulation in ``docs/formulation/model.tex`` as annotated.
+Every technical and economic quantity here is read from
+:mod:`microgrid_expansion.settings`, which is the single place a project declares them.
+This module exists only so that the symbols of the formulation keep short, stable names in
+the code; it holds no values of its own.
+
+Declaring these twice is not a style question. A second linear fuel model once lived here
+and disagreed with the fitted efficiency curve by 59 % on its intercept; an inverter price
+and a value of lost load once lived here and silently overrode the ones a user had supplied.
+Both were found by comparing the two copies, which is not a discipline worth relying on.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .settings import default_settings
 
-# ---------------------------------------------------------------------------
-# Economic constants (reference Benin mini-grid dispatch assessment)
-# ---------------------------------------------------------------------------
-DISCOUNT_RATE = 0.12          # r   -- annual discount rate
-PROJECT_YEARS = 25            # planning horizon [yr]
+_S = default_settings()
 
-PV_COST_USD_KW = 500.0        # C^inv_pv   [$/kW]
-BATT_COST_USD_KWH = 450.0     # C^inv_batt [$/kWh]  (BYD LV Flex LFP)
-GEN_COST_USD_KVA = 800.0      # C^inv_ge   [$/kVA]
-INV_COST_USD_KW = 150.0       # C^inv_inv  [$/kW]   (placeholder; refine from catalogue)
+# --- economics (see settings.EconomicSettings) ------------------------------
+DISCOUNT_RATE = _S.economics.discount_rate            # r
+PROJECT_YEARS = _S.economics.horizon_years            # planning horizon [yr]
+DIESEL_PRICE_USD_L = _S.economics.diesel_price_usd_l  # c^fuel
+VOLL_USD_KWH = _S.economics.value_of_lost_load_usd_kwh
+TARIFF_USD_KWH = _S.economics.tariff_usd_kwh
 
-PV_OM_RATE = 0.018            # O_pv   -- annual O&M as fraction of CAPEX
-BATT_OM_RATE = 0.060          # O_batt
-GEN_OM_RATE = 0.080           # O_ge
-INV_OM_RATE = 0.020           # O_inv
+# --- capital and maintenance (see the equipment specifications) -------------
+PV_COST_USD_KW = _S.photovoltaic.cost_usd_kw          # C^inv_pv
+BATT_COST_USD_KWH = _S.battery.cost_usd_kwh           # C^inv_batt
+INV_COST_USD_KW = _S.inverter.cost_usd_kw             # C^inv_inv
+GEN_COST_USD_KVA = max(_S.generators, key=lambda g: g.rating_kw).cost_usd_kw
 
-DIESEL_PRICE_USD_L = 1.29     # c^fuel -- central benchmark [$/L]
-VOLL_USD_KWH = 2.00           # v      -- value of lost load [$/kWh]
+PV_OM_RATE = _S.photovoltaic.om_rate                  # O_pv
+BATT_OM_RATE = _S.battery.om_rate                     # O_batt
+INV_OM_RATE = _S.inverter.om_rate                     # O_inv
+GEN_OM_RATE = max(_S.generators, key=lambda g: g.rating_kw).om_rate
 
-# The generator's fuel characteristic is not declared here. It belongs to the unit, and a
-# catalogue of several ratings carries several curves: see the generator catalogue in
-# microgrid_expansion.settings, where each entry holds the manufacturer's consumption at
-# half, three-quarter and full load and the efficiency is fitted from it. A single linear
-# pair declared here once coexisted with that curve and disagreed with it by 59 % on the
-# no-load intercept.
+# --- storage ----------------------------------------------------------------
+BATTERY_CHEMISTRY = _S.battery.chemistry
+BATT_CYCLES = _S.battery.cycles
+BATT_LIFETIME_Y = _S.battery.lifetime_years
+ETA_CHARGE = _S.battery.charge_efficiency             # eta^c
+ETA_DISCHARGE = _S.battery.discharge_efficiency       # eta^d
+SOC_MIN_FRAC = _S.battery.soc_min                     # underline{e}
+SOC_MAX_FRAC = _S.battery.soc_max                     # overline{e}
 
-# Battery degradation cost [$/kWh discharged] = replacement / lifetime throughput
-BATT_CYCLES = 6000
-BATT_LIFETIME_Y = 16
+# --- generator --------------------------------------------------------------
+GEN_MIN_LOAD_FRAC = min(g.min_load_fraction for g in _S.generators)   # phi^ge
+GEN_CATALOG_KW = tuple(g.rating_kw for g in _S.generators)            # kappa^ge_s
+GEN_SALVAGE_FRAC = max(_S.generators, key=lambda g: g.rating_kw).salvage_fraction
 
-# ---------------------------------------------------------------------------
-# Battery technical parameters
-# ---------------------------------------------------------------------------
-# Storage chemistry. It sets the temperature response of the usable capacity and of the
-# self-discharge, which the controller reacts to and the bound is computed over; see
-# microgrid_expansion.battery. Must match the pack actually specified above.
-BATTERY_CHEMISTRY = "lfp"     # BYD LV Flex LFP
+# --- modular unit sizes -----------------------------------------------------
+PV_UNIT_KW = _S.photovoltaic.unit_kw                  # u^pv
+BATT_UNIT_KWH = _S.battery.unit_kwh                   # u^batt
+INV_UNIT_KW = _S.inverter.unit_kw                     # u^inv
 
-ETA_CHARGE = 0.975            # eta^c
-ETA_DISCHARGE = 0.975         # eta^d
-SOC_MIN_FRAC = 0.05           # underline{e}  -- protective discharge trip
-SOC_MAX_FRAC = 0.95           # overline{e}   -- protective charge trip
-
-# Generator
-GEN_MIN_LOAD_FRAC = 0.30      # phi^ge -- minimum stable loading fraction
-
-# ---------------------------------------------------------------------------
-# Capacity increments (modular) and the generator catalogue (single, replaceable unit)
-# ---------------------------------------------------------------------------
-# Modular technologies: capacity is added in identical units.
-PV_UNIT_KW = 0.5              # u^pv   -- rated power of one PV panel [kW]
-BATT_UNIT_KWH = 5.0           # u^batt -- usable energy of one battery module [kWh]
-INV_UNIT_KW = 2.5             # u^inv  -- rated power of one inverter module [kW]
-
-# Generator: a single unit chosen from a catalogue and replaced (upgrades only).
-GEN_CATALOG_KW = (5.0, 10.0, 18.0, 30.0)   # kappa^ge_s [kW]
-GEN_SALVAGE_FRAC = 0.40       # V^ge_s -- resale/transfer value as a fraction of capex
-
-# Brownfield initial condition: existing installed capacity at commissioning
-# (all zero -> greenfield; GEN_INITIAL_KW must be a catalogue size).
+# --- brownfield initial condition (existing installed capacity) -------------
 INITIAL_PV_KW = 0.0
 INITIAL_BATT_KWH = 0.0
 INITIAL_INV_KW = 0.0

@@ -41,6 +41,10 @@ class Site:
     longitude: float | None = None
     irradiance_file: str | None = None
     meter_file: str | None = None
+    #: Standard time offset from UTC [h]. A property of the site, not of the acquisition:
+    #: an hour's displacement between generation and consumption is precisely the error a
+    #: storage sizing is most sensitive to, and it would pass unnoticed.
+    utc_offset_hours: int = 1
 
     @property
     def n_households(self) -> int:

@@ -29,9 +29,12 @@ INV_OM_RATE = 0.020           # O_inv
 DIESEL_PRICE_USD_L = 1.29     # c^fuel -- central benchmark [$/L]
 VOLL_USD_KWH = 2.00           # v      -- value of lost load [$/kWh]
 
-# Generator fuel characteristic (linear): F = F0*y + F1*P_ge  [L/h]
-FUEL_F0 = 1.10                # F_0 -- no-load intercept [L/h]
-FUEL_F1 = 0.252               # F_1 -- incremental slope [L/kWh]
+# The generator's fuel characteristic is not declared here. It belongs to the unit, and a
+# catalogue of several ratings carries several curves: see the generator catalogue in
+# microgrid_expansion.settings, where each entry holds the manufacturer's consumption at
+# half, three-quarter and full load and the efficiency is fitted from it. A single linear
+# pair declared here once coexisted with that curve and disagreed with it by 59 % on the
+# no-load intercept.
 
 # Battery degradation cost [$/kWh discharged] = replacement / lifetime throughput
 BATT_CYCLES = 6000

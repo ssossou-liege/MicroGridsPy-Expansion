@@ -59,15 +59,32 @@ class Asset:
                 "total": capital + replacements + maintenance - salvage}
 
 
-#: The four technologies, with the lifetimes that drive replacement and salvage.
-def default_assets() -> dict[str, Asset]:
+def assets_from_settings(settings=None) -> dict[str, Asset]:
+    """The four technologies, described by the project's own equipment settings.
+
+    Cost, lifetime and maintenance come from the same place: a lifetime drives replacement
+    and salvage, so declaring it apart from the price it applies to invites the two to
+    describe different equipment.
+    """
+    from ..settings import default_settings
+
+    settings = default_settings() if settings is None else settings
+    generator = max(settings.generators, key=lambda g: g.rating_kw)
     return {
-        "pv": Asset("pv", config.PV_COST_USD_KW, 25, config.PV_OM_RATE),
-        "battery": Asset("battery", config.BATT_COST_USD_KWH,
-                         config.BATT_LIFETIME_Y, config.BATT_OM_RATE),
-        "inverter": Asset("inverter", config.INV_COST_USD_KW, 10, config.INV_OM_RATE),
-        "generator": Asset("generator", config.GEN_COST_USD_KVA, 15, config.GEN_OM_RATE),
+        "pv": Asset("pv", settings.photovoltaic.cost_usd_kw,
+                    settings.photovoltaic.lifetime_years, settings.photovoltaic.om_rate),
+        "battery": Asset("battery", settings.battery.cost_usd_kwh,
+                         settings.battery.lifetime_years, settings.battery.om_rate),
+        "inverter": Asset("inverter", settings.inverter.cost_usd_kw,
+                          settings.inverter.lifetime_years, settings.inverter.om_rate),
+        "generator": Asset("generator", generator.cost_usd_kw,
+                           generator.lifetime_years, generator.om_rate),
     }
+
+
+def default_assets() -> dict[str, Asset]:
+    """The technologies as configured for this project."""
+    return assets_from_settings()
 
 
 @dataclass

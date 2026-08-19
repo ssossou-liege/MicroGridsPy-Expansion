@@ -1,0 +1,5 @@
+cluster,median_energy_kwh_day,median_peak_power_w,load_factor_median
+0,0.2,21.5,0.37
+1,0.15,18.6,0.36
+2,0.5,53.6,0.45
+3,0.23,22.1,0.44

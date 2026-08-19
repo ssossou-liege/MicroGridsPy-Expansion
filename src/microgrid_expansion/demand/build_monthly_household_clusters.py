@@ -11,17 +11,18 @@ import pandas as pd
 from ..paths import DEMAND_DIR, REFERENCE_DIR
 
 
-SITE_FILES = {
-    "Gbowele": "gbo_meter_readings.parquet",
-    "Samionta": "sam_meter_readings.parquet",
-}
+# The reference sites, their meter files and their census come from the site registry.
+# They were once declared here as well; two declarations of one community's size is how a
+# calibration and the model it feeds come to describe different villages.
+from ..sites import HOUSEHOLD_TYPES as _HOUSEHOLD_TYPES
+from ..sites import SITES as _SITES
 
-CENSUS_TOTALS = {
-    "Gbowele": {"HH1": 143, "HH2": 5, "HH3": 11},
-    "Samionta": {"HH1": 231, "HH2": 0, "HH3": 0},
-}
+SITE_FILES = {name: site.meter_file for name, site in _SITES.items()
+              if site.meter_file is not None}
+CENSUS_TOTALS = {name: dict(site.census) for name, site in _SITES.items()}
+HOUSEHOLD_TYPES = list(_HOUSEHOLD_TYPES)
 
-HOUSEHOLD_TYPES = ["HH1", "HH2", "HH3"]
+#: Metering interval of the reference readings [h].
 INTERVAL_HOURS = 0.25
 
 

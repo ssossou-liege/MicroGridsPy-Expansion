@@ -46,6 +46,18 @@ class BatteryModel:
     c_rate: float = 0.25
     #: Storage chemistry, by name or as a Chemistry; drives the temperature response.
     chemistry: str = config.BATTERY_CHEMISTRY
+    #: State of charge the plant starts from, as a fraction of the usable ceiling. Declared
+    #: once here and read by the bound, so the two cannot start from different states.
+    initial_soc_fraction: float = 0.5
+
+    @classmethod
+    def from_spec(cls, spec) -> "BatteryModel":
+        """Build the operating model of the pack described in the project settings."""
+        return cls(charge_efficiency=spec.charge_efficiency,
+                   discharge_efficiency=spec.discharge_efficiency,
+                   soc_min=spec.soc_min, soc_max=spec.soc_max, c_rate=spec.c_rate,
+                   chemistry=spec.chemistry,
+                   initial_soc_fraction=spec.initial_soc_fraction)
 
     def usable_fraction(self, t_amb_c: np.ndarray) -> np.ndarray:
         """Temperature derating of the nameplate energy (single definition)."""
@@ -70,6 +82,19 @@ class GeneratorModel:
     eta_1: float = 0.4215
     eta_2: float = -0.2368
     eta_floor: float = 0.02
+
+    @classmethod
+    def from_spec(cls, spec, fuel_price_usd_l: float) -> "GeneratorModel":
+        """Build the operating model of one catalogue entry from its datasheet.
+
+        Each rating carries its own consumption figures, so each gets its own efficiency
+        curve. Applying one unit's curve to a whole catalogue would make the sizes
+        indistinguishable in exactly the dimension the certificate arbitrates over.
+        """
+        a, b, c = spec.efficiency_coefficients()
+        return cls(min_load_fraction=spec.min_load_fraction,
+                   fuel_price_usd_l=fuel_price_usd_l,
+                   eta_0=a, eta_1=b, eta_2=c)
 
     def efficiency(self, part_load: np.ndarray | float) -> np.ndarray:
         """Conversion efficiency at a given fraction of the nameplate rating."""
@@ -243,7 +268,7 @@ def simulate(
     curtailed = np.zeros(n)
     unserved = np.zeros(n)
     soc = np.zeros(n + 1)
-    soc[0] = min(0.5 * battery.soc_max * capacities.battery_kwh,
+    soc[0] = min(battery.initial_soc_fraction * battery.soc_max * capacities.battery_kwh,
                  ceilings[0] if n else 0.0)
     spill = 0.0
 

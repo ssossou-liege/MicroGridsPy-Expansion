@@ -47,7 +47,8 @@ ERA5_VARIABLES = (
     "10m_v_component_of_wind",             # v10, m/s
 )
 
-#: Standard time offset of the study area (West Africa Time, no daylight saving).
+#: Fallback offset when a site does not declare one (West Africa Time, no daylight saving).
+#: The authoritative value is the site's own ``utc_offset_hours``.
 LOCAL_UTC_OFFSET_HOURS = 1
 #: ERA5 labels an accumulated value by the end of the hour it covers; the model indexes an
 #: hour by its beginning, so one hour is subtracted when relabelling.
@@ -253,7 +254,8 @@ def download_era5(
     else:
         print(f"--> cache: {raw_path.name}")
 
-    frame = process_era5(open_era5(raw_path), longitude=site.longitude)
+    frame = process_era5(open_era5(raw_path), utc_offset_hours=site.utc_offset_hours,
+                         longitude=site.longitude)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / series_filename(site, first_year, last_year)

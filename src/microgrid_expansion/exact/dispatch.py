@@ -25,6 +25,23 @@ from scipy.optimize import linprog
 from .. import config
 
 
+def _toy_fuel_coefficients() -> tuple[float, float]:
+    """Fuel cost per generator-on hour and per kWh, from the catalogue's own curve."""
+    from ..settings import default_settings
+    from .lower_bound import fuel_minorant
+    from .simulator import GeneratorModel
+
+    settings = default_settings()
+    spec = min(settings.generators, key=lambda g: abs(g.rating_kw - 16.0))
+    a, b, c = spec.efficiency_coefficients()
+    model = GeneratorModel(eta_0=a, eta_1=b, eta_2=c,
+                           min_load_fraction=spec.min_load_fraction,
+                           fuel_price_usd_l=settings.economics.diesel_price_usd_l)
+    intercept, slope = fuel_minorant(model, spec.rating_kw)
+    price = settings.economics.diesel_price_usd_l
+    return intercept * price, slope * price
+
+
 @dataclass
 class ToyInstance:
     """A single representative day: demand, PV unit-yield and economics.
@@ -59,8 +76,10 @@ class ToyInstance:
     c_batt: float = config.BATT_COST_USD_KWH
     c_inv: float = config.INV_COST_USD_KW
     c_ge: float = config.GEN_COST_USD_KVA
-    fuel_per_kwh: float = config.DIESEL_PRICE_USD_L * config.FUEL_F1
-    fuel_fixed: float = config.DIESEL_PRICE_USD_L * config.FUEL_F0   # per generator-on hour
+    # Derived from the catalogue's own fuel curve rather than from a separate linear pair,
+    # so the toy and the real oracles price fuel the same way.
+    fuel_per_kwh: float = field(default_factory=lambda: _toy_fuel_coefficients()[1])
+    fuel_fixed: float = field(default_factory=lambda: _toy_fuel_coefficients()[0])
     c_deg: float = field(default_factory=config.battery_degradation_cost)
     voll: float = config.VOLL_USD_KWH
     eta_c: float = config.ETA_CHARGE

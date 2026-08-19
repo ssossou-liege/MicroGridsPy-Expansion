@@ -11,13 +11,26 @@ import pandas as pd
 from . import build_monthly_household_clusters as clustering
 from ..paths import DEMAND_DIR, REFERENCE_DIR
 
-# Fixed reference cluster profiles (C0..C3) from RAMP calibration.
-REFERENCE_CLUSTER_FEATURES = {
-    "0": {"median_energy_kwh_day": 0.20, "median_peak_power_w": 21.5, "load_factor_median": 0.37},
-    "1": {"median_energy_kwh_day": 0.15, "median_peak_power_w": 18.6, "load_factor_median": 0.36},
-    "2": {"median_energy_kwh_day": 0.50, "median_peak_power_w": 53.6, "load_factor_median": 0.45},
-    "3": {"median_energy_kwh_day": 0.23, "median_peak_power_w": 22.1, "load_factor_median": 0.44},
-}
+def load_reference_cluster_features(path=None) -> dict[str, dict[str, float]]:
+    """Reference profiles defining the operative partition of behaviours.
+
+    These four profiles decide which archetype every measured household-month belongs to,
+    and therefore underpin the mixture law, the growth envelope and the appliance
+    calibration alike. They are read from the calibration directory rather than written into
+    this file: twelve numbers on which everything downstream depends belong with the data
+    they describe, where they can be inspected, versioned and replaced.
+    """
+    from ..paths import REFERENCE_DIR
+
+    path = (REFERENCE_DIR / "archetype_reference_profiles.csv") if path is None else path
+    table = pd.read_csv(path)
+    table["cluster"] = table["cluster"].astype(str)
+    return {row["cluster"]: {k: float(v) for k, v in row.items() if k != "cluster"}
+            for _, row in table.iterrows()}
+
+
+#: Loaded once; the calibration does not change within a run.
+REFERENCE_CLUSTER_FEATURES = load_reference_cluster_features()
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(

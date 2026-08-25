@@ -14,7 +14,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .paths import RESULTS_DIR
+from .paths import REFERENCE_DIR, RESULTS_DIR
 from .sites import Site, get_site
 
 CACHE_DIR = RESULTS_DIR / "cache"
@@ -49,12 +49,29 @@ class SiteYear:
         return float(self.demand_kw.max())
 
 
+def _calibration_fingerprint() -> str:
+    """Digest of the calibration tables the demand generator reads.
+
+    Without it a cached instance survives a recalibration and the run silently sizes
+    against the demand of a model that no longer exists — which is not hypothetical: the
+    appliance windows were corrected under a cache that would have gone on serving the
+    uncorrected year.
+    """
+    digest = hashlib.sha1()
+    for path in sorted(REFERENCE_DIR.glob("*.csv")):
+        digest.update(path.name.encode())
+        digest.update(path.read_bytes())
+    return digest.hexdigest()[:12]
+
+
 def _cache_key(site: str, year: int, trajectory: str, maturity_months: int,
                seed: int, chemistry: str) -> str:
     # The chemistry belongs in the key: it changes the storage ceiling and the
     # self-discharge the instance carries, so a cached instance from another chemistry
-    # would silently describe a different battery.
-    raw = f"{site}|{year}|{trajectory}|{maturity_months}|{seed}|{chemistry}"
+    # would silently describe a different battery. So does the calibration, for the same
+    # reason: it decides the demand the instance carries.
+    raw = (f"{site}|{year}|{trajectory}|{maturity_months}|{seed}|{chemistry}"
+           f"|{_calibration_fingerprint()}")
     return hashlib.sha1(raw.encode()).hexdigest()[:16]
 
 

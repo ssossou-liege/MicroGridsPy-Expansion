@@ -80,7 +80,8 @@ class PhotovoltaicSpec:
     """A photovoltaic module and the array losses around it."""
 
     unit_kw: float = 0.5                       # rated power of one panel
-    cost_usd_kw: float = 500.0
+    #: 100 000 FCFA/kW quoted on the Beninese market.
+    cost_usd_kw: float = 164.6
     lifetime_years: int = 25
     om_rate: float = 0.018                     # annual, as a fraction of capital
     noct_c: float = 45.0
@@ -89,7 +90,10 @@ class PhotovoltaicSpec:
     faiman_u0_w_m2_k: float = 25.0
     faiman_u1_w_s_m3_k: float = 6.84
     provenance: Provenance = field(default_factory=lambda: Provenance(
-        source="crystalline silicon, open rack; generic datasheet values", verified=False))
+        source="100 000 FCFA/kW quoted on the Beninese market (2026); crystalline "
+               "silicon, open rack, generic technical characteristics",
+        verified=True,
+        note="the price is sourced; the thermal characteristics remain generic"))
 
 
 @dataclass
@@ -98,7 +102,8 @@ class BatterySpec:
 
     chemistry: str = "lfp"
     unit_kwh: float = 5.0                      # usable energy of one module
-    cost_usd_kwh: float = 450.0
+    #: 200 000 FCFA/kWh quoted on the Beninese market.
+    cost_usd_kwh: float = 329.3
     lifetime_years: int = 16
     cycles: int = 6000
     om_rate: float = 0.060
@@ -111,7 +116,11 @@ class BatterySpec:
     #: State of charge the plant starts from, as a fraction of the usable ceiling.
     initial_soc_fraction: float = 0.5
     provenance: Provenance = field(default_factory=lambda: Provenance(
-        source="BYD LV Flex, lithium iron phosphate", verified=False))
+        source="200 000 FCFA/kWh quoted on the Beninese market (2026); BYD LV Flex, "
+               "lithium iron phosphate",
+        verified=True,
+        note="the price is sourced; cycle life and efficiencies remain manufacturer "
+             "figures"))
 
     def degradation_usd_kwh(self) -> float:
         """Throughput cost of storage [$ per kWh discharged]."""
@@ -131,12 +140,21 @@ class GeneratorSpec:
 
     rating_kw: float
     fuel_l_per_h: dict[float, float]
-    cost_usd_kw: float = 800.0
+    #: Generators are quoted per kVA of apparent power while the model sizes active
+    #: power, so the quotation and the power factor are held separately rather than
+    #: silently conflated: at a factor of 0.8 a kVA buys only 0.8 kW.
+    cost_usd_kva: float = 411.6
+    power_factor: float = 0.8
     lifetime_years: int = 15
     om_rate: float = 0.080
     min_load_fraction: float = 0.30
     salvage_fraction: float = 0.40
     provenance: Provenance = field(default_factory=Provenance)
+
+    @property
+    def cost_usd_kw(self) -> float:
+        """Capital cost per kilowatt of active power."""
+        return self.cost_usd_kva / self.power_factor
 
     def efficiency_coefficients(self) -> tuple[float, float, float]:
         """Fit ``eta = a + b x + c x^2`` to the published consumption figures.
@@ -160,31 +178,34 @@ class GeneratorSpec:
 
 
 def default_generator_catalogue() -> list[GeneratorSpec]:
-    """A catalogue of four ratings.
+    """The Perkins 400-series units available in the size range this study needs.
 
-    Only the 16 kW unit carries measured consumption. The others reproduce its part-load
-    *shape* scaled to their rating, which is a working assumption and nothing more: it is
-    marked unverified so that a project relying on those sizes is told to supply real
-    figures. The certificate branches over generator size, so these curves are what
-    distinguishes the sizes economically.
+    Each entry carries the consumption its manufacturer publishes at half, three-quarter
+    and full load, so the four ratings are genuinely distinguishable rather than one
+    curve stretched over a catalogue — which matters, the certificate arbitrating between
+    exactly these sizes.
+
+    Ratings are quoted in kVA of apparent power and converted to the active power the model
+    sizes. Their specific consumption is not monotone in size: the 15 kVA unit is a
+    naturally aspirated three-cylinder and burns less per kilowatt-hour at full load than
+    the larger four-cylinder, which is precisely the kind of detail a single scaled curve
+    erases.
     """
-    measured = {0.5: 3.0, 0.75: 4.0, 1.0: 5.3}          # CGM 20 kVA / Perkins 404A-22G1
-    reference_rating = 16.0
-    catalogue = [GeneratorSpec(
-        rating_kw=reference_rating, fuel_l_per_h=dict(measured),
-        provenance=Provenance(source="CGM 20 kVA / Perkins 404A-22G1 datasheet",
-                              verified=True))]
-    for rating in (5.0, 10.0, 30.0):
-        scaled = {load: value * rating / reference_rating
-                  for load, value in measured.items()}
-        catalogue.append(GeneratorSpec(
-            rating_kw=rating, fuel_l_per_h=scaled,
-            provenance=Provenance(
-                source=f"part-load shape of the {reference_rating:.0f} kW unit, "
-                       f"scaled to {rating:.0f} kW",
-                verified=False,
-                note="replace with the manufacturer's figures before relying on this size")))
-    return sorted(catalogue, key=lambda g: g.rating_kw)
+    perkins = Provenance(
+        source="Perkins 400 series, manufacturers' published consumption at 50/75/100 % "
+               "load; ratings converted from kVA at the catalogue power factor",
+        verified=True)
+    return [
+        GeneratorSpec(rating_kw=8.0, fuel_l_per_h={0.5: 1.7, 0.75: 2.3, 1.0: 3.0},
+                      provenance=Provenance(source="Perkins 403A-11G1, 10 kVA — " +
+                                            perkins.source, verified=True)),
+        GeneratorSpec(rating_kw=12.0, fuel_l_per_h={0.5: 2.0, 0.75: 2.8, 1.0: 3.7},
+                      provenance=Provenance(source="Perkins 403A-15G1, 15 kVA — " +
+                                            perkins.source, verified=True)),
+        GeneratorSpec(rating_kw=16.0, fuel_l_per_h={0.5: 2.9, 0.75: 4.0, 1.0: 5.3},
+                      provenance=Provenance(source="Perkins 404A-22G1, 20 kVA — " +
+                                            perkins.source, verified=True)),
+    ]
 
 
 @dataclass
@@ -202,21 +223,112 @@ class InverterSpec:
         note="restate through the currency block if the euro-dollar rate is updated"))
 
 
+@dataclass
+class CouplingSpec:
+    """Where the array joins the plant, and what that junction permits.
+
+    A hybrid inverter is not a bare converter: it ships with its own maximum-power-point
+    trackers, two to four of them on current three-phase units, and it expects to be the
+    single authority over the battery. Bolting separate charge controllers onto the same
+    lithium bank puts two regulators on one pack, and unless both answer to the same
+    battery-management conversation the result is conflicting set-points and a real risk of
+    overcharge. It is done — Victron coordinates its controllers and its inverters from one
+    device that holds the conversation with the pack — but only inside a single
+    manufacturer's ecosystem, and never by mixing brands. The model therefore does not size
+    external controllers at all. Conversion on the direct-current side is *inside* the
+    hybrid inverter and is bought with it.
+
+    What that costs the design is not money but a ceiling. Integrated trackers accept only
+    so much array per kilowatt of inverter — a thirty-kilowatt three-phase unit takes
+    thirty-nine kilowatts of array, a ratio of about 1.3 — so enlarging the array past that
+    means buying another inverter. Enlarging the *array* and enlarging the *converter* are
+    thus one decision, not two.
+
+    The alternative is to put the surplus array on the alternating-current side through its
+    own string inverters, where it serves the load without passing the hybrid inverter at
+    all. That has its own ceiling: off grid, whatever the load does not take must be
+    absorbable by the battery inverter, which is why such an array is not sized beyond the
+    hybrid inverter's own rating. It is also curtailed by frequency shift rather than by
+    command, and it pays a second conversion on everything that reaches storage.
+
+    Which of the two is cheaper is not assumed: at ``"auto"`` both are certified and the
+    result reports which prevailed and by how much.
+    """
+
+    #: ``"dc"``, ``"ac"``, or ``"auto"`` to let the search prove the choice.
+    architecture: str = "auto"
+    #: Array admitted per kilowatt of hybrid inverter by its integrated trackers. 1.3 is
+    #: what current three-phase units publish (30 kW of inverter, 39 kW of array).
+    dc_ac_ratio_max: float = 1.3
+    #: Array admitted per kilowatt of hybrid inverter when coupled on the alternating side.
+    #: Held at parity: off grid the battery inverter must be able to absorb the whole array
+    #: the instant the load drops.
+    ac_ratio_max: float = 1.0
+    #: String inverters for an alternating-coupled array, 50 000 FCFA/kW. Nothing
+    #: corresponds to this under direct-current coupling, the conversion being integrated.
+    string_inverter_cost_usd_kw: float = 82.3
+    lifetime_years: int = 12
+    om_rate: float = 0.020
+    #: Round-trip penalty on array energy that reaches storage through the alternating bus,
+    #: converted up by the string inverter and down again by the hybrid inverter.
+    ac_double_conversion_efficiency: float = 0.94
+    provenance: Provenance = field(default_factory=lambda: Provenance(
+        source="integrated-tracker ratio from current three-phase hybrid inverter data "
+               "sheets (30 kW AC / 39 kW PV); string inverters at 50 000 FCFA/kW quoted on "
+               "the Beninese market (2026); parity rule for off-grid alternating coupling",
+        verified=True))
+
+    def cost_usd_kw(self, architecture: str) -> float:
+        """Conversion bought per kilowatt of array, beyond the hybrid inverter itself."""
+        if architecture == "dc":
+            return 0.0                     # the trackers come inside the inverter
+        if architecture == "ac":
+            return self.string_inverter_cost_usd_kw
+        raise ValueError(f"architecture must be 'dc' or 'ac', not {architecture!r}")
+
+    def array_ratio_max(self, architecture: str) -> float:
+        """Array admitted per kilowatt of hybrid inverter under the given architecture."""
+        if architecture == "dc":
+            return self.dc_ac_ratio_max
+        if architecture == "ac":
+            return self.ac_ratio_max
+        raise ValueError(f"architecture must be 'dc' or 'ac', not {architecture!r}")
+
+    def architectures(self) -> tuple[str, ...]:
+        """The architectures the search must consider."""
+        return ("dc", "ac") if self.architecture == "auto" else (self.architecture,)
+
+
 # ---------------------------------------------------------------------- economics
 @dataclass
 class EconomicSettings:
     """Discounting, fuel and the price put on unserved energy."""
 
-    discount_rate: float = 0.12
+    discount_rate: float = 0.08
     horizon_years: int = 25
     diesel_price_usd_l: float = 1.29
-    #: Tariff actually charged on the micro-grid; 160 FCFA/kWh. It is the revealed lower
+    #: Tariff the operator intends to charge; 160 FCFA/kWh. It is also the revealed lower
     #: bound of what a connected household is prepared to pay for a kilowatt-hour.
     tariff_usd_kwh: float = 0.263
+    #: Whether that tariff is a *target* to be reached with a capital subsidy. When it is,
+    #: the model reports the share of the investment a grant must cover for the levelised
+    #: cost to fall to the target. When it is not, the project is assumed to recover its
+    #: full cost and the tariff simply is the levelised cost.
+    tariff_is_target: bool = True
     #: Value of lost load. See ``voll_provenance``: it fixes the reliability the design
     #: aims at, so it is reported across a range rather than asserted as one number.
     value_of_lost_load_usd_kwh: float = 1.00
     value_of_lost_load_range_usd_kwh: tuple[float, float] = (0.50, 3.00)
+    discount_provenance: Provenance = field(default_factory=lambda: Provenance(
+        source="World Bank, Discounting Costs and Benefits in Economic Analysis of World "
+               "Bank Projects, OPSPQ, May 2016",
+        verified=True,
+        note="the guidance derives the rate from per-capita growth through the Ramsey "
+             "formula: client-country growth of about 3 % gives 6 %, and the 25-75 "
+             "percentile band spans 2-10 %, while the descriptive approach suggests "
+             "8-12 % for developing countries. 8 % is the lower end of the descriptive "
+             "band and sits inside the Ramsey interval; the guidance asks for a "
+             "sensitivity analysis over a range rather than a single value"))
     diesel_provenance: Provenance = field(default_factory=lambda: Provenance(
         source="central benchmark for the study region", verified=False,
         note="the formulation treats the fuel price as an uncertainty axis; this is its "
@@ -303,6 +415,7 @@ class ProjectSettings:
     photovoltaic: PhotovoltaicSpec = field(default_factory=PhotovoltaicSpec)
     battery: BatterySpec = field(default_factory=BatterySpec)
     inverter: InverterSpec = field(default_factory=InverterSpec)
+    coupling: CouplingSpec = field(default_factory=CouplingSpec)
     generators: list[GeneratorSpec] = field(default_factory=default_generator_catalogue)
     economics: EconomicSettings = field(default_factory=EconomicSettings)
     controller: ControllerSettings = field(default_factory=ControllerSettings)
@@ -321,6 +434,11 @@ class ProjectSettings:
             raise ValueError("battery state-of-charge limits must satisfy 0 <= min < max <= 1")
         if not 0.0 < self.economics.discount_rate < 1.0:
             raise ValueError("the discount rate must lie strictly between 0 and 1")
+        if self.coupling.architecture not in ("dc", "ac", "auto"):
+            raise ValueError("coupling.architecture must be 'dc', 'ac' or 'auto', "
+                             f"not {self.coupling.architecture!r}")
+        if min(self.coupling.dc_ac_ratio_max, self.coupling.ac_ratio_max) <= 0.0:
+            raise ValueError("the array-to-inverter ratios must be strictly positive")
         if self.economics.horizon_years <= 0:
             raise ValueError("the horizon must be a positive number of years")
         if not self.generators:
@@ -419,8 +537,15 @@ class ProjectSettings:
                     for key, item in value.items():
                         if not hasattr(current, key):
                             continue
-                        if key == "provenance" and isinstance(item, dict):
-                            item = Provenance(**item)
+                        # Rebuild a nested record from its own type rather than from its
+                        # name. Keying on the name ``provenance`` left every differently
+                        # named one — ``diesel_provenance``, ``voll_provenance`` — as a
+                        # plain mapping, so a reloaded project reported no unsourced
+                        # parameter at all and the one guarantee this file makes was void
+                        # for exactly the projects that read their settings from a file.
+                        existing = getattr(current, key)
+                        if is_dataclass(existing) and isinstance(item, dict):
+                            item = type(existing)(**item)
                         setattr(current, key, item)
                 else:
                     setattr(settings, f.name, value)

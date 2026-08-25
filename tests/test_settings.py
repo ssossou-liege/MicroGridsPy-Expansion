@@ -145,14 +145,25 @@ def test_unsourced_parameters_are_reported():
     """A placeholder must announce itself rather than pass as a measurement."""
     unverified = dict(default_settings().unverified())
     assert "economics.voll_provenance" in unverified      # argued, not measured
-    assert "photovoltaic.provenance" in unverified        # generic datasheet values
+    assert "economics.diesel_provenance" in unverified    # central value of an axis
     assert all(not p.verified for p in unverified.values())
 
 
-def test_the_measured_generator_is_marked_verified():
+def test_every_generator_carries_its_own_measured_curve():
+    """The catalogue must be sourced unit by unit, not one curve stretched over sizes.
+
+    A single curve rescaled to every rating would make the sizes indistinguishable on
+    efficiency, and the certificate arbitrates precisely between them. The guard is that
+    specific consumption is *not* an affine function of the rating: real engines depart
+    from that, extrapolated ones cannot.
+    """
     catalogue = default_generator_catalogue()
-    measured = [g for g in catalogue if g.provenance.verified]
-    assert len(measured) == 1 and measured[0].rating_kw == 16.0
+    assert catalogue and all(g.provenance.verified for g in catalogue)
+    assert all("Perkins" in g.provenance.source for g in catalogue)
+
+    specific = [g.fuel_l_per_h[1.0] / g.rating_kw for g in catalogue]
+    assert len(set(specific)) == len(specific), "one curve rescaled, not measured units"
+    assert not (specific[0] > specific[1] > specific[2]), "monotone: looks extrapolated"
 
 
 def test_a_sourced_parameter_stops_being_reported():
@@ -253,3 +264,98 @@ def test_the_value_of_lost_load_is_reported_as_a_range_not_a_point():
 def test_the_inverter_price_is_now_sourced():
     assert "inverter.provenance" not in dict(default_settings().unverified())
     assert default_settings().inverter.provenance.verified
+
+
+# --------------------------------------------------- tariff target and subsidy
+def test_a_generator_is_quoted_per_kva_and_sized_per_kw():
+    """Conflating the two would understate the generator by the power factor."""
+    from microgrid_expansion.settings import GeneratorSpec
+
+    spec = GeneratorSpec(rating_kw=10.0, fuel_l_per_h={0.5: 2.0, 0.75: 2.6, 1.0: 3.4},
+                         cost_usd_kva=400.0, power_factor=0.8)
+    assert spec.cost_usd_kw == pytest.approx(500.0)
+    assert spec.cost_usd_kw > spec.cost_usd_kva
+
+
+def test_the_subsidy_closes_the_gap_between_cost_and_target():
+    """A grant covering a share of the investment lowers the levelised cost in proportion."""
+    from microgrid_expansion.post.economics import life_cycle_cost
+
+    capacities = {"pv": 20.0, "battery": 60.0, "inverter": 8.0, "generator": 10.0}
+    full = life_cycle_cost(capacities, 3000.0, 20_000.0)
+    target = full.lcoe_usd_kwh / 2.0
+    subsidised = life_cycle_cost(capacities, 3000.0, 20_000.0,
+                                 tariff_target_usd_kwh=target)
+    assert subsidised.subsidy_fraction == pytest.approx(0.5, rel=1e-9)
+    assert subsidised.subsidy_usd == pytest.approx(0.5 * full.net_present_cost, rel=1e-9)
+    assert subsidised.tariff_usd_kwh == pytest.approx(target)
+
+
+def test_a_target_above_the_cost_needs_no_subsidy():
+    from microgrid_expansion.post.economics import life_cycle_cost
+
+    capacities = {"pv": 20.0, "battery": 60.0, "inverter": 8.0, "generator": 10.0}
+    full = life_cycle_cost(capacities, 3000.0, 20_000.0)
+    generous = life_cycle_cost(capacities, 3000.0, 20_000.0,
+                               tariff_target_usd_kwh=full.lcoe_usd_kwh * 2)
+    assert generous.subsidy_fraction == 0.0
+    assert generous.subsidy_usd == 0.0
+
+
+def test_without_a_target_the_tariff_is_the_levelised_cost():
+    """Full cost recovery: the project charges what it costs."""
+    from microgrid_expansion.post.economics import life_cycle_cost
+
+    result = life_cycle_cost({"pv": 10.0, "battery": 20.0, "inverter": 5.0,
+                              "generator": 5.0}, 1000.0, 10_000.0)
+    assert result.tariff_target_usd_kwh is None
+    assert result.tariff_usd_kwh == pytest.approx(result.lcoe_usd_kwh)
+    assert result.cost_reflective_tariff_usd_kwh == pytest.approx(result.lcoe_usd_kwh)
+    assert result.subsidy_fraction == 0.0
+
+
+def test_the_discount_rate_is_sourced_and_lowering_it_reduces_the_annualised_cost():
+    from microgrid_expansion.post.economics import life_cycle_cost
+
+    settings = default_settings()
+    assert settings.economics.discount_rate == pytest.approx(0.08)
+    assert settings.economics.discount_provenance.verified
+    assert "World Bank" in settings.economics.discount_provenance.source
+
+    capacities = {"pv": 10.0, "battery": 20.0, "inverter": 5.0, "generator": 5.0}
+    cheap = life_cycle_cost(capacities, 1000.0, 10_000.0, discount_rate=0.08)
+    dear = life_cycle_cost(capacities, 1000.0, 10_000.0, discount_rate=0.12)
+    assert cheap.annualised_cost < dear.annualised_cost
+
+
+def test_the_tariff_target_can_be_switched_off():
+    settings = default_settings()
+    assert settings.economics.tariff_is_target is True
+    settings.economics.tariff_is_target = False
+    settings.validate()          # still a valid project
+
+
+def test_an_unsourced_parameter_survives_a_round_trip(tmp_path):
+    """Reloading a project must not quietly promote its placeholders to measurements.
+
+    The guarantee this module makes is that an unsourced value announces itself. That
+    guarantee lived only in memory: reconstruction keyed on the field *name* ``provenance``,
+    so records named otherwise — the diesel price, the value of lost load — came back as
+    plain mappings and the report came back empty. A project that reads its settings from a
+    file, which is to say every real project, was told everything was sourced.
+    """
+    from microgrid_expansion.settings import ProjectSettings, Provenance, default_settings
+
+    settings = default_settings()
+    before = dict(settings.unverified())
+    assert before, "the fixture needs at least one unsourced parameter"
+
+    path = tmp_path / "projet.yaml"
+    settings.save(path)
+    reloaded = ProjectSettings.load(path)
+
+    assert dict(reloaded.unverified()).keys() == before.keys()
+    assert isinstance(reloaded.economics.diesel_provenance, Provenance)
+    assert not reloaded.economics.diesel_provenance.verified
+    # and a sourced one stays sourced, rather than everything being reported
+    assert reloaded.photovoltaic.provenance.verified

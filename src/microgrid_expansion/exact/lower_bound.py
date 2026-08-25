@@ -37,6 +37,10 @@ class CapacityBox:
     battery_kwh: tuple[float, float]
     inverter_kw: tuple[float, float]
     generator_kw: tuple[float, float]
+    #: Where the array joins the plant. A box spans capacities, never architectures: the
+    #: two impose different constraints, so a box holding both could not be bounded by one
+    #: linear programme. The search enumerates them separately.
+    architecture: str = "dc"
 
     @classmethod
     def at(cls, capacities: Capacities) -> "CapacityBox":
@@ -44,7 +48,8 @@ class CapacityBox:
         return cls(pv_kw=(capacities.pv_kw, capacities.pv_kw),
                    battery_kwh=(capacities.battery_kwh, capacities.battery_kwh),
                    inverter_kw=(capacities.inverter_kw, capacities.inverter_kw),
-                   generator_kw=(capacities.generator_kw, capacities.generator_kw))
+                   generator_kw=(capacities.generator_kw, capacities.generator_kw),
+                   architecture=capacities.architecture)
 
 
 @dataclass(frozen=True)
@@ -58,6 +63,20 @@ class Economics:
     generator_usd_kw: float = config.GEN_COST_USD_KVA
     om_rates: tuple[float, float, float, float] = (
         config.PV_OM_RATE, config.BATT_OM_RATE, config.INV_OM_RATE, config.GEN_OM_RATE)
+    #: Service life of each asset [years], in the same order. Each is annualised over its
+    #: own life rather than the project's, which is what charges an asset for the
+    #: replacements it will need. Annualising a ten-year inverter at a twenty-five-year
+    #: factor makes it look some two-fifths cheaper than it is and biases the optimum
+    #: towards conversion capacity the project would in truth have to buy twice.
+    lifetimes: tuple[int, int, int, int] = (
+        config.PV_LIFETIME_Y, config.BATT_LIFETIME_Y,
+        config.INV_LIFETIME_Y, config.GEN_LIFETIME_Y)
+    #: Photovoltaic-side conversion, per kilowatt of array. It is proportional to the array
+    #: and so is folded into the array's own coefficient rather than carried as a fifth
+    #: dimension the search would have to explore for nothing.
+    conversion_usd_kw: float = 0.0
+    conversion_om_rate: float = config.CONV_OM_RATE
+    conversion_lifetime_y: int = config.CONV_LIFETIME_Y
     fuel_usd_l: float = config.DIESEL_PRICE_USD_L
     degradation_usd_kwh: float = None
     voll_usd_kwh: float = config.VOLL_USD_KWH
@@ -70,12 +89,20 @@ class Economics:
                                config.battery_degradation_cost())
 
     def annualised(self) -> tuple[float, float, float, float]:
-        """Annualised cost of one unit of each capacity, capital plus maintenance."""
+        """Annualised cost of one unit of each capacity, capital plus maintenance.
+
+        Each asset is recovered over its own service life, so that a short-lived one is
+        charged for the replacements it requires. The photovoltaic coefficient carries the
+        conversion equipment on top of the modules, that equipment being sized to the array.
+        """
         om_pv, om_batt, om_inv, om_gen = self.om_rates
-        return (self.pv_usd_kw * (self.crf + om_pv),
-                self.battery_usd_kwh * (self.crf + om_batt),
-                self.inverter_usd_kw * (self.crf + om_inv),
-                self.generator_usd_kw * (self.crf + om_gen))
+        life_pv, life_batt, life_inv, life_gen = self.lifetimes
+        return (self.pv_usd_kw * (config.crf(n=life_pv) + om_pv)
+                + self.conversion_usd_kw * (config.crf(n=self.conversion_lifetime_y)
+                                            + self.conversion_om_rate),
+                self.battery_usd_kwh * (config.crf(n=life_batt) + om_batt),
+                self.inverter_usd_kw * (config.crf(n=life_inv) + om_inv),
+                self.generator_usd_kw * (config.crf(n=life_gen) + om_gen))
 
 
 def fuel_minorant(generator: GeneratorModel, rating_kw: float) -> tuple[float, float]:
@@ -125,7 +152,7 @@ def cost_optimal_dispatch(
     generator: GeneratorModel = GeneratorModel(),
     relax_commitment: bool = True,
     weights: np.ndarray | None = None,
-    solver: str = "highs",
+    solver: str | None = None,
     terminal: str = "free",
     initial_soc_fraction: float | None = None,
 ) -> LowerBound:
@@ -170,6 +197,14 @@ def cost_optimal_dispatch(
     p_dis = m.add_variables(lower=0.0, coords=coords, name="p_dis")
     curtail = m.add_variables(lower=0.0, coords=coords, name="curtail")
     unserved = m.add_variables(lower=0.0, upper=demand, coords=coords, name="unserved")
+    # Each source is split by destination. The aggregated balance could not express which
+    # flows cross the hybrid inverter, and that is precisely what the two architectures
+    # disagree about: under direct-current coupling the array reaches the load through it
+    # and the battery around it, under alternating-current coupling the reverse.
+    pv_load = m.add_variables(lower=0.0, coords=coords, name="pv_load")
+    pv_batt = m.add_variables(lower=0.0, coords=coords, name="pv_batt")
+    gen_load = m.add_variables(lower=0.0, coords=coords, name="gen_load")
+    gen_batt = m.add_variables(lower=0.0, coords=coords, name="gen_batt")
     soc = m.add_variables(lower=0.0, coords={"step": np.arange(n + 1)}, name="soc")
     # linopy refuses bounds on a binary variable, so the two modes are declared apart:
     # relaxed, the commitment is a continuous fraction of an hour; tight, it is integral.
@@ -179,11 +214,16 @@ def cost_optimal_dispatch(
         commit = m.add_variables(coords=coords, name="commit", binary=True)
 
     yield_ = as_series(instance.specific_yield)
-    # power balance
-    m.add_constraints(
-        yield_ * cap_pv - curtail + p_gen + p_dis - p_ch + unserved == as_series(demand),
-        name="balance")
-    m.add_constraints(curtail - yield_ * cap_pv <= 0, name="curtail_limit")
+    # Every kilowatt the array produces goes to the load, to the battery, or nowhere.
+    m.add_constraints(pv_load + pv_batt + curtail - yield_ * cap_pv == 0, name="pv_split")
+    # The generator likewise; what it cannot place is burnt for nothing.
+    gen_curtail = m.add_variables(lower=0.0, coords=coords, name="gen_curtail")
+    m.add_constraints(gen_load + gen_batt + gen_curtail - p_gen == 0, name="gen_split")
+    # The battery is charged from one or the other.
+    m.add_constraints(p_ch - pv_batt - gen_batt == 0, name="charge_split")
+    # What reaches the load.
+    m.add_constraints(pv_load + gen_load + p_dis + unserved == as_series(demand),
+                      name="balance")
 
     # generator
     m.add_constraints(p_gen - cap_gen <= 0, name="gen_rating")
@@ -198,9 +238,15 @@ def cost_optimal_dispatch(
     # axis before being combined; linopy aligns expressions by coordinate.
     soc_next = soc.isel(step=slice(1, None)).assign_coords(step=steps)
     soc_prev = soc.isel(step=slice(0, n)).assign_coords(step=steps)
+    # Array energy stored across the alternating bus is converted twice; generator energy
+    # is rectified once whichever bus it crosses. The two charging streams therefore do not
+    # share an efficiency, and the relaxation must apply the same penalty as the controller
+    # or it would minorise a plant with better storage than the one being certified.
+    eta_pv = (battery.charge_efficiency * config.AC_DOUBLE_CONVERSION_EFF
+              if box.architecture == "ac" else battery.charge_efficiency)
     m.add_constraints(
         soc_next - retention * soc_prev
-        - battery.charge_efficiency * p_ch
+        - eta_pv * pv_batt - battery.charge_efficiency * gen_batt
         + (1.0 / battery.discharge_efficiency) * p_dis == 0,
         name="soc_dynamics")
     if terminal == "cyclic":
@@ -217,8 +263,22 @@ def cost_optimal_dispatch(
         coords={"step": np.arange(n + 1)}, dims="step")
     m.add_constraints(soc - ceiling * cap_batt <= 0, name="soc_upper")
     m.add_constraints(soc - battery.soc_min * cap_batt >= 0, name="soc_lower")
-    m.add_constraints(p_ch - cap_inv <= 0, name="charge_rating")
-    m.add_constraints(p_dis - cap_inv <= 0, name="discharge_rating")
+    if box.architecture == "dc":
+        # Array and battery share the direct-current bus; only what leaves it for the load
+        # is converted, together with what the generator rectifies back into storage.
+        m.add_constraints(pv_load + p_dis + gen_batt - cap_inv <= 0, name="inverter_rating")
+    elif box.architecture == "ac":
+        # Array and load share the alternating-current bus; the inverter stands between
+        # them and the battery, and carries everything entering or leaving storage.
+        m.add_constraints(p_ch + p_dis - cap_inv <= 0, name="inverter_rating")
+    else:
+        raise ValueError(f"architecture must be 'dc' or 'ac', not {box.architecture!r}")
+    # The array cannot exceed what its converter admits: the hybrid inverter's own trackers
+    # under direct-current coupling, its ability to absorb the array under alternating.
+    # This is what ties the two capacities together — an array is enlarged by buying
+    # conversion, not independently of it.
+    ratio = (config.DC_AC_RATIO_MAX if box.architecture == "dc" else config.AC_RATIO_MAX)
+    m.add_constraints(cap_pv - ratio * cap_inv <= 0, name="array_ratio")
     m.add_constraints(p_ch - battery.c_rate * cap_batt <= 0, name="charge_rate")
     m.add_constraints(p_dis - battery.c_rate * cap_batt <= 0, name="discharge_rate")
 
@@ -232,14 +292,40 @@ def cost_optimal_dispatch(
     capital = a_pv * cap_pv + a_batt * cap_batt + a_inv * cap_inv + a_gen * cap_gen
     m.add_objective(operating + capital)
 
-    m.solve(solver_name=solver, output_flag=False)
+    # The bound is solved thousands of times; its progress bars would drown every other
+    # line of output, and each solver silences itself under a different name.
+    if solver is None:
+        from ..settings import default_settings
+        solver = default_settings().solver.name
+    quiet = {"highs": {"output_flag": False}, "gurobi": {"OutputFlag": 0}}
+    if solver == "gurobi":
+        # Gurobi prints its licence banner when the environment starts, before any model
+        # option can apply; the global default has to be set first.
+        import gurobipy
+        gurobipy.setParam("OutputFlag", 0)
+    m.solve(solver_name=solver, progress=False, **quiet.get(solver, {}))
     status = str(m.status)
+
+    if "ok" not in status:
+        # A box holding no buildable design — every array in it exceeding what its
+        # converter admits — has no feasible point and therefore an infinite bound, which
+        # is exactly what the search needs in order to discard it. Raising here instead
+        # would abort a certification over one empty corner of the lattice.
+        return LowerBound(value=float("inf"),
+                          capacities=Capacities(pv_kw=box.pv_kw[0],
+                                                battery_kwh=box.battery_kwh[0],
+                                                inverter_kw=box.inverter_kw[0],
+                                                generator_kw=box.generator_kw[0],
+                                                architecture=box.architecture),
+                          operating_cost=float("inf"), capital_cost=float("inf"),
+                          relaxed_commitment=relax_commitment, status=status)
 
     solution = Capacities(
         pv_kw=float(m.variables["cap_pv"].solution),
         battery_kwh=float(m.variables["cap_batt"].solution),
         inverter_kw=float(m.variables["cap_inv"].solution),
         generator_kw=float(m.variables["cap_gen"].solution),
+        architecture=box.architecture,
     )
     capital_value = (a_pv * solution.pv_kw + a_batt * solution.battery_kwh
                      + a_inv * solution.inverter_kw + a_gen * solution.generator_kw)

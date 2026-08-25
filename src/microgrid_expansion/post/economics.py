@@ -59,8 +59,8 @@ class Asset:
                 "total": capital + replacements + maintenance - salvage}
 
 
-def assets_from_settings(settings=None) -> dict[str, Asset]:
-    """The four technologies, described by the project's own equipment settings.
+def assets_from_settings(settings=None, architecture: str | None = None) -> dict[str, Asset]:
+    """The technologies, described by the project's own equipment settings.
 
     Cost, lifetime and maintenance come from the same place: a lifetime drives replacement
     and salvage, so declaring it apart from the price it applies to invites the two to
@@ -70,7 +70,18 @@ def assets_from_settings(settings=None) -> dict[str, Asset]:
 
     settings = default_settings() if settings is None else settings
     generator = max(settings.generators, key=lambda g: g.rating_kw)
+    # The array's own conversion — controllers or string inverters — is sized to the array
+    # and so is priced per kilowatt of it, alongside the modules rather than apart from
+    # them. Which equipment, and therefore which price, follows from the architecture.
+    coupling = settings.coupling
+    architecture = (coupling.architecture if architecture is None else architecture)
+    if architecture == "auto":
+        architecture = "dc"
+    conversion = Asset("conversion",
+                       coupling.cost_usd_kw(architecture),
+                       coupling.lifetime_years, coupling.om_rate)
     return {
+        "conversion": conversion,
         "pv": Asset("pv", settings.photovoltaic.cost_usd_kw,
                     settings.photovoltaic.lifetime_years, settings.photovoltaic.om_rate),
         "battery": Asset("battery", settings.battery.cost_usd_kwh,
@@ -89,18 +100,45 @@ def default_assets() -> dict[str, Asset]:
 
 @dataclass
 class LifeCycleCost:
-    """Net present cost of one design and the levelised cost that follows."""
+    """Net present cost of one design, and what tariff it implies.
+
+    Two readings of the same figures. If the project must recover its full cost, the
+    tariff *is* the levelised cost and there is nothing further to compute. If instead a
+    tariff has been set as a policy target — as it usually is, an operator being unable to
+    charge a rural community whatever the plant happens to cost — then the gap between the
+    two has to be met by a capital grant, and its size is a result of the sizing rather
+    than an input to it.
+    """
 
     net_present_cost: float
     annualised_cost: float
     lcoe_usd_kwh: float
     energy_served_kwh: float
     breakdown: dict = field(default_factory=dict)
+    tariff_target_usd_kwh: float | None = None
+    subsidy_fraction: float = 0.0
+    subsidy_usd: float = 0.0
+
+    @property
+    def cost_reflective_tariff_usd_kwh(self) -> float:
+        """The tariff that recovers the full cost: the levelised cost itself."""
+        return self.lcoe_usd_kwh
+
+    @property
+    def tariff_usd_kwh(self) -> float:
+        """The tariff actually charged: the target if one is set, else full recovery."""
+        return (self.lcoe_usd_kwh if self.tariff_target_usd_kwh is None
+                else self.tariff_target_usd_kwh)
 
     def __str__(self) -> str:
-        return (f"NPC {self.net_present_cost:,.0f} $ | "
+        base = (f"NPC {self.net_present_cost:,.0f} $ | "
                 f"annualisé {self.annualised_cost:,.0f} $/an | "
                 f"LCOE {self.lcoe_usd_kwh:.4f} $/kWh")
+        if self.tariff_target_usd_kwh is None:
+            return base + " (tarif = LCOE, recouvrement intégral)"
+        return (base + f" | tarif cible {self.tariff_target_usd_kwh:.4f} $/kWh"
+                f" -> subvention {self.subsidy_fraction:.1%} "
+                f"({self.subsidy_usd:,.0f} $)")
 
 
 def life_cycle_cost(
@@ -110,12 +148,19 @@ def life_cycle_cost(
     horizon_years: int = config.PROJECT_YEARS,
     discount_rate: float = config.DISCOUNT_RATE,
     assets: dict[str, Asset] | None = None,
+    tariff_target_usd_kwh: float | None = None,
 ) -> LifeCycleCost:
     """Net present cost and levelised cost of one design.
 
     ``annual_operating_cost`` is the recurring cost the dispatch produces — fuel, storage
     degradation and unserved energy — held constant over the horizon, the demand being
     represented by one operating year.
+
+    When ``tariff_target_usd_kwh`` is given, the capital subsidy required to bring the
+    levelised cost down to it is computed. A grant covering a share *s* of the net present
+    cost lowers the levelised cost in the same proportion, so reaching a target *t* from a
+    levelised cost *l* requires ``s = 1 - t / l``. A target already at or above the
+    levelised cost needs no subsidy.
     """
     assets = default_assets() if assets is None else assets
     breakdown: dict[str, dict] = {}
@@ -136,6 +181,12 @@ def life_cycle_cost(
     crf = capital_recovery_factor(discount_rate, horizon_years)
     annualised = present * crf
     lcoe = annualised / energy_served_kwh if energy_served_kwh > 0 else math.inf
+
+    fraction = 0.0
+    if tariff_target_usd_kwh is not None and math.isfinite(lcoe) and lcoe > 0:
+        fraction = max(0.0, 1.0 - tariff_target_usd_kwh / lcoe)
     return LifeCycleCost(net_present_cost=present, annualised_cost=annualised,
                          lcoe_usd_kwh=lcoe, energy_served_kwh=energy_served_kwh,
-                         breakdown=breakdown)
+                         breakdown=breakdown,
+                         tariff_target_usd_kwh=tariff_target_usd_kwh,
+                         subsidy_fraction=fraction, subsidy_usd=fraction * present)

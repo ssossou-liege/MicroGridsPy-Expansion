@@ -31,6 +31,19 @@ BATT_COST_USD_KWH = _S.battery.cost_usd_kwh           # C^inv_batt
 INV_COST_USD_KW = _S.inverter.cost_usd_kw             # C^inv_inv
 GEN_COST_USD_KVA = max(_S.generators, key=lambda g: g.rating_kw).cost_usd_kw
 
+PV_LIFETIME_Y = _S.photovoltaic.lifetime_years
+INV_LIFETIME_Y = _S.inverter.lifetime_years
+GEN_LIFETIME_Y = max(_S.generators, key=lambda g: g.rating_kw).lifetime_years
+
+# --- photovoltaic-side conversion (charge controllers or string inverters) --
+COUPLING_ARCHITECTURE = _S.coupling.architecture
+CONV_STRING_USD_KW = _S.coupling.string_inverter_cost_usd_kw
+CONV_OM_RATE = _S.coupling.om_rate
+CONV_LIFETIME_Y = _S.coupling.lifetime_years
+DC_AC_RATIO_MAX = _S.coupling.dc_ac_ratio_max      # array per kW of hybrid inverter
+AC_RATIO_MAX = _S.coupling.ac_ratio_max
+AC_DOUBLE_CONVERSION_EFF = _S.coupling.ac_double_conversion_efficiency
+
 PV_OM_RATE = _S.photovoltaic.om_rate                  # O_pv
 BATT_OM_RATE = _S.battery.om_rate                     # O_batt
 INV_OM_RATE = _S.inverter.om_rate                     # O_inv

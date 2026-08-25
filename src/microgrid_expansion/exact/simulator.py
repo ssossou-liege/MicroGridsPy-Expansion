@@ -130,12 +130,38 @@ class Controller:
 
 @dataclass(frozen=True)
 class Capacities:
-    """One point of the design lattice, in physical units."""
+    """One point of the design lattice, in physical units.
+
+    ``architecture`` records where the array joins the plant, ``"dc"`` through charge
+    controllers onto the battery's bus or ``"ac"`` through string inverters onto the load's.
+    It belongs here because it is a decision, not a convention: the two differ in what they
+    cost and in what the hybrid inverter has to carry, and the certificate proves the choice
+    rather than assuming it.
+
+    ``pv_conversion_kw`` is the rating of that photovoltaic-side conversion. Left unset it
+    matches the array, which is how controllers and string inverters are ordinarily sized.
+    """
 
     pv_kw: float
     battery_kwh: float
     inverter_kw: float
     generator_kw: float
+    architecture: str = "dc"
+    pv_conversion_kw: float | None = None
+
+    @property
+    def conversion_kw(self) -> float:
+        """Photovoltaic-side conversion rating, defaulting to the array's own.
+
+        Under direct-current coupling this is the hybrid inverter's integrated trackers,
+        bought with the inverter; under alternating coupling it is the string inverters,
+        bought separately. Either way it matches the array, which is how both are sized.
+        """
+        return self.pv_kw if self.pv_conversion_kw is None else self.pv_conversion_kw
+
+    def admissible(self, ratio_max: float) -> bool:
+        """Whether the array is within what its conversion admits."""
+        return self.pv_kw <= ratio_max * self.inverter_kw + 1e-9
 
 
 def night_reserve(demand_kw: np.ndarray, pv_kw: np.ndarray,
@@ -177,6 +203,15 @@ class Dispatch:
     fuel_litres: np.ndarray
     capacities: Capacities
     derating_spill_kwh: float = 0.0
+    #: Power crossing the hybrid inverter each hour. What crosses it depends on the
+    #: architecture — under direct-current coupling the array reaches the load through it,
+    #: under alternating-current coupling the array reaches the battery through it — so the
+    #: total is accumulated as the trajectory is built rather than reconstructed afterwards.
+    inverter_flow_kw: np.ndarray | None = None
+    #: Array output refused by the photovoltaic-side conversion, already counted in
+    #: ``curtailed_kw``. Reported apart because it is an equipment-sizing loss, not a
+    #: surplus the plant had no use for.
+    clipped_kwh: float = 0.0
 
     @property
     def fuel_cost_usd(self) -> float:
@@ -197,6 +232,8 @@ class Dispatch:
         return float(self.demand_kwh - self.unserved_kw.sum())
 
     demand_kwh: float = 0.0
+    #: Array power reaching the load directly, before any storage.
+    pv_to_load_kw: np.ndarray | None = None
 
     def feasibility(self, battery: BatteryModel, generator: GeneratorModel,
                     usable_fraction: np.ndarray, tolerance: float = 1e-6) -> dict:
@@ -217,8 +254,14 @@ class Dispatch:
                 bool((self.generator_kw[running] >= min_load - 1e-6).all())
                 if running.any() else True,
             "inverter_within_rating":
+                bool((self.inverter_flow_kw <= cap.inverter_kw + tolerance).all())
+                if self.inverter_flow_kw is not None else
                 bool((self.charge_kw <= cap.inverter_kw + tolerance).all()
                      and (self.discharge_kw <= cap.inverter_kw + tolerance).all()),
+            "pv_conversion_within_rating":
+                bool((self.pv_to_load_kw + self.charge_kw
+                      <= cap.conversion_kw + cap.generator_kw + tolerance).all())
+                if self.pv_to_load_kw is not None else True,
             "soc_within_trips": bool(
                 (self.soc_kwh >= battery.soc_min * cap.battery_kwh - 1e-6).all()
                 and (self.soc_kwh[:-1] <= battery.soc_max * usable_fraction
@@ -267,29 +310,60 @@ def simulate(
     discharge = np.zeros(n)
     curtailed = np.zeros(n)
     unserved = np.zeros(n)
+    pv_to_load = np.zeros(n)
+    inverter_flow = np.zeros(n)
     soc = np.zeros(n + 1)
     soc[0] = min(battery.initial_soc_fraction * battery.soc_max * capacities.battery_kwh,
                  ceilings[0] if n else 0.0)
     spill = 0.0
 
     floor = battery.soc_min * capacities.battery_kwh
+    conversion = capacities.conversion_kw
+    ac_coupled = capacities.architecture == "ac"
+    # Array energy that reaches storage across the alternating bus is converted twice, up
+    # by the string inverter and down by the hybrid inverter. Charging the battery is what
+    # this architecture pays for the conversion it saves on the way to the load.
+    charge_efficiency = (battery.charge_efficiency * config.AC_DOUBLE_CONVERSION_EFF
+                         if ac_coupled else battery.charge_efficiency)
+    clipped_total = 0.0
     for h in range(n):
         energy = max(soc[h] - losses[h], floor)
         ceiling = ceilings[h]
 
-        served = min(pv[h], demand[h])
-        surplus = pv[h] - served
-        deficit = demand[h] - served
-        inverter_left = capacities.inverter_kw
+        # The array cannot deliver more than its own conversion equipment is rated for.
+        # What it offers beyond that is clipped at the controller or string inverter and
+        # never reaches any bus, whatever the plant would have done with it.
+        available_pv = min(pv[h], conversion)
+        clipped = pv[h] - available_pv
+        clipped_total += clipped
 
-        # 1. photovoltaic surplus charges the battery, the rest is curtailed
+        inverter_left = capacities.inverter_kw
+        if ac_coupled:
+            # The array is on the load's own bus and reaches it without the hybrid inverter.
+            served = min(available_pv, demand[h])
+        else:
+            # The array is on the battery's bus; everything it sends the load is converted.
+            served = min(available_pv, demand[h], inverter_left)
+            inverter_left -= served
+            inverter_flow[h] += served
+        surplus = available_pv - served
+        deficit = demand[h] - served
+        pv_to_load[h] = served
+
+        # 1. photovoltaic surplus charges the battery, the rest is curtailed. Under
+        #    direct-current coupling the battery shares the array's bus and the surplus
+        #    reaches it without conversion; under alternating-current coupling it must be
+        #    rectified, and the hybrid inverter limits it.
         headroom = max(ceiling - energy, 0.0)
-        charge_kw = min(surplus, inverter_left, power_limit,
-                        headroom / battery.charge_efficiency / timestep_h)
+        charge_ceiling = min(inverter_left, power_limit) if ac_coupled else power_limit
+        charge_kw = min(surplus, charge_ceiling,
+                        headroom / charge_efficiency / timestep_h)
         charge_kw = max(charge_kw, 0.0)
-        energy += battery.charge_efficiency * charge_kw * timestep_h
-        inverter_left -= charge_kw
-        curtailed[h] = surplus - charge_kw
+        energy += charge_efficiency * charge_kw * timestep_h
+        if ac_coupled:
+            inverter_left -= charge_kw
+            inverter_flow[h] += charge_kw
+        curtailed[h] = surplus - charge_kw + clipped
         charge[h] = charge_kw
 
         if deficit > 0:
@@ -303,6 +377,7 @@ def simulate(
                 discharge[h] = from_battery
                 energy -= from_battery / battery.discharge_efficiency * timestep_h
                 inverter_left -= from_battery
+                inverter_flow[h] += from_battery
             else:
                 # 3. the generator starts, at least at its minimum stable loading
                 remaining = deficit
@@ -323,6 +398,7 @@ def simulate(
                     energy += battery.charge_efficiency * extra * timestep_h
                     charge[h] += extra
                     inverter_left -= extra
+                    inverter_flow[h] += extra
                     curtailed[h] += spare - extra      # generator power with nowhere to go
                 if remaining > 1e-9:
                     # the battery covers what the generator could not, down to its floor
@@ -332,6 +408,7 @@ def simulate(
                     from_battery = max(from_battery, 0.0)
                     discharge[h] = from_battery
                     energy -= from_battery / battery.discharge_efficiency * timestep_h
+                    inverter_flow[h] += from_battery
                     remaining -= from_battery
                 unserved[h] = max(remaining, 0.0)
 
@@ -346,4 +423,6 @@ def simulate(
         fuel_litres=generator.fuel_litres(gen, capacities.generator_kw, timestep_h),
         capacities=capacities, demand_kwh=float(demand.sum()),
         derating_spill_kwh=float(spill),
+        pv_to_load_kw=pv_to_load, inverter_flow_kw=inverter_flow,
+        clipped_kwh=float(clipped_total),
     )

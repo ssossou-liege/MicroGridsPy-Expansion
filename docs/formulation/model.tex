@@ -539,7 +539,18 @@ returns to its initial level at the end of the day,
   \label{eq:soc-cyclic}
 \end{equation}
 This cyclic closure removes the need to couple consecutive representative days and keeps
-each day's operating sub-problem independent given the installed capacities. The stored
+each day's operating sub-problem independent given the installed capacities.
+
+The closure is a device of the reduced planning problem and must not be carried over to the
+relaxation of Proposition~\ref{prop:bound}. That relaxation minorises the cost of a
+trajectory produced by the rule-based controller, and no rule requires the stored energy to
+return to its opening level at any horizon: a year that ends on a cloudy week ends with a
+depleted pack. Imposing~\eqref{eq:soc-cyclic} on the minorant therefore constrains it away
+from the trajectory it is meant to bound, and the bound loses its validity. This is not
+hypothetical --- imposed over a week of the reference site, the closure raised the ``lower''
+bound some fifteen per cent above the rule trajectory's own cost, inverting the inequality.
+Over the full year the relaxation is consequently solved with a free terminal state, which
+relaxes every terminal condition and so remains a valid minorant of any of them. The stored
 energy is bounded below by the protective discharge trip and above by the
 temperature-derated usable capacity,
 \begin{equation}
@@ -549,15 +560,61 @@ temperature-derated usable capacity,
   \qquad \forall (n,t,h).
   \label{eq:soc-bounds}
 \end{equation}
-Charging and discharging powers are limited by the inverter rating and, through it, by
-the battery's admissible charge rate,
+\subsubsection{Coupling architecture}
+\label{sec:coupling}
+
+What the hybrid inverter has to carry is not a property of the plant alone but of where the
+array is joined to it, and the two arrangements in use differ both in physics and in price.
+Let $\alpha_n \in \{\textsc{dc}, \textsc{ac}\}$ denote that choice, decided alongside the
+capacities rather than fixed beforehand, and split each source by destination:
+$p^{\mathrm{pv}\to\ell}$, $p^{\mathrm{pv}\to\mathrm{b}}$ for the array,
+$p^{\mathrm{ge}\to\ell}$, $p^{\mathrm{ge}\to\mathrm{b}}$ for the generator, so that
+$p^{\mathrm{c}} = p^{\mathrm{pv}\to\mathrm{b}} + p^{\mathrm{ge}\to\mathrm{b}}$.
+
+Under \textsc{dc} coupling the array feeds the battery's own bus through the trackers
+integrated in the hybrid inverter, and only what leaves that bus for the load is converted.
+Under \textsc{ac} coupling the array feeds the load's bus through its own string inverters
+and reaches the load without conversion, while everything entering or leaving storage
+crosses the hybrid inverter. Hence
 \begin{equation}
-  p^{\mathrm{c}}_{n,t,h} \leq \mathrm{cap}^{\mathrm{inv}}_n,
-  \qquad
-  p^{\mathrm{d}}_{n,t,h} \leq \mathrm{cap}^{\mathrm{inv}}_n,
-  \qquad \forall (n,t,h).
+  \begin{aligned}
+  \alpha_n = \textsc{dc}:\quad
+    & p^{\mathrm{pv}\to\ell}_{n,t,h} + p^{\mathrm{d}}_{n,t,h}
+      + p^{\mathrm{ge}\to\mathrm{b}}_{n,t,h} \;\leq\; \mathrm{cap}^{\mathrm{inv}}_n, \\
+  \alpha_n = \textsc{ac}:\quad
+    & p^{\mathrm{c}}_{n,t,h} + p^{\mathrm{d}}_{n,t,h}
+      \;\leq\; \mathrm{cap}^{\mathrm{inv}}_n,
+  \end{aligned}
+  \qquad \forall (n,t,h),
   \label{eq:inv-bounds}
 \end{equation}
+together with the battery's own admissible charge rate,
+$p^{\mathrm{c}}_{n,t,h},\, p^{\mathrm{d}}_{n,t,h} \leq
+ C\,\mathrm{cap}^{\mathrm{batt}}_n$.
+
+The array is not free of the converter that admits it. A hybrid inverter's integrated
+trackers accept a bounded array per unit of rating --- current three-phase units publish
+thirty-nine kilowatts of array for thirty of inverter --- and an alternating-coupled array
+is held at parity, since off grid whatever the load does not take must be absorbable by the
+battery inverter the instant the load drops. Writing $\rho(\alpha)$ for that ratio,
+\begin{equation}
+  \mathrm{cap}^{\mathrm{pv}}_n \;\leq\; \rho(\alpha_n)\, \mathrm{cap}^{\mathrm{inv}}_n,
+  \qquad \forall n.
+  \label{eq:array-ratio}
+\end{equation}
+Constraint~\eqref{eq:array-ratio} is what makes enlarging the array and enlarging the
+converter one decision rather than two, and it is not a refinement: on the reference
+instance it removes some forty-seven per cent of the Cartesian lattice as plants that
+cannot be wired. Nothing in the model sizes charge controllers outside the hybrid inverter.
+Two regulators on one lithium bank must answer to the same battery-management conversation
+if they are not to negotiate the charge current against each other, which confines the
+arrangement to a single manufacturer's ecosystem; the conversion that \textsc{dc} coupling
+needs is therefore bought with the inverter, and only the string inverters of \textsc{ac}
+coupling appear as a separate cost.
+
+Because the two architectures constrain the same variables differently, a box of the search
+spans capacities but never architectures: each is certified over its own lattice and the
+cheaper optimum is reported, with the margin over the other.
 
 \subsection{Rule-based generation-balance control}
 \label{sec:dispatch}

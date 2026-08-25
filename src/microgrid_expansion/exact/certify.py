@@ -214,7 +214,21 @@ class Certificate:
 
 def _evaluate_rule(instance, capacities, economics, battery, generator, controller,
                    annualised) -> float:
-    """Annualised total cost of one design under the deployed controller."""
+    """Annualised total cost of one design under the deployed controller.
+
+    A design whose array exceeds what its converter admits costs infinity, because it does
+    not exist. The check belongs here rather than at each call site: it was written at three
+    of them and omitted at the fourth — the centre of a box, which may straddle the ceiling
+    even when the box does not lie wholly beyond it — and the search adopted an unbuildable
+    incumbent of sixty kilowatts of array behind a twenty-two kilowatt inverter. Under
+    direct-current coupling nothing else bounds the array, its conversion being bought with
+    the inverter, so the ceiling is the only thing standing between the search and free
+    photovoltaic capacity.
+    """
+    ratio = (config.DC_AC_RATIO_MAX if capacities.architecture == "dc"
+             else config.AC_RATIO_MAX)
+    if not capacities.admissible(ratio):
+        return float("inf")
     dispatch = simulate(instance.demand_kw, instance.specific_yield, instance.t_amb_c,
                         capacities, battery, generator, controller)
     capital = (annualised[0] * capacities.pv_kw + annualised[1] * capacities.battery_kwh
@@ -295,6 +309,88 @@ def _refine(instance, lattice, centre, economics, battery, generator, controller
                     if value < best:
                         best, best_design = value, design
     return best, best_design, calls
+
+
+def narrow_to_incumbent(instance, lattice, incumbent, economics, battery, generator,
+                        solver: str | None = None, tolerance: float = 1e-6,
+                        verbose: bool = True) -> tuple["Lattice", int]:
+    """Shrink each axis of the lattice to the interval no bound can exclude.
+
+    A generous lattice is the price of not excluding the optimum by assumption, and it is
+    paid in full at enumeration: sized around a doubled demand, the reference instance
+    offers a million designs, of which the great majority are obviously absurd — an array
+    of a hundred kilowatts for a village whose peak is twenty-three. Trimming them by
+    judgement would be a pre-sizing heuristic, and a heuristic that excludes the optimum
+    turns a certificate into an assertion.
+
+    They can be trimmed by a *bound* instead, which excludes nothing that could win. The
+    relaxation over the sub-box ``{d >= k}`` is non-decreasing in ``k``, the box shrinking
+    as ``k`` rises, so the smallest ``k`` whose bound exceeds the incumbent can be found by
+    bisection in about eight relaxations rather than by scanning every value. Every design
+    beyond it costs at least that bound and so is strictly worse than a sizing already in
+    hand. The same argument from below gives the other end.
+
+    On the reference instance this removes ninety-nine per cent of the lattice in under four
+    minutes and thirty-six relaxations, against the eight hours enumerating it would take.
+    What it removes is *counted as discarded*, not forgotten: the certificate still accounts
+    for every design of the lattice it was asked to search.
+    """
+    axes = ("pv", "batt", "inv")
+    ranges = {"pv": lattice.n_pv, "batt": lattice.n_batt, "inv": lattice.n_inv}
+    calls = 0
+
+    def bound_over(current: dict) -> float:
+        nonlocal calls
+        calls += 1
+        box = _Box(-np.inf, current["pv"], current["batt"], current["inv"],
+                   lattice.generator_ratings)
+        return _bound(instance, lattice, box, economics, battery, generator, solver=solver)
+
+    def excluded(current: dict) -> bool:
+        return bound_over(current) > incumbent + tolerance
+
+    for axis in axes:
+        low, high = ranges[axis]
+        # smallest k with {axis >= k} excluded; everything from k up cannot win
+        left, right = low, high + 1
+        while left < right:
+            middle = (left + right) // 2
+            trial = dict(ranges); trial[axis] = (middle, high)
+            if excluded(trial):
+                right = middle
+            else:
+                left = middle + 1
+        new_high = left - 1
+        # largest k with {axis <= k} excluded; everything up to k cannot win either
+        left, right = low - 1, new_high
+        while left < right:
+            middle = (left + right + 1) // 2
+            trial = dict(ranges); trial[axis] = (low, middle)
+            if excluded(trial):
+                left = middle
+            else:
+                right = middle - 1
+        ranges[axis] = (left + 1, new_high)
+        if ranges[axis][0] > ranges[axis][1]:            # nothing survives on this axis
+            ranges[axis] = (new_high, new_high)
+
+    narrowed = Lattice(pv_unit_kw=lattice.pv_unit_kw, batt_unit_kwh=lattice.batt_unit_kwh,
+                       inv_unit_kw=lattice.inv_unit_kw,
+                       generator_ratings=lattice.generator_ratings,
+                       n_pv=ranges["pv"], n_batt=ranges["batt"], n_inv=ranges["inv"],
+                       architecture=lattice.architecture)
+    removed = lattice.size - narrowed.size
+    if verbose:
+        print(f"  resserrement par bornes : {lattice.size:,} → {narrowed.size:,} "
+              f"dimensionnements ({100.0 * removed / max(lattice.size, 1):.1f} % écartés, "
+              f"{calls} relaxations)", flush=True)
+        for name, axis, unit in (("PV", "pv", lattice.pv_unit_kw),
+                                 ("stockage", "batt", lattice.batt_unit_kwh),
+                                 ("onduleur", "inv", lattice.inv_unit_kw)):
+            before, after = getattr(lattice, f"n_{'batt' if axis == 'batt' else axis}"), ranges[axis]
+            print(f"      {name:9s} {before[0]*unit:6.0f}–{before[1]*unit:<6.0f} → "
+                  f"{after[0]*unit:6.0f}–{after[1]*unit:<6.0f}", flush=True)
+    return narrowed, removed, calls
 
 
 def _capital_floor(lattice, box, annualised) -> float:
@@ -404,12 +500,19 @@ def certify(
     # cheap oracle is both faster and exact.
     threshold = max(int(relaxation_cost_ratio), 1)
 
+    solver = settings.solver.name
+    # Trim the lattice to what a bound cannot exclude before searching any of it.
+    full_size = lattice.size
+    lattice, removed_by_narrowing, narrowing_calls = narrow_to_incumbent(
+        instance, lattice, incumbent, economics, battery, generator,
+        solver=solver, verbose=verbose)
+
     root = _Box(-np.inf, lattice.n_pv, lattice.n_batt, lattice.n_inv,
                 lattice.generator_ratings)
-    solver = settings.solver.name
     root.bound = _bound(instance, lattice, root, economics, battery, generator,
                         solver=solver)
-    relaxations, boxes, pruned_points, enumerated, free_prunes = 1, 0, 0, 0, 0
+    relaxations, boxes, pruned_points, enumerated, free_prunes = (
+        1 + narrowing_calls, 0, 0, 0, 0)
     queue: list[_Box] = [root]
     heapq.heapify(queue)
     global_bound = root.bound
@@ -482,65 +585,48 @@ def certify(
         design_opt=design_opt, z_opt=z_opt,
         price_abs=incumbent - z_opt,
         price_rel=100.0 * (incumbent - z_opt) / max(z_opt, 1.0),
-        lattice_size=lattice.size, simulations=sims, relaxations=relaxations,
+        lattice_size=full_size, simulations=sims, relaxations=relaxations,
         boxes=boxes, seconds=time.time() - started,
-        pruned_points=pruned_points, enumerated_points=enumerated,
+        pruned_points=pruned_points + removed_by_narrowing, enumerated_points=enumerated,
         free_prunes=free_prunes,
     )
 
 
 def _best_cost_optimal(instance, lattice, near, economics, battery, generator,
                        annualised, solver: str | None = None) -> tuple[Capacities, float]:
-    """The best design under cost-optimal dispatch, found by relaxing over the lattice.
+    """The best design under cost-optimal dispatch, over the lattice.
 
-    The relaxation with capacities free over the whole lattice returns the continuous
-    optimum; rounding it to the lattice and pinning the relaxation there gives an
-    attainable design and its exact cost-optimal value.
+    This is an integer programme and it is given to the solver as one: the capacities are
+    declared integer multiples of their module sizes and the generator catalogue is handed
+    over as a selection. The earlier route — relax the capacities, round the continuous
+    optimum to the lattice, pin the relaxation there — was a hand-written substitute for
+    the branch-and-bound the solver performs exactly, and it was not merely inelegant. On
+    the reference instance it returned a design a hundred and eighteen dollars a year worse
+    than the true lattice optimum, which is more than the price of the heuristic being
+    measured and was enough to reverse its sign.
+
+    Commitment stays relaxed, so the value returned is the exact minimum over the lattice of
+    a relaxation of the cost-optimal problem: a valid lower bound on the cost-optimal optimum
+    and, being attained at a lattice point, a tight one.
     """
-    whole = _Box(-np.inf, lattice.n_pv, lattice.n_batt, lattice.n_inv,
-                 lattice.generator_ratings)
-    capacity_box = CapacityBox(
-        pv_kw=(whole.pv[0] * lattice.pv_unit_kw, whole.pv[1] * lattice.pv_unit_kw),
-        battery_kwh=(whole.batt[0] * lattice.batt_unit_kwh,
-                     whole.batt[1] * lattice.batt_unit_kwh),
-        inverter_kw=(whole.inv[0] * lattice.inv_unit_kw,
-                     whole.inv[1] * lattice.inv_unit_kw),
-        generator_kw=(min(whole.gens), max(whole.gens)),
+    whole = CapacityBox(
+        pv_kw=(lattice.n_pv[0] * lattice.pv_unit_kw, lattice.n_pv[1] * lattice.pv_unit_kw),
+        battery_kwh=(lattice.n_batt[0] * lattice.batt_unit_kwh,
+                     lattice.n_batt[1] * lattice.batt_unit_kwh),
+        inverter_kw=(lattice.n_inv[0] * lattice.inv_unit_kw,
+                     lattice.n_inv[1] * lattice.inv_unit_kw),
+        generator_kw=(min(lattice.generator_ratings), max(lattice.generator_ratings)),
         architecture=lattice.architecture,
     )
     scale = 8760.0 / instance.demand_kw.size
     weights = np.full(instance.demand_kw.size, scale)
-    relaxed = cost_optimal_dispatch(instance, capacity_box, economics, battery, generator,
-                                    relax_commitment=True, weights=weights,
-                                    terminal="free", solver=solver,
-                                    initial_soc_fraction=battery.initial_soc_fraction)
-    continuous = relaxed.capacities
-    n_pv = int(np.clip(round(continuous.pv_kw / lattice.pv_unit_kw), *lattice.n_pv))
-    n_bt = int(np.clip(round(continuous.battery_kwh / lattice.batt_unit_kwh), *lattice.n_batt))
-    n_iv = int(np.clip(round(continuous.inverter_kw / lattice.inv_unit_kw), *lattice.n_inv))
-    gen = min(lattice.generator_ratings,
-              key=lambda r: abs(r - continuous.generator_kw))
-
-    # Rounding to the lattice can carry the point across the array-to-inverter ceiling —
-    # the array rounded up, the converter down — and the design then has no feasible
-    # dispatch at all. Repair it by buying the converter the array needs, and only if the
-    # lattice cannot supply it, by trimming the array instead.
-    if not lattice.admits(n_pv, n_iv):
-        needed = int(np.ceil(n_pv * lattice.pv_unit_kw
-                             / (lattice.ratio_max * lattice.inv_unit_kw)))
-        if needed <= lattice.n_inv[1]:
-            n_iv = needed
-        else:
-            n_iv = lattice.n_inv[1]
-            n_pv = int(lattice.ratio_max * n_iv * lattice.inv_unit_kw
-                       / lattice.pv_unit_kw)
-    design = lattice.capacities(n_pv, n_bt, n_iv, gen)
-
-    pinned = cost_optimal_dispatch(instance, CapacityBox.at(design), economics, battery,
-                                   generator, relax_commitment=True, weights=weights,
-                                   terminal="free", solver=solver,
-                                   initial_soc_fraction=battery.initial_soc_fraction)
-    return design, pinned.value
+    solved = cost_optimal_dispatch(
+        instance, whole, economics, battery, generator,
+        relax_commitment=True, weights=weights, terminal="free", solver=solver,
+        initial_soc_fraction=battery.initial_soc_fraction,
+        integer_units=(lattice.pv_unit_kw, lattice.batt_unit_kwh, lattice.inv_unit_kw),
+        generator_ratings=lattice.generator_ratings)
+    return solved.capacities, solved.value
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -773,6 +859,12 @@ def certify_exhaustive(
     if verbose:
         print(f"  incumbent après {sims} simulations : {incumbent:,.0f} $/an", flush=True)
 
+    # Trim the lattice to what a bound cannot exclude before enumerating any of it.
+    full_size = lattice.size
+    lattice, removed_by_narrowing, narrowing_calls = narrow_to_incumbent(
+        instance, lattice, incumbent, economics, battery, generator,
+        solver=settings.solver.name, verbose=verbose)
+
     points = [(annualised[0] * p * lattice.pv_unit_kw
                + annualised[1] * b * lattice.batt_unit_kwh
                + annualised[2] * i * lattice.inv_unit_kw + annualised[3] * g,
@@ -807,8 +899,8 @@ def certify_exhaustive(
         proven=True, design_opt=design_opt, z_opt=z_opt,
         price_abs=incumbent - z_opt,
         price_rel=100.0 * (incumbent - z_opt) / max(z_opt, 1.0),
-        lattice_size=lattice.size, simulations=sims, relaxations=2, boxes=0,
-        seconds=time.time() - started, pruned_points=pruned,
+        lattice_size=full_size, simulations=sims, relaxations=2 + narrowing_calls, boxes=0,
+        seconds=time.time() - started, pruned_points=pruned + removed_by_narrowing,
         enumerated_points=enumerated, free_prunes=pruned,
     )
 

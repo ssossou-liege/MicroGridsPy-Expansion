@@ -386,3 +386,112 @@ def test_the_cost_optimal_design_is_buildable():
                           round(result.design_opt.inverter_kw / lattice.inv_unit_kw))
     assert np.isfinite(result.z_opt)
     assert result.price_abs >= -1e-6            # Proposition 1
+
+
+def test_narrowing_by_bound_cannot_discard_the_optimum():
+    """The pre-sizing must be a bound, never a judgement.
+
+    Trimming a generous lattice by eye is how a certificate quietly becomes an assertion:
+    the excluded region is exactly where nobody looked. Here the trimming is done by the
+    relaxation, so every discarded design carries a proof that it costs at least a bound
+    already exceeded by a sizing in hand. The optimum therefore survives it, and the
+    certificate still accounts for the lattice it was asked to search.
+    """
+    import itertools
+
+    from microgrid_expansion.exact.certify import (
+        Lattice, _evaluate_rule, narrow_to_incumbent)
+    from microgrid_expansion.exact.lower_bound import Economics
+    from microgrid_expansion.exact.simulator import (
+        BatteryModel, Controller, GeneratorModel)
+    from microgrid_expansion.settings import default_settings
+
+    instance = _tiny_instance()
+    lattice = Lattice(pv_unit_kw=1.5, batt_unit_kwh=10.0, inv_unit_kw=2.0,
+                      generator_ratings=(5.0,), n_pv=(0, 8), n_batt=(0, 5), n_inv=(1, 6))
+    settings = default_settings()
+    economics = Economics(
+        voll_usd_kwh=settings.economics.value_of_lost_load_usd_kwh,
+        conversion_usd_kw=settings.coupling.cost_usd_kw(lattice.architecture))
+    battery = BatteryModel.from_spec(settings.battery)
+    generator = GeneratorModel.from_spec(
+        max(settings.generators, key=lambda g: g.rating_kw),
+        settings.economics.diesel_price_usd_l)
+    annualised = economics.annualised()
+
+    grid = [(p, b, i, g)
+            for p, b, i, g in itertools.product(
+                range(lattice.n_pv[0], lattice.n_pv[1] + 1),
+                range(lattice.n_batt[0], lattice.n_batt[1] + 1),
+                range(lattice.n_inv[0], lattice.n_inv[1] + 1),
+                lattice.generator_ratings)
+            if lattice.admits(p, i)]
+    costs = {point: _evaluate_rule(instance, lattice.capacities(*point), economics,
+                                   battery, generator, Controller(), annualised)
+             for point in grid}
+    best_point = min(costs, key=costs.get)
+    incumbent = costs[best_point]
+
+    narrowed, removed, calls = narrow_to_incumbent(
+        instance, lattice, incumbent, economics, battery, generator, verbose=False)
+
+    assert narrowed.n_pv[0] <= best_point[0] <= narrowed.n_pv[1]
+    assert narrowed.n_batt[0] <= best_point[1] <= narrowed.n_batt[1]
+    assert narrowed.n_inv[0] <= best_point[2] <= narrowed.n_inv[1]
+    assert removed == lattice.size - narrowed.size
+    assert calls > 0
+
+    # every design the trimming discarded is genuinely no better than the incumbent
+    for point, cost in costs.items():
+        inside = (narrowed.n_pv[0] <= point[0] <= narrowed.n_pv[1]
+                  and narrowed.n_batt[0] <= point[1] <= narrowed.n_batt[1]
+                  and narrowed.n_inv[0] <= point[2] <= narrowed.n_inv[1])
+        if not inside:
+            assert cost >= incumbent - 1e-6
+
+
+def test_an_unwirable_design_costs_infinity():
+    """No path of the search may adopt a plant that cannot be built.
+
+    The guard was written at three call sites and omitted at the fourth — the centre of a
+    box, which may straddle the array-to-inverter ceiling even when the box does not lie
+    wholly beyond it. The search accordingly adopted an incumbent of sixty kilowatts of
+    array behind a twenty-two kilowatt inverter, and every bound was then compared against
+    a cost no real plant achieves. Under direct-current coupling the conversion is bought
+    with the inverter, so that ceiling is the only thing standing between the search and
+    free photovoltaic capacity.
+    """
+    from microgrid_expansion import config
+    from microgrid_expansion.exact.certify import Lattice, _evaluate_rule
+    from microgrid_expansion.exact.lower_bound import Economics
+    from microgrid_expansion.exact.simulator import (
+        BatteryModel, Capacities, Controller, GeneratorModel)
+    from microgrid_expansion.settings import default_settings
+
+    instance = _tiny_instance()
+    settings = default_settings()
+    economics = Economics(voll_usd_kwh=settings.economics.value_of_lost_load_usd_kwh)
+    battery = BatteryModel.from_spec(settings.battery)
+    generator = GeneratorModel.from_spec(
+        max(settings.generators, key=lambda g: g.rating_kw),
+        settings.economics.diesel_price_usd_l)
+    annualised = economics.annualised()
+
+    inverter = 3.0
+    admissible = Capacities(config.DC_AC_RATIO_MAX * inverter, 15.0, inverter, 5.0,
+                            architecture="dc")
+    beyond = Capacities(admissible.pv_kw * 1.5, 15.0, inverter, 5.0, architecture="dc")
+
+    finite = _evaluate_rule(instance, admissible, economics, battery, generator,
+                            Controller(), annualised)
+    infinite = _evaluate_rule(instance, beyond, economics, battery, generator,
+                              Controller(), annualised)
+    assert np.isfinite(finite)
+    assert infinite == float("inf")
+
+    # and the search cannot return one either
+    lattice = Lattice(pv_unit_kw=3.0, batt_unit_kwh=15.0, inv_unit_kw=1.0,
+                      generator_ratings=(5.0,), n_pv=(0, 4), n_batt=(0, 2), n_inv=(1, 4))
+    from microgrid_expansion.exact.certify import certify
+    result = certify(instance, lattice, coarse_step=2, max_relaxations=60, verbose=False)
+    assert result.design.admissible(lattice.ratio_max)

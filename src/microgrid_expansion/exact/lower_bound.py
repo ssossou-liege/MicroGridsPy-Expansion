@@ -155,6 +155,8 @@ def cost_optimal_dispatch(
     solver: str | None = None,
     terminal: str = "free",
     initial_soc_fraction: float | None = None,
+    integer_units: tuple[float, float, float] | None = None,
+    generator_ratings: tuple[float, ...] | None = None,
 ) -> LowerBound:
     """Minimise annualised total cost over the box and return the bound.
 
@@ -181,13 +183,37 @@ def cost_optimal_dispatch(
     a_pv, a_batt, a_inv, a_gen = economics.annualised()
 
     m = linopy.Model()
-    cap_pv = m.add_variables(lower=box.pv_kw[0], upper=box.pv_kw[1], name="cap_pv")
-    cap_batt = m.add_variables(lower=box.battery_kwh[0], upper=box.battery_kwh[1],
-                               name="cap_batt")
-    cap_inv = m.add_variables(lower=box.inverter_kw[0], upper=box.inverter_kw[1],
-                              name="cap_inv")
-    cap_gen = m.add_variables(lower=box.generator_kw[0], upper=box.generator_kw[1],
-                              name="cap_gen")
+    if integer_units is None:
+        cap_pv = m.add_variables(lower=box.pv_kw[0], upper=box.pv_kw[1], name="cap_pv")
+        cap_batt = m.add_variables(lower=box.battery_kwh[0], upper=box.battery_kwh[1],
+                                   name="cap_batt")
+        cap_inv = m.add_variables(lower=box.inverter_kw[0], upper=box.inverter_kw[1],
+                                  name="cap_inv")
+        cap_gen = m.add_variables(lower=box.generator_kw[0], upper=box.generator_kw[1],
+                                  name="cap_gen")
+    else:
+        # Capacities restricted to the lattice itself. Declaring them integer and handing
+        # the catalogue to the solver as a selection is the whole of the integer search:
+        # relaxing and then rounding by hand is doing badly, and outside any guarantee,
+        # what a mixed-integer solver does exactly — and it was returning designs a
+        # hundred dollars a year worse than the true lattice optimum, enough to reverse
+        # the sign of the very quantity this study exists to measure.
+        pv_unit, batt_unit, inv_unit = integer_units
+        n_pv = m.add_variables(lower=int(round(box.pv_kw[0] / pv_unit)),
+                               upper=int(round(box.pv_kw[1] / pv_unit)),
+                               integer=True, name="n_pv")
+        n_batt = m.add_variables(lower=int(round(box.battery_kwh[0] / batt_unit)),
+                                 upper=int(round(box.battery_kwh[1] / batt_unit)),
+                                 integer=True, name="n_batt")
+        n_inv = m.add_variables(lower=int(round(box.inverter_kw[0] / inv_unit)),
+                                upper=int(round(box.inverter_kw[1] / inv_unit)),
+                                integer=True, name="n_inv")
+        cap_pv, cap_batt, cap_inv = n_pv * pv_unit, n_batt * batt_unit, n_inv * inv_unit
+        ratings = tuple(generator_ratings or (box.generator_kw[1],))
+        choose = m.add_variables(coords={"unit": np.arange(len(ratings))},
+                                 binary=True, name="choose")
+        m.add_constraints(choose.sum() == 1, name="one_generator")
+        cap_gen = sum(float(r) * choose.sel(unit=k) for k, r in enumerate(ratings))
 
     coords = {"step": steps}
     as_series = lambda values: xr.DataArray(np.asarray(values, dtype=float),
@@ -320,11 +346,23 @@ def cost_optimal_dispatch(
                           operating_cost=float("inf"), capital_cost=float("inf"),
                           relaxed_commitment=relax_commitment, status=status)
 
+    if integer_units is None:
+        resolved = (float(m.variables["cap_pv"].solution),
+                    float(m.variables["cap_batt"].solution),
+                    float(m.variables["cap_inv"].solution),
+                    float(m.variables["cap_gen"].solution))
+    else:
+        pv_unit, batt_unit, inv_unit = integer_units
+        picked = np.asarray(m.variables["choose"].solution, dtype=float)
+        resolved = (round(float(m.variables["n_pv"].solution)) * pv_unit,
+                    round(float(m.variables["n_batt"].solution)) * batt_unit,
+                    round(float(m.variables["n_inv"].solution)) * inv_unit,
+                    float(sum(r * w for r, w in zip(ratings, picked))))
     solution = Capacities(
-        pv_kw=float(m.variables["cap_pv"].solution),
-        battery_kwh=float(m.variables["cap_batt"].solution),
-        inverter_kw=float(m.variables["cap_inv"].solution),
-        generator_kw=float(m.variables["cap_gen"].solution),
+        pv_kw=resolved[0],
+        battery_kwh=resolved[1],
+        inverter_kw=resolved[2],
+        generator_kw=resolved[3],
         architecture=box.architecture,
     )
     capital_value = (a_pv * solution.pv_kw + a_batt * solution.battery_kwh

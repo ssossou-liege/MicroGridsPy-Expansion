@@ -643,20 +643,45 @@ time-varying floor on the stored energy,
   \label{eq:night-reserve}
 \end{equation}
 The reserve $R_{n,t,h}$ is precomputed from the forecast demand between time step $h$ and
-the following sunrise, clipped to the installed energy capacity. Constraint
-\eqref{eq:night-reserve} forces the controller to keep---or to recharge, using the
-generator if necessary---enough energy to carry the community through the night, exactly
-as the look-ahead rule prescribes, and it does so without introducing any binary
-variable. The generation-balance controller is therefore encoded with a single binary
-per time step, namely the generator commitment $y_{n,t,h}$.
+the following sunrise, clipped to the installed energy capacity.
 
-Two encodings of the operating layer are retained. In the \emph{baseline} encoding the
-constraints \eqref{eq:balance}--\eqref{eq:inv-bounds} are used together with the cost
-objective alone; the dispatch is then cost-optimal within the feasible operating
-envelope and serves as a tractable reference. In the \emph{rule-faithful} encoding the
-night-reserve floor~\eqref{eq:night-reserve} is added, so that the dispatch reproduces the
-field controller. The rule-faithful encoding is the model of record; the baseline is used
-for validation.
+An earlier version of this formulation proposed to impose~\eqref{eq:night-reserve} as a
+hard floor and asserted that the resulting programme reproduces the field controller. It
+does not, on two counts, and the distinction turns out to be the whole subject of this
+work rather than a detail of encoding.
+
+First, the floor is not satisfied by the controller it is supposed to describe. The
+reserve governs whether the battery is \emph{permitted to serve the load}; it does not
+prevent the battery being drawn down when the generator is saturated or absent, in which
+case the controller discharges to the protective trip rather than shed load. Measured on
+the reference site, the rule trajectory sits below $R_{n,t,h}$ in between four and sixty
+per cent of the hours depending on how the plant is sized, by as much as seventy-five
+kilowatt-hours. Imposed as a constraint, \eqref{eq:night-reserve} would therefore exclude
+the very behaviour it claims to encode, and a bound computed under it could exceed the
+trajectory it is meant to minorise --- the same failure as the cyclic closure of
+Section~\ref{sec:coupling}, and for the same reason.
+
+Second, and more fundamentally, a programme is not a controller. Adding the floor to the
+cost objective yields an \emph{anticipative} optimisation: it minimises over the whole
+horizon knowing the whole horizon. The field controller is \emph{causal}, deciding hour by
+hour with a bounded look-ahead and no knowledge of the weather beyond it. The distance
+between the two is exactly $\Delta_{\mathrm{heur}}$, the quantity this work sets out to
+measure, so encoding the rule as a programme would measure the cost of the reserve
+constraint in place of the cost of myopia.
+
+The operating layer is therefore represented twice, and the two representations are of
+different kinds. The \emph{lower} oracle is the programme
+\eqref{eq:balance}--\eqref{eq:inv-bounds} under the cost objective alone, whose optimum
+$C^{\mathrm{opt}}_n(x)$ is computable and minorises the controller by
+Proposition~\ref{prop:bound}. The \emph{upper} oracle is the controller itself, executed
+step by step as the algorithm it is; no formulation of it is used, and none is needed.
+Constraint~\eqref{eq:night-reserve} is retained in the notation because the reserve is a
+quantity the controller computes, not because it is imposed on any programme.
+
+A softened form of the floor --- required only in the hours when the generator is not
+already at its rating, which is precisely when the controller does respect it --- would
+give a valid and strictly tighter lower bound than the cost objective alone. That is
+recorded here as an opening rather than a result.
 
 \subsection{Curtailment and unmet demand}
 \label{sec:slacks}

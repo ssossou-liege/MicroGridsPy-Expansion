@@ -169,12 +169,32 @@ def _appliance_spec(row: pd.Series,
         return None
 
     start = row.get("w1_start", 0.0)
-    end = row.get("w1_end", MINUTES_PER_DAY)
-    start = 0 if not np.isfinite(start) else int(np.clip(round(float(start)), 0, MINUTES_PER_DAY))
-    end = MINUTES_PER_DAY if not np.isfinite(end) else int(np.clip(round(float(end)), 0, MINUTES_PER_DAY))
+    start = 0 if not np.isfinite(start) else int(np.clip(round(float(start)), 0,
+                                                        MINUTES_PER_DAY))
+    # A window may run past midnight, and the commonest appliance in this calibration does:
+    # a dusk-to-dawn security lamp starting at 18:48 and burning for twelve hours. Its end
+    # is not recorded, and reading a missing end as "midnight" truncated the window to five
+    # hours and the duty with it — which is why the simulated households drew nothing at all
+    # between midnight and dawn while the meters show that to be their steadiest load.
+    raw_end = row.get("w1_end", np.nan)
+    if not np.isfinite(raw_end):
+        # No end recorded: the calibrated duty defines it, with a little room to randomise.
+        end = start + int(min(round(func_time / 0.9), MINUTES_PER_DAY))
+    else:
+        end = int(round(float(raw_end)))
+        if end <= start:
+            end += MINUTES_PER_DAY                     # an explicitly wrapping window
+
+    wrapped: list[int] | None = None
+    if end > MINUTES_PER_DAY:
+        wrapped = [0, min(end - MINUTES_PER_DAY, start)]
+        end = MINUTES_PER_DAY
+        if wrapped[1] <= wrapped[0]:
+            wrapped = None
     if end <= start:                                   # degenerate window -> whole day
-        start, end = 0, MINUTES_PER_DAY
-    width = end - start
+        start, end, wrapped = 0, MINUTES_PER_DAY, None
+
+    width = (end - start) + (wrapped[1] - wrapped[0] if wrapped else 0)
 
     func_time = int(min(round(func_time), int(0.99 * width)))
     if func_time <= 0:
@@ -202,6 +222,7 @@ def _appliance_spec(row: pd.Series,
         "func_cycle": func_cycle,
         "occasional_use": occasional,
         "window": [start, end],
+        "window_2": wrapped,
         "window_var": window_var,
     }
 
@@ -247,8 +268,13 @@ def _build_households(
                 occasional_use=spec["occasional_use"],
                 time_fraction_random_variability=TIME_VARIABILITY,
                 name=spec["name"],
+                # The count is declared here, not at assignment: RAMP validates the total
+                # window time against the duty using the number of windows it was told to
+                # expect, and silently ignores a second window it does not know about.
+                num_windows=2 if spec.get("window_2") else 1,
             )
-            appliance.windows(window_1=spec["window"], random_var_w=spec["window_var"])
+            appliance.windows(window_1=spec["window"], window_2=spec.get("window_2"),
+                              random_var_w=spec["window_var"])
             has_appliance = True
         if has_appliance:
             users.append(user)
@@ -347,6 +373,9 @@ class DemandYear:
     seed: int
     hourly_kw: np.ndarray                       # 8760 (or 8784) hourly mean power [kW]
     composition: dict[int, dict[str, int]] = field(default_factory=dict)
+    #: Enterprises connected each month, by activity class. Empty when the community is
+    #: simulated without productive uses.
+    enterprises: dict[int, dict[str, int]] = field(default_factory=dict)
 
     @property
     def annual_energy_kwh(self) -> float:
@@ -376,6 +405,7 @@ def simulate_demand_year(
     trajectory: str = "centrale",
     scaling: ArchetypeScaling | None = None,
     apply_seasonality: bool = True,
+    include_productive: bool = True,
 ) -> DemandYear:
     """Draw one community load profile for ``site`` over the calendar year ``year``.
 
@@ -392,8 +422,10 @@ def simulate_demand_year(
     monthly variation that survives conditioning on maturity.
     """
     from .growth import maturity_band, seasonal_index, trajectory_law
+    from .productive import ProductiveCalibration, monthly_profile_kw, sample_units
 
     law = trajectory_law(trajectory)
+    productive = ProductiveCalibration.load() if include_productive else None
     appliances = load_archetype_appliances()
     scaling = ArchetypeScaling.load() if scaling is None else scaling
     season = seasonal_index() if apply_seasonality else None
@@ -401,6 +433,7 @@ def simulate_demand_year(
 
     hourly: list[np.ndarray] = []
     composition: dict[int, dict[str, int]] = {}
+    enterprises: dict[int, dict[str, int]] = {}
     for month in range(1, 13):
         band = maturity_band(maturity_months + month - 1)
         weights = law.xs(band, level="maturity")
@@ -413,6 +446,14 @@ def simulate_demand_year(
         profile = _to_hourly_kw(minutes)
         if season is not None:
             profile = profile * float(season.get(month, 1.0))
+        if productive is not None:
+            # Enterprises are counted, not composed: how many have started trading is what
+            # varies with the age of the connection, and it is drawn rather than fixed.
+            connected = sum(v for k, v in counts.items() if k != INACTIVE)
+            units = sample_units(productive, connected, band, trajectory, rng)
+            enterprises[month] = units
+            profile = profile + monthly_profile_kw(units, productive,
+                                                   profile.size // 24, rng)
         hourly.append(profile)
 
     return DemandYear(
@@ -421,4 +462,5 @@ def simulate_demand_year(
         seed=seed,
         hourly_kw=np.concatenate(hourly),
         composition=composition,
+        enterprises=enterprises,
     )

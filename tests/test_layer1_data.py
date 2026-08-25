@@ -96,7 +96,11 @@ def test_composition_allocates_every_household_of_the_census():
 
 # ------------------------------------------------------------------- appliances
 def test_appliance_specs_respect_ramp_window_and_duty_bounds():
-    """RAMP rejects a duty cycle that cannot fit its randomised window."""
+    """RAMP rejects a duty cycle that cannot fit its randomised windows.
+
+    The budget is the sum of the windows, not the first alone: an appliance that runs from
+    dusk to dawn owns one interval before midnight and one after.
+    """
     for archetype, appliances in G.load_archetype_appliances().items():
         for _, row in appliances.iterrows():
             spec = G._appliance_spec(row)
@@ -105,11 +109,38 @@ def test_appliance_specs_respect_ramp_window_and_duty_bounds():
             start, end = spec["window"]
             width = end - start
             assert 0 <= start < end <= G.MINUTES_PER_DAY
+            if spec.get("window_2"):
+                second_start, second_end = spec["window_2"]
+                assert 0 <= second_start < second_end <= start
+                width += second_end - second_start
             assert 1 <= spec["func_cycle"] <= spec["func_time"]
             assert spec["func_time"] <= 0.99 * width
             worst_case_width = (1.0 - 2.0 * spec["window_var"]) * width
             assert spec["func_cycle"] <= 0.99 * worst_case_width + 1e-9
             assert 0.0 <= spec["occasional_use"] <= 1.0
+
+
+def test_a_dusk_to_dawn_appliance_keeps_its_night(monkeypatch):
+    """A window running past midnight must not be truncated at midnight.
+
+    The calibration records a security lamp starting at dusk and burning for twelve hours,
+    and leaves its end unrecorded because the end is dawn. Reading that absence as
+    "midnight" cut the window to five hours and the duty with it, and the simulated
+    households drew nothing at all between midnight and sunrise — the steadiest load the
+    meters record, and the one a battery has to carry through the night.
+    """
+    import pandas as pd
+
+    row = pd.Series({"power": 8.0, "number": 1.0, "func_time": 720.0,
+                     "w1_start": 1128.0}, name="security_lamp")
+    spec = G._appliance_spec(row)
+
+    assert spec["func_time"] == 720                      # the whole night, not part of it
+    assert spec["window"][1] == G.MINUTES_PER_DAY
+    assert spec["window_2"] is not None and spec["window_2"][0] == 0
+    total = (spec["window"][1] - spec["window"][0]
+             + spec["window_2"][1] - spec["window_2"][0])
+    assert total >= spec["func_time"]
 
 
 def test_fractional_appliance_counts_are_realised_in_expectation():

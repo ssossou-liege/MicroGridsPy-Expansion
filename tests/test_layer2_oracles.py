@@ -176,7 +176,9 @@ def _instance_from(demand, yield_, temperature):
 
 @pytest.mark.parametrize("design", [
     Capacities(8.0, 20.0, 8.0, 6.0),
-    Capacities(14.0, 35.0, 10.0, 6.0),
+    # 13 kW of array on 10 kW of inverter is the most its trackers admit; 14 would
+    # be a plant nobody can wire, and the bound rightly reports no feasible point.
+    Capacities(13.0, 35.0, 10.0, 6.0),
     Capacities(4.0, 10.0, 8.0, 10.0),
 ])
 def test_the_relaxation_never_exceeds_the_rule(design):

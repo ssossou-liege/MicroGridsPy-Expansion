@@ -1,14 +1,21 @@
-"""Compress a node's operating year into weighted representative days.
+"""Compression of an operating year into weighted representative days.
 
-The full 8760-hour year of a node is clustered (k-medoids on daily demand and
-resource shapes) into ``n_rep`` representative days. The medoid of each cluster
-becomes a representative day with weight equal to the cluster size, so that the
-weights sum to 365 days. Together with the cyclic battery closure this keeps each
-node's operating sub-problem small (n_rep x 24 steps instead of 8760).
+A year of hourly operation is clustered into a handful of days, each standing for the days
+nearest to it and carrying their number as its weight. The medoids are real days, so the
+compressed year retains genuine peaks and genuine calm spells rather than the flattened
+average a centroid would produce.
 
-All hourly parameter arrays entering the model are produced here on the
-``(rep_day, hour)`` grid: demand ``D``, specific yield ``rho``, self-discharge
-``sigma``, usable-capacity factor ``f^e`` and the night-reserve floor ``R``.
+**What this is, and what it is not.** Time-domain reduction is an *approximation*, not a
+relaxation: the weighted cost of the representative days is neither above nor below the
+cost of the full year in general, and it is therefore not a valid bound. The certificate of
+this work does not rest on it — the lower bound is computed over the full year, whose linear
+relaxation is cheap enough to solve thousands of times. Representative days exist for the
+tree, where a full year at every node and every scenario is out of reach, and their
+reduction error is measured and reported rather than assumed small.
+
+The compression uses the shape of both drivers at once, demand and resource. Clustering on
+demand alone would merge a cloudy day with a sunny one of the same consumption, which are
+entirely different problems for a plant whose storage must bridge the difference.
 """
 from __future__ import annotations
 
@@ -16,37 +23,115 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from ..tree.tree_model import NodeData
+from .kmedoids import kmedoids
+
+HOURS_PER_DAY = 24
 
 
 @dataclass
 class RepDays:
-    """Representative-day arrays for one node (shape ``(n_rep, 24)`` unless noted)."""
+    """Weighted representative days, on the ``(day, hour)`` grid."""
 
-    weight: np.ndarray          # (n_rep,) days per representative day; sums to 365
-    demand: np.ndarray          # D_{t,h} [kW]
-    pv_unit: np.ndarray         # rho_{t,h} [kW/kW]
-    self_discharge: np.ndarray  # sigma_{t,h} [-]
-    cap_factor: np.ndarray      # f^e_{t,h} usable-capacity factor [-]
-    night_reserve: np.ndarray   # R_{t,h} [kWh] (per unit battery capacity)
+    weight: np.ndarray            # (k,) days represented; sums to the year's length
+    demand: np.ndarray            # (k, 24) [kW]
+    specific_yield: np.ndarray    # (k, 24) [kW/kW]
+    t_amb_c: np.ndarray           # (k, 24) [degC]
+    usable_fraction: np.ndarray   # (k, 24) [-]
+    self_discharge: np.ndarray    # (k, 24) [-]
+    medoid_days: np.ndarray       # (k,) index of each representative day in the year
+    labels: np.ndarray            # (n_days,) which representative day each day maps to
+
+    @property
+    def n_days(self) -> int:
+        return int(self.weight.size)
+
+    def flat(self) -> dict[str, np.ndarray]:
+        """The same arrays flattened to a single time axis, with hourly weights."""
+        return {
+            "demand_kw": self.demand.ravel(),
+            "specific_yield": self.specific_yield.ravel(),
+            "t_amb_c": self.t_amb_c.ravel(),
+            "usable_fraction": self.usable_fraction.ravel(),
+            "self_discharge": self.self_discharge.ravel(),
+            "weights": np.repeat(self.weight, HOURS_PER_DAY),
+        }
+
+    def expand(self) -> dict[str, np.ndarray]:
+        """Reconstruct a full year by repeating each representative day over its cluster."""
+        order = np.argsort(self.labels, kind="stable")
+        rebuilt = {}
+        for name, array in (("demand_kw", self.demand),
+                            ("specific_yield", self.specific_yield),
+                            ("t_amb_c", self.t_amb_c)):
+            stacked = array[self.labels]                      # (n_days, 24)
+            rebuilt[name] = stacked.ravel()
+        return rebuilt
 
 
-def night_reserve_floor(demand_day: np.ndarray) -> np.ndarray:
-    """Compute the look-ahead night-reserve R for a single representative day.
+def daily_features(demand_kw: np.ndarray, specific_yield: np.ndarray) -> np.ndarray:
+    """Feature vector of each day: both daily shapes, scaled to comparable magnitude.
 
-    Mirrors the uGrid ``loadLeft`` look-ahead: at each hour, the forecast demand
-    remaining until the next sunrise. Returned per unit of installed battery energy
-    (the model scales by ``cap_batt``). Stub for the skeleton.
+    Each channel is divided by its own standard deviation over the year so that neither
+    driver dominates the distance merely because it is measured in larger numbers.
     """
-    raise NotImplementedError("Port the uGrid look-ahead night-reserve computation.")
+    days = demand_kw.size // HOURS_PER_DAY
+    demand = demand_kw[:days * HOURS_PER_DAY].reshape(days, HOURS_PER_DAY)
+    yield_ = specific_yield[:days * HOURS_PER_DAY].reshape(days, HOURS_PER_DAY)
+
+    scale_d = demand.std() or 1.0
+    scale_y = yield_.std() or 1.0
+    return np.hstack([demand / scale_d, yield_ / scale_y])
 
 
-def reduce_to_rep_days(node_data: NodeData, n_rep: int, seed: int = 0) -> RepDays:
-    """Cluster a node's operating year into ``n_rep`` weighted representative days.
+def reduce_to_rep_days(instance, n_rep: int = 12) -> RepDays:
+    """Compress a site-year into ``n_rep`` weighted representative days."""
+    days = instance.demand_kw.size // HOURS_PER_DAY
+    if n_rep > days:
+        raise ValueError(f"cannot draw {n_rep} representative days from {days}")
 
-    Stub: implement k-medoids on standardised daily feature vectors (24-h demand
-    shape + 24-h yield shape + daily totals); derive sigma and f^e from the medoid
-    temperature series (uGrid ``batt_calcs`` formulas) and R from
-    :func:`night_reserve_floor`.
+    def as_days(array: np.ndarray) -> np.ndarray:
+        return np.asarray(array)[:days * HOURS_PER_DAY].reshape(days, HOURS_PER_DAY)
+
+    clustering = kmedoids(daily_features(instance.demand_kw, instance.specific_yield),
+                          n_rep)
+    chosen = clustering.medoids
+    return RepDays(
+        weight=clustering.weights,
+        demand=as_days(instance.demand_kw)[chosen],
+        specific_yield=as_days(instance.specific_yield)[chosen],
+        t_amb_c=as_days(instance.t_amb_c)[chosen],
+        usable_fraction=as_days(instance.usable_fraction)[chosen],
+        self_discharge=as_days(instance.self_discharge)[chosen],
+        medoid_days=chosen,
+        labels=clustering.labels,
+    )
+
+
+def reduction_error(instance, rep: RepDays) -> dict[str, float]:
+    """How far the compressed year departs from the year it stands for.
+
+    Reports the quantities a sizing is sensitive to: annual energy, peak demand and annual
+    resource. The peak matters most and compresses worst — a handful of days cannot contain
+    every extreme of a year — so it is reported separately rather than folded into an
+    average.
     """
-    raise NotImplementedError("Implement k-medoids representative-day reduction.")
+    hours_per_day = HOURS_PER_DAY
+    days = instance.demand_kw.size // hours_per_day
+    demand_days = instance.demand_kw[:days * hours_per_day].reshape(days, hours_per_day)
+    yield_days = instance.specific_yield[:days * hours_per_day].reshape(days, hours_per_day)
+
+    full_energy = float(demand_days.sum())
+    rep_energy = float((rep.demand.sum(axis=1) * rep.weight).sum())
+    full_yield = float(yield_days.sum())
+    rep_yield = float((rep.specific_yield.sum(axis=1) * rep.weight).sum())
+
+    def relative(a: float, b: float) -> float:
+        return 100.0 * (a - b) / b if b else float("nan")
+
+    return {
+        "energy_error_pct": relative(rep_energy, full_energy),
+        "yield_error_pct": relative(rep_yield, full_yield),
+        "peak_error_pct": relative(float(rep.demand.max()), float(demand_days.max())),
+        "days_represented": float(rep.weight.sum()),
+        "n_rep_days": float(rep.n_days),
+    }

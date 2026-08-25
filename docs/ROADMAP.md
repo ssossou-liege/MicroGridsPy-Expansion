@@ -195,22 +195,145 @@ the minimum publishable result.
 
 ---
 
-## L3 — Certified sizing on real data (P0)
+## L3 — Certified sizing on real data (P0, machinery complete 2026-08-25;
+## results provisional pending productive-use demand)
 
-- [ ] **Representative days.** Weighted `k`-medoids implemented in-repo; derive `W`, `F^e`
-  and `R` per the formulation. *Done when* representative-day costs match the full 8760
-  within ~5 %.
-- [ ] **Generalise the lattice** to (PV panels, battery modules, generator size, inverter
-  size); branch on every integer and catalogue dimension. *Done when* branch-and-simulate
-  certifies the optimum on a ≥ 3-D lattice and matches enumeration on a coarse grid.
-- [ ] **First real certified result.** Report `z_B*`, `z_A*`, `Δ_heur` (absolute and
-  relative), certified gap, runtime and oracle-call count against enumeration, for
-  Samionta and then Gbowele. *Done when* a results table and figure are written under
-  `results/` and `tests/test_benchmark.py` passes.
+- [x] **Representative days** (`timedomain/rep_days.py`, `timedomain/kmedoids.py`).
+  Weighted k-medoids implemented in-repo — the only maintained package offering it is
+  binary-incompatible with current NumPy, and eighty lines of well-understood algorithm is
+  not worth a dependency. Medoids are *real days*, so the compressed year keeps genuine
+  peaks rather than a flattened average. At twelve days on Samionta: annual energy
+  **−0.02 %**, resource **+0.50 %**, peak **−3.7 %**. The peak compresses worst, as a
+  handful of days cannot hold every extreme of a year.
+- [x] **Generalised lattice and branch-and-simulate** (`exact/certify.py`). Four dimensions
+  — photovoltaic modules, battery modules, inverter modules and the generator catalogue —
+  plus the coupling architecture, certified separately. Sized around the instance:
+  **110 208 buildable designs** for Samionta under direct-current coupling, 144 525 under
+  alternating.
+- [x] **Coupling architecture, and the designs it rules out** (`settings.CouplingSpec`,
+  `exact/simulator.py`, `exact/lower_bound.py`). The array does not reach the load for
+  free: under direct-current coupling everything it sends the load crosses the hybrid
+  inverter, under alternating coupling everything entering storage does. Neither was
+  modelled, and the conversion equipment was not costed at all, so the search was free to
+  wire a 29 kW array to a 12.5 kW inverter. The array is now bounded by what its converter
+  admits — 1.3 × the inverter under direct coupling, parity under alternating — which
+  **removes 47 % of the Cartesian lattice as plants that cannot be wired**. No charge
+  controller is sized outside the hybrid inverter: two regulators on one lithium bank must
+  answer to the same battery-management conversation, which confines that arrangement to a
+  single manufacturer's ecosystem. The lower bound was rewritten in explicit flows, the
+  aggregated balance being unable to say which flows cross the inverter.
+- [x] **Assets recovered over their own lives.** Every asset had been annualised at the
+  project's 25-year factor, making a 10-year inverter look two fifths cheaper than it is —
+  precisely the bias that produces oversized converters. Each is now recovered over its own
+  service life.
+- [x] **Certified results on real data** — six certificates: both sites on the central
+  growth trajectory, Samionta at both bounds of its growth envelope and at both bounds of the
+  value-of-lost-load range, each racing the two coupling architectures. Optimality proven by
+  exhaustion: on Samionta central, all **110 208 buildable designs** accounted for, 58.7 %
+  discarded without simulation, two relaxations, 49 min. Direct-current coupling wins all
+  six, by 438–814 $/yr. Certified plant at Samionta: **22.5 kW · 60 kWh · 17.5 kW · 8 kW**;
+  at Gbowele **16.0 kW · 45 kWh · 12.5 kW · 8 kW**. Unserved energy nil throughout. Levelised
+  cost 169–185 FCFA/kWh against a 160 target, closed by a 5–14 % capital subsidy.
+- [x] **The price of the heuristic, measured**: 7.2–10.4 % of annualised cost (558–679 $/yr).
 
-**Risk:** Assumption 1. Verify the ported `GenControl` never leaves `F(x)` (no simultaneous
-charge and discharge, minimum loading and state-of-charge trips respected). If it can,
-document the correction or restrict `F(x)` accordingly.
+### What the certificates establish
+
+**The deficit of anticipation is paid in storage, not in generation.** Across all six cases
+the rule-based optimum carries **9 % to 29 % more storage** than the cost-optimal one, never
+less, while the array is the same to within two or three per cent with no systematic
+direction and the inverter is equal or smaller. A controller with no view of the coming hours
+must hold a reserve to reach the next solar surplus, and that reserve immobilises capacity a
+foresighted dispatch never had to buy; generation is set by the annual energy balance, which
+foresight does not change. This corrects the conjecture drawn from the toy case — a uniformly
+more generous plant — and sharpens what it implies: existing exact methods do not undersize
+the installation, they undersize its **storage**, by ten to thirty per cent on these cases.
+
+**The value of lost load does not bind.** Varying it six-fold, from 0.50 to 3.00 $/kWh,
+leaves the certificate bit-for-bit unchanged: the optimal plant serves the whole demand, so
+the parameter never enters the cost. At current equipment prices it is cheaper to serve every
+kilowatt-hour than to shed any, which spares the study from having to establish a notoriously
+unmeasurable parameter — so long as costs stay in the observed range.
+
+
+### Three findings that reshape the algorithm
+
+- **The gap cannot close, and closing it was never the criterion.** As boxes shrink, a
+  singleton's bound is exactly the cost-optimal value at that design, so the smallest bound
+  tends to `z_A*` while the incumbent tends to `z_B*`: their difference tends to
+  `Δ_heur > 0`. Optimality is therefore proven by **exhaustion** — every design either
+  discarded by a bound or evaluated by a simulation — not by a vanishing gap. The first
+  implementation terminated on the gap and would have run essentially for ever.
+- **The oracle cost ratio is the reverse of the toy's, and it dictates the design.**
+  Simulating the controller over a year takes **52 ms**; the relaxation takes **3.0 s**,
+  sixty times more. A relaxation is therefore worth its price only for a box holding more
+  than about sixty designs; below that, enumerating with the cheap oracle is both faster and
+  exact. The search accordingly buys a strong incumbent with a multi-resolution sweep of
+  simulations — 1 956 of them reach 10 470 $/an on the full lattice in 84 s, against 163 min
+  to enumerate it — and spends relaxations only on discarding whole regions.
+- **Half the lattice was never a plant.** Enumerating capacities independently of one
+  another produced designs no installer could wire, and a certificate over such a set proves
+  optimality against phantoms. Coverage is therefore counted over buildable designs only:
+  a box's unwirable corners are not candidates the certificate has to account for, and
+  counting them among the discarded would claim a lattice larger than the one that exists.
+  A box holding no buildable design has an infinite bound, which is how the search discards
+  it rather than aborting on an infeasible programme.
+
+---
+
+## L3b — Productive uses in the demand model (P0, blocking L4)
+
+The demand model is calibrated and scaled on households alone. Over the last twelve months of
+meter data, productive-use enterprises account for **75.6 % of measured energy at Samionta**
+and 49.1 % at Gbowele — fourteen enterprises at Samionta consuming nearly four times what
+forty-nine households consume. The model therefore omits half the energy at one site and four
+fifths at the other, and omits precisely its **daytime** part: households draw 23 % of their
+energy between 07:00 and 18:00 at Samionta, productive users 67 %. Aggregated, Samionta's
+demand is majority-daytime (59 %) with its peak at 19:00, not the nocturnal profile the model
+produces.
+
+The L3 certificates are sound computations of the demand they were given, but that demand no
+longer describes these villages. At risk in particular: the coupling verdict — direct-current
+coupling wins here because nearly all energy transits storage, and a daytime load is exactly
+where alternating coupling pays — and the storage finding, a daytime load mobilising less
+night reserve.
+
+- [x] **Productive-use archetypes** (`demand/productive.py`,
+  `demand/build_productive_profiles.py`). Six activity classes from the survey, their
+  magnitude and shape from the meters — the survey's own nameplate powers are entered as
+  zero for forty-two per cent of the equipment it records, so a bottom-up appliance model
+  would rest on the one field the survey does not support. The classes differ in kind:
+  milling is 82 % diurnal, incubation 45 %, and a single average enterprise would erase the
+  daytime load that decides the coupling.
+- [x] **Enterprises as a connection trajectory, not a count.** Nobody knows in advance who
+  will start a business, so their number is drawn (Poisson) from an intensity conditioned on
+  the age of the connection and bracketed by the two reference sites. Intensity is referred
+  to *connected* households rather than to the census: an enterprise appears beside existing
+  supply, and a ratio taken over dwellings not yet connected would not transfer. The mix of
+  classes belongs to the trajectory too — one village has few large enterprises, the other
+  many small ones, and a pooled mix reproduced neither, overstating the second twofold.
+  Simulated counts land on the observed ones: **14 against 14** at Samionta, 45 against 43
+  at Gbowele.
+- [x] **The household model's shape, and the defect that hid it** (`demand/generator.py`,
+  `demand/build_archetype_shapes.py`). The calibration records a security lamp starting at
+  18:48 and burning **720 minutes**, dusk to dawn, and leaves its end unrecorded because
+  that end is dawn. The code read the absence as *midnight*: the window collapsed to 313
+  minutes and the twelve-hour duty with it, so simulated households drew **nothing at all**
+  between midnight and sunrise — the steadiest load the meters record, and the one a battery
+  carries through the night. Wrapping windows are now expressed as RAMP's two windows, which
+  it only honours when told at appliance creation how many to expect. Daytime share falls
+  from 47 % to **21 %** against 23 % measured. The moment-matching factors, fitted to
+  compensate the truncation, were refitted; archetypes 0, 1 and 2 land within 4 % of
+  measured energy and peak.
+- [x] **Measured hourly shapes per archetype** — they did not exist. The calibration targeted
+  daily energy and peak power, two scalars, and so had never confronted the appliance
+  parameters with the shape they produce. That is how the defect survived.
+- [ ] **Re-certify** the six cases and re-examine the coupling verdict.
+
+Residuals, stated rather than hidden: compared per connected unit, households come out +35 %
+at Samionta and +70 % at Gbowele, enterprises −45 % and +92 %. The sign reverses between
+sites, which is the expected behaviour of a transferable model whose envelope brackets rather
+than reproduces — but the bracket is wide, and archetype 3 is still unfitted for want of
+observations.
 
 ---
 

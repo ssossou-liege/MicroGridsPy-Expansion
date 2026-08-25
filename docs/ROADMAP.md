@@ -327,7 +327,49 @@ night reserve.
 - [x] **Measured hourly shapes per archetype** — they did not exist. The calibration targeted
   daily energy and peak power, two scalars, and so had never confronted the appliance
   parameters with the shape they produce. That is how the defect survived.
-- [ ] **Re-certify** the six cases and re-examine the coupling verdict.
+- [x] **Re-certified** on the corrected demand. Six certificates, all proven by exhaustion,
+  all fully covered, Proposition 1 satisfied throughout, every design buildable. Direct-current
+  coupling wins all six by 969–2 210 $/yr. **41 min per case on average, 247 min in all**,
+  against seventeen hours per case before the search was corrected.
+
+| Case | PV | Storage | Inverter | Genset | z_B* | Δ_heur | LCOE | Subsidy |
+|---|---|---|---|---|---|---|---|---|
+| Gbowele central | 35.5 kW | 95 kWh | 27.5 kW | 8 kW | 11 949 | 660 (5.8 %) | 166 | 3.9 % |
+| Samionta slow | 32.5 kW | 95 kWh | 25.0 kW | 8 kW | 11 018 | 620 (6.0 %) | 183 | 12.6 % |
+| Samionta central | 52.0 kW | 135 kWh | 40.0 kW | 8 kW | 16 247 | 734 (4.7 %) | 161 | 0.9 % |
+| Samionta fast | 71.5 kW | 175 kWh | 55.0 kW | 8 kW | 21 100 | 852 (4.2 %) | 156 | none |
+
+**The deficit of anticipation is paid in storage, and in storage alone.** The rule-based
+optimum carries **9–12 % more storage** than the cost-optimal one; the array is identical to
+the kilowatt in all six cases, as are the inverter and the genset. Existing exact methods
+therefore do not undersize the installation — they undersize its **storage**, by about a tenth.
+
+Caveat to carry: Δ_heur is measured at the nominal reserve multiplier, which is not optimal —
+halving it saves some 5 % on a trial design. Part of the 4.2–6.0 % is therefore *tuning*,
+recoverable by a parameter sent to the controller remotely, not irreducible myopia. Decomposing
+it into three terms — nominal setting, best setting, residual against perfect foresight — is
+the next useful step and is directly operational.
+
+### What made these certificates computable
+
+- [x] **Narrowing the lattice by bound, not by judgement.** A generous lattice is the price of
+  not excluding the optimum by assumption, and on a doubled demand it offered a million
+  designs. Trimming by eye would be a pre-sizing heuristic, and a heuristic that excludes the
+  optimum turns a certificate into an assertion. The relaxation over `{d ≥ k}` is
+  non-decreasing in `k`, so the smallest excluded `k` is found by **bisection in eight
+  relaxations**. Removes **99 % of the lattice in under four minutes**.
+- [x] **Branch-and-simulate over enumeration.** Enumeration was chosen when the lattice held
+  200 000 points and a relaxation cost sixty simulations. At a million the arithmetic reverses.
+- [x] **The integer search given to the solver.** z_A* is an integer programme and was being
+  handled by relax-round-pin — a hand-written branch-and-bound without guarantees. Declared
+  integer with the genset catalogue as a binary selection, Gurobi solves it in **ten seconds**
+  and returns a design **118 $/yr better**. That rounding error exceeded Δ_heur itself and
+  reversed its sign, producing a negative price of the heuristic that Proposition 1 forbids.
+- [x] **The buildability guard reduced to one place.** A certified design violated the
+  array-to-converter ceiling — 60 kW of array behind a 22 kW inverter — because the guard sat
+  at three call sites and was missing at the fourth, the centre of a box. Under direct-current
+  coupling that ceiling is the only thing standing between the search and free photovoltaic
+  capacity. Sixth instance in this project of one quantity defined in several places.
 
 Residuals, stated rather than hidden: compared per connected unit, households come out +35 %
 at Samionta and +70 % at Gbowele, enterprises −45 % and +92 %. The sign reverses between

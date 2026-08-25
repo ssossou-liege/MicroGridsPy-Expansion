@@ -1,0 +1,40 @@
+{
+  "site": "Samionta",
+  "year": 2025,
+  "trajectory": "rapide",
+  "maturity_months": 12,
+  "voll_usd_kwh": 1.0,
+  "design": {
+    "pv_kw": 71.5,
+    "battery_kwh": 175.0,
+    "inverter_kw": 55.0,
+    "generator_kw": 8.0
+  },
+  "z_rule_usd_yr": 21099.633544061835,
+  "z_opt_usd_yr": 20247.74450604061,
+  "design_opt": {
+    "pv_kw": 71.5,
+    "battery_kwh": 160.0,
+    "inverter_kw": 55.0,
+    "generator_kw": 8.0
+  },
+  "price_abs_usd_yr": 851.8890380212251,
+  "price_rel_pct": 4.207328069391022,
+  "proven": true,
+  "lattice_size": 2585466,
+  "pruned_points": 2576439,
+  "enumerated_points": 9027,
+  "simulations": 11492,
+  "relaxations": 806,
+  "seconds": 3759.2685470581055,
+  "discount_rate": 0.08,
+  "energy_served_kwh": 84158.50661880881,
+  "npc_usd": 230087.19661303455,
+  "lcoe_usd_kwh": 0.25611537704474885,
+  "tariff_target_usd_kwh": 0.263,
+  "subsidy_fraction": 0.0,
+  "subsidy_usd": 0.0,
+  "architecture": "dc",
+  "architecture_runner_up": "ac",
+  "architecture_margin_usd_yr": 2209.67139426259
+}

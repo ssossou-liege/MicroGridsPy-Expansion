@@ -413,8 +413,9 @@ def narrow_to_incumbent(instance, lattice, incumbent, economics, battery, genera
     beyond it costs at least that bound and so is strictly worse than a sizing already in
     hand. The same argument from below gives the other end.
 
-    On the reference instance this removes ninety-nine per cent of the lattice in under four
-    minutes and thirty-six relaxations, against the eight hours enumerating it would take.
+    On the reference instance this removes ninety-five per cent of the lattice — 633,186
+    designs down to 32,760 — in thirty-seven relaxations and three and a half minutes,
+    against the eight hours enumerating it would take.
     What it removes is *counted as discarded*, not forgotten: the certificate still accounts
     for every design of the lattice it was asked to search.
     """

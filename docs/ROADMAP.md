@@ -195,8 +195,7 @@ the minimum publishable result.
 
 ---
 
-## L3 — Certified sizing on real data (P0, machinery complete 2026-08-25;
-## results provisional pending productive-use demand)
+## L3 — Certified sizing on real data (P0, complete 2026-08-25)
 
 - [x] **Representative days** (`timedomain/rep_days.py`, `timedomain/kmedoids.py`).
   Weighted k-medoids implemented in-repo — the only maintained package offering it is
@@ -280,7 +279,7 @@ unmeasurable parameter — so long as costs stay in the observed range.
 
 ---
 
-## L3b — Productive uses in the demand model (P0, blocking L4)
+## L3b — Productive uses in the demand model (P0, complete 2026-08-25)
 
 The demand model is calibrated and scaled on households alone. Over the last twelve months of
 meter data, productive-use enterprises account for **75.6 % of measured energy at Samionta**
@@ -379,26 +378,91 @@ observations.
 
 ---
 
-## L4 — Stochastic multi-scenario / tree extension (P1)
+## L4 — Stochastic multi-scenario / tree extension (P0, complete 2026-08-26)
 
 Goal: expected `Δ_heur` across a reduced scenario tree — the full result.
 
-- [ ] **Scenario generation** — `scenarios/{demand_paths,pv_paths,cost_paths,mc_sampler,
-  assemble}.py`: demand trajectories from L1 with connection growth, SSP yield profiles
-  from the downscaling framework, fuel and capital-cost trajectories, policy draws.
-  *Done when* `sample_scenario_paths(cfg)` returns resolved `ScenarioPath`s with 8760 arrays.
-- [ ] **Scenario reduction + tree** — `tree/{reduce,build_tree}.py` (per-stage medoid
-  reduction → branching tree, path probabilities, reduction error reported).
-  *Done when* `build_tree` returns a `ScenarioTree` with `check_probabilities()` passing.
-- [ ] **Deterministic-equivalent MILP** — fill `model/{coords,variables,
-  investment_constraints,dispatch_constraints,economics,build}.py`. The relaxed solve is
-  the tree-wide lower bound. *Done when* `build_model` solves and reproduces the
-  single-node case of L2.
-- [ ] **Branch-and-simulate over the tree** — outer branch over the per-node capacity plan;
-  lower bound from the tree relaxation on the capacity box, upper bound from rule
-  simulation per (node, scenario, representative day). Wire through `run.py`.
-  *Done when* `python -m microgrid_expansion.run` returns expected NPC/LCOE and expected
-  `Δ_heur` with a certificate.
+- [x] **Climate series in one document per site** (`resource/cmip6.py`,
+  `data/irradiance/download.py`). Acquired from
+  **NASA's downscaled CMIP6 archive** rather than from the raw model output: it is already
+  bias-corrected to a quarter degree — the step this study could not otherwise validate —
+  and its subset service returns one grid point openly, so a site needs kilobytes where the
+  raw archive needs hundreds of megabytes a year *and* a licence agreement the Copernicus
+  route refused. Three pathways × three models × five milestone years × two sites, produced.
+  Watch the grid label: it is a property of the model (`gr1`, `gr`, `gn`) and a wrong one
+  returns a 404 indistinguishable from a model that does not publish the pathway. The
+  fifteen series of a site are merged into one document indexed by pathway and year rather
+  than left as fifteen files with those keys encoded in their names, where nothing can read
+  them without parsing a string.
+- [x] **Cost trajectories** (`settings.CostTrajectory`), sourced and declared. Photovoltaic
+  from experience curves (26 % per doubling 1976–2025, falling towards 17 % by 2050;
+  balance-of-system learning far more slowly than modules) corrected for African mini-grid
+  capital having fallen a fifth over 2020–2024 from twice the global level. Storage from a
+  national laboratory's three cases (−17 %, −30 %, −52 % over 2022–2035, flattening after).
+  Fuel does not learn: near-term outlooks are dominated by shocks and long-run scenarios
+  disagree in sign, so its band is centred on a flat real price and is marked **unverified**,
+  which is why it is an uncertainty axis rather than a parameter.
+- [x] **Scenario generation** — `scenarios/`. Growth trajectory and cost future are drawn
+  once per path and held; pathway and policy are redrawn per stage. Demand realisations come
+  from cached pools: given trajectory and maturity the generator's draws are exchangeable, so
+  a pool of four sampled with replacement represents the conditional distribution as
+  faithfully as a fresh run per path, at a hundredth of the cost — and a fresh run per path
+  is not merely expensive but impossible.
+- [x] **Scenario reduction + tree** — `tree/`. Medoid reduction on what a sizing is
+  sensitive to (energy, peak, when it falls, resource, their correlation, prices), nested as
+  a fan: with two reference sites there is no basis for saying a village that grew quickly to
+  year five is likelier to grow quickly to year ten. Distortion reported per stage.
+- [x] **Deterministic-equivalent programme** — `model/`. The lower oracle, generalised from
+  one year to the tree, inheriting every L3 correction: coupling architecture arbitrated on
+  the tree, array-to-converter ceiling at each node, assets recovered over their own lives,
+  flows split by destination.
+- [x] **Branch-and-simulate over the tree** — `exact/tree_oracle.py`, `exact/tree_certify.py`,
+  `run.py`. The upper oracle simulates the controller node by node; a descent from the
+  programme's plan finds the plan the controller itself prefers.
+
+### Four modelling traps, all of which broke Proposition 1 before being found
+
+- **The `rule_faithful` encoding.** The skeleton offered a variant adding the night-reserve
+  floor to the cost objective and claiming to reproduce the field controller. It is deleted:
+  the rule trajectory sits below that floor in 4–60 % of hours, and a programme minimising
+  over a horizon is anticipative where the controller is causal.
+- **A representative day runs sunrise to sunrise, not midnight to midnight.** The calendar
+  day cuts the night in half and leaves the shorter half at the end: on the reference site
+  the evening peak falls at 19:00, four hours before the array runs out, while the night it
+  opens lasts thirteen. A controller whose whole function is to carry that night saw a third
+  of it. Rolling the year to the hour the array starts producing **halves the error a
+  compressed year makes on operating cost, from about 35 % to 14 %**, and it is what makes a
+  cyclic condition meaningful — at sunrise the pack is at its daily low, so requiring it to
+  return there says only that a representative day neither borrows from tomorrow nor lends to
+  it. (Tested against the continuous recursion the programme uses, the cyclic and fixed
+  openings turn out to give identical bounds: the recursion already runs across the year, so
+  the condition is not binding.)
+- **Representative days still cannot measure the price of the heuristic.** Aligned or not,
+  each opens at a fixed state of charge, which is a free daily recharge; the residual 14 %
+  does not shrink with more days. And the quantity measured *is* the unpredictability
+  between days: simulated alone the price triples, repeated it collapses to a fifth. So
+  compression is imposed on the programme, where it costs 0.6 % of the bound at 64 aligned
+  days and buys a twelvefold speed-up; it is never imposed on the simulation, which runs the
+  whole year at fifty milliseconds a node.
+- **A day-by-day storage recursion hands out free recharges.** Splitting a node's year into
+  independent days opened each at the same state of charge — 365 free recharges a year, worth
+  about a sixth of annualised cost, putting the bound below anything achievable. The
+  recursion runs continuously across the year, opening where the controller opens and ending
+  free. Closing it would break the bound the other way, as L3 already measured.
+- **Two oracles, two fuel curves.** The programme minorised with the largest unit's curve
+  while the simulation used the installed unit's — a quarter of a litre per kilowatt-hour
+  separates the ends of this catalogue. Both now use a minorant valid across it, and the
+  same defect was found and fixed in L3, where the search had been evaluating every design
+  with the largest generator's curve regardless of which it installed.
+
+### Result
+
+Samionta, three stages (years 0, 10, 20), seven nodes, whole years, both architectures raced:
+direct-current coupling wins; here-and-now plant **45.5 kW · 135 kWh · 35 kW · 8 kW**,
+expanding to 71.5 kW · 185 kWh in the 68 % branch and standing pat in the other. Expected
+levelised cost **144 FCFA/kWh**, unserved energy nil at every node, price of the heuristic
+**6.8 %** — an upper bound, the plan coming from a descent rather than an exhaustive
+certification.
 
 ---
 

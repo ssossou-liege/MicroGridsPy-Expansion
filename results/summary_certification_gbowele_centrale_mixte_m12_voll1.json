@@ -1,0 +1,40 @@
+{
+  "site": "Gbowele",
+  "year": 2025,
+  "trajectory": "centrale",
+  "maturity_months": 12,
+  "voll_usd_kwh": 1.0,
+  "design": {
+    "pv_kw": 22.75,
+    "battery_kwh": 95.0,
+    "pv_ac_kw": 17.25,
+    "inverter_kw": 17.5,
+    "generator_kw": 8.0
+  },
+  "z_rule_usd_yr": 11428.36446981249,
+  "z_opt_usd_yr": 10519.878605576585,
+  "design_opt": {
+    "pv_kw": 22.5,
+    "pv_ac_kw": 17.5,
+    "battery_kwh": 85.0,
+    "inverter_kw": 17.5,
+    "generator_kw": 8.0
+  },
+  "price_abs_usd_yr": 908.485864235905,
+  "price_rel_pct": 8.635896841569224,
+  "proven": true,
+  "lattice_size": 229257,
+  "pruned_points": 213381,
+  "enumerated_points": 15876,
+  "simulations": 19599,
+  "relaxations": 38,
+  "seconds": 1845.0013182163239,
+  "discount_rate": 0.08,
+  "energy_served_kwh": 44814.704214913596,
+  "npc_usd": 122870.03417498214,
+  "lcoe_usd_kwh": 0.25684236870976557,
+  "tariff_target_usd_kwh": 0.263,
+  "subsidy_fraction": 0.0,
+  "subsidy_usd": 0.0,
+  "architecture": "mixte"
+}

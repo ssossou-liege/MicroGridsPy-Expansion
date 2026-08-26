@@ -1,5 +1,5 @@
-"""Scenario reduction and scenario-tree construction."""
-from .tree_model import ScenarioTree, NodeData
+"""Scenario-tree construction."""
 from .build_tree import build_tree
+from .tree_model import NodeData, ScenarioTree
 
-__all__ = ["ScenarioTree", "NodeData", "build_tree"]
+__all__ = ["build_tree", "NodeData", "ScenarioTree"]

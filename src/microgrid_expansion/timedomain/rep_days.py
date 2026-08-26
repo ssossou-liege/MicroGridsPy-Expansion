@@ -5,6 +5,15 @@ nearest to it and carrying their number as its weight. The medoids are real days
 compressed year retains genuine peaks and genuine calm spells rather than the flattened
 average a centroid would produce.
 
+**A day runs from sunrise to sunrise, not from midnight to midnight.** The calendar day cuts
+the night in half, and the half it leaves at the end is the shorter one: on the reference site
+the evening peak falls at nineteen hours, four hours before the array runs out, while the
+night it opens lasts thirteen. A controller whose whole function is to carry that night sees
+a third of it, provisions for a third of it, and starts its generator for the rest — which is
+not a property of the plant but of where the day was cut. Rolling the year to the hour the
+array starts producing puts the night inside the day it belongs to. The alignment is read
+from the resource rather than declared, since it moves with the latitude and the season.
+
 **What this is, and what it is not.** Time-domain reduction is an *approximation*, not a
 relaxation: the weighted cost of the representative days is neither above nor below the
 cost of the full year in general, and it is therefore not a valid bound. The certificate of
@@ -68,6 +77,19 @@ class RepDays:
         return rebuilt
 
 
+def sunrise_hour(specific_yield: np.ndarray, threshold: float = 0.01) -> int:
+    """Hour at which the array starts producing, on the mean day.
+
+    Read from the data rather than declared: it moves with the latitude and with the season,
+    and a site sized on a convention borrowed from another would carry that convention's
+    error into every representative day.
+    """
+    days = specific_yield.size // HOURS_PER_DAY
+    mean_day = specific_yield[:days * HOURS_PER_DAY].reshape(days, HOURS_PER_DAY).mean(axis=0)
+    lit = np.flatnonzero(mean_day > threshold * max(mean_day.max(), 1e-12))
+    return int(lit[0]) if lit.size else 0
+
+
 def daily_features(demand_kw: np.ndarray, specific_yield: np.ndarray) -> np.ndarray:
     """Feature vector of each day: both daily shapes, scaled to comparable magnitude.
 
@@ -83,17 +105,44 @@ def daily_features(demand_kw: np.ndarray, specific_yield: np.ndarray) -> np.ndar
     return np.hstack([demand / scale_d, yield_ / scale_y])
 
 
-def reduce_to_rep_days(instance, n_rep: int = 12) -> RepDays:
-    """Compress a site-year into ``n_rep`` weighted representative days."""
+def reduce_to_rep_days(instance, n_rep: int = 12,
+                       align_to_sunrise: bool = True) -> RepDays:
+    """Compress a site-year into ``n_rep`` weighted representative days.
+
+    Asking for as many days as the year holds — or more — returns the year itself, every
+    day standing only for itself. That is not a degenerate case to be guarded against but
+    the one setting under which the compression costs nothing, and it is what a study needs
+    whenever the quantity being measured is destroyed by compressing: the price of the
+    heuristic is the price of not knowing what tomorrow brings, and a representative day has
+    no tomorrow of its own.
+    """
     days = instance.demand_kw.size // HOURS_PER_DAY
-    if n_rep > days:
-        raise ValueError(f"cannot draw {n_rep} representative days from {days}")
+    if n_rep >= days:
+        # Nothing is compressed, so there are no day boundaries to worry about: the
+        # simulation runs the hours in the order they occur. Alignment exists to stop an
+        # independent day from cutting the night in half, and an uncompressed year has no
+        # independent days.
+        def as_days(array: np.ndarray) -> np.ndarray:
+            return np.asarray(array)[:days * HOURS_PER_DAY].reshape(days, HOURS_PER_DAY)
+        every = np.arange(days)
+        return RepDays(weight=np.ones(days), demand=as_days(instance.demand_kw),
+                       specific_yield=as_days(instance.specific_yield),
+                       t_amb_c=as_days(instance.t_amb_c),
+                       usable_fraction=as_days(instance.usable_fraction),
+                       self_discharge=as_days(instance.self_discharge),
+                       medoid_days=every, labels=every)
+
+    # The year is rolled rather than trimmed, so that no day is lost to the offset: the
+    # hours before the first sunrise belong to the night that closes the year.
+    offset = (sunrise_hour(instance.specific_yield) if align_to_sunrise else 0)
 
     def as_days(array: np.ndarray) -> np.ndarray:
-        return np.asarray(array)[:days * HOURS_PER_DAY].reshape(days, HOURS_PER_DAY)
+        rolled = np.roll(np.asarray(array)[:days * HOURS_PER_DAY], -offset)
+        return rolled.reshape(days, HOURS_PER_DAY)
 
-    clustering = kmedoids(daily_features(instance.demand_kw, instance.specific_yield),
-                          n_rep)
+    clustering = kmedoids(
+        daily_features(as_days(instance.demand_kw).ravel(),
+                       as_days(instance.specific_yield).ravel()), n_rep)
     chosen = clustering.medoids
     return RepDays(
         weight=clustering.weights,

@@ -58,6 +58,9 @@ class ScenarioTree:
     n_years: dict[int, int] = field(default_factory=dict)
     leaves: list[int] = field(default_factory=list)
     node_data: dict[int, NodeData] = field(default_factory=dict)
+    #: Mean distortion of each stage's reduction, in the scaled feature space, so
+    #: that a compression which has lost something says so rather than passing.
+    reduction_error: dict[int, float] = field(default_factory=dict)
 
     def ancestors(self, node: int) -> list[int]:
         """Return the chain from the root to ``node`` inclusive."""

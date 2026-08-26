@@ -1,31 +1,41 @@
-"""Solver configuration and invocation.
-
-Solves the assembled MILP with HiGHS (default, open source) or Gurobi. Exposes a
-single interface so the choice of backend does not change calling code.
-"""
+"""Solve the tree programme, with the project's solver and its silences."""
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-import linopy
-
-from ..config import ModelConfig
+from ..settings import ProjectSettings, default_settings
 
 
 @dataclass
-class SolveResult:
-    """Outcome of a solve: status, objective, gap and wall-clock time."""
+class Solution:
+    """What a solve returns beyond the objective."""
 
     status: str
-    objective: float | None
-    gap: float | None
-    wall_time_s: float | None
+    objective: float
+    seconds: float
 
 
-def solve(model: linopy.Model, cfg: ModelConfig) -> SolveResult:
-    """Solve ``model`` according to ``cfg`` (solver, time limit, MIP gap, threads).
+def solve(programme, settings: ProjectSettings | None = None, **overrides) -> Solution:
+    """Solve a built programme and report its status honestly.
 
-    Maps ``cfg`` onto ``model.solve(...)`` keyword options for the chosen backend and
-    returns a :class:`SolveResult`. Stub for the skeleton.
+    A programme that does not solve returns an infinite objective rather than raising: over
+    a tree, one architecture may hold no feasible plan at all — an array ceiling that no
+    inverter in the catalogue can satisfy, say — and that is a result the search uses, not
+    an error it should abort on.
     """
-    raise NotImplementedError("Invoke model.solve with backend-specific options.")
+    import time
+
+    settings = default_settings() if settings is None else settings
+    name = overrides.pop("solver", None) or settings.solver.name
+    quiet = {"highs": {"output_flag": False}, "gurobi": {"OutputFlag": 0}}
+    if name == "gurobi":
+        import gurobipy
+        gurobipy.setParam("OutputFlag", 0)
+
+    options = dict(quiet.get(name, {}))
+    options.update(overrides)
+    started = time.time()
+    programme.model.solve(solver_name=name, progress=False, **options)
+    status = str(programme.model.status)
+    value = (float(programme.model.objective.value) if "ok" in status else float("inf"))
+    return Solution(status=status, objective=value, seconds=time.time() - started)

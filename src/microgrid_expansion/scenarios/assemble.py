@@ -23,6 +23,8 @@ class AxisDraw:
     resource: str                       # SSP pathway
     policy: float                       # minimum penetration target
     costs: dict[str, float] = field(default_factory=dict)
+    trajectory: str = "centrale"        # demand growth, held over the path
+    cost_scenario: str = "central"      # cost future, held over the path
 
 
 @dataclass
@@ -49,14 +51,20 @@ def sample_scenario_paths(
     rng = np.random.default_rng(cfg.seed)
     raw_paths = mc_sampler.sample_paths(cfg, space)
 
+    site = getattr(cfg, "site", "Samionta")
     resolved: list[ScenarioPath] = []
     for pid, raw in enumerate(raw_paths):
         draws, demand, pv_unit, t_amb = [], {}, {}, {}
         for stage in raw:
             y = stage["stage_year"]
-            costs = cost_paths.stage_costs(space.economic, y, rng)
-            draws.append(AxisDraw(y, stage["resource"], stage["policy"], costs))
-            demand[y] = demand_paths.simulate_stage_demand(space.demand, y, rng)
-            pv_unit[y], t_amb[y] = pv_paths.simulate_stage_pv(stage["resource"], y)
+            costs = cost_paths.stage_costs(space.economic, y, rng,
+                                           scenario=stage["cost_scenario"])
+            draws.append(AxisDraw(y, stage["resource"], stage["policy"], costs,
+                                  trajectory=stage["trajectory"],
+                                  cost_scenario=stage["cost_scenario"]))
+            demand[y] = demand_paths.simulate_stage_demand(
+                space.demand, y, rng, site=site, trajectory=stage["trajectory"])
+            pv_unit[y], t_amb[y] = pv_paths.simulate_stage_pv(
+                stage["resource"], y, site=site, rng=rng)
         resolved.append(ScenarioPath(pid, draws, demand, pv_unit, t_amb))
     return resolved

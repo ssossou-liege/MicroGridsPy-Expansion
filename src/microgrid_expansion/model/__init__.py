@@ -1,4 +1,4 @@
-"""linopy formulation: coordinates, variables, constraints, economics, assembly."""
-from .build import build_model
+"""Deterministic-equivalent programme over the scenario tree."""
+from .build import TreeProgramme, build_model
 
-__all__ = ["build_model"]
+__all__ = ["TreeProgramme", "build_model"]

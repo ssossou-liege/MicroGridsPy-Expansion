@@ -1,8 +1,6 @@
-"""Monte-Carlo construction of scenario paths over the four uncertainty families.
+"""Monte-Carlo scenario generation over the four uncertainty families."""
+from .assemble import AxisDraw, ScenarioPath, sample_scenario_paths
+from .uncertainty_space import UncertaintySpace
 
-See Section "Uncertainty space, scenario generation and reduction" of
-``docs/formulation/model.tex``.
-"""
-from .assemble import ScenarioPath, AxisDraw, sample_scenario_paths
-
-__all__ = ["ScenarioPath", "AxisDraw", "sample_scenario_paths"]
+__all__ = ["AxisDraw", "ScenarioPath", "sample_scenario_paths",
+           "UncertaintySpace"]

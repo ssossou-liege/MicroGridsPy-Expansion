@@ -1,16 +1,43 @@
-"""Extract a tidy view of the optimal solution from a solved linopy model."""
+"""Read a solved tree programme back into capacities per node."""
 from __future__ import annotations
 
-import linopy
+from dataclasses import dataclass
 
-from ..tree.tree_model import ScenarioTree
+import numpy as np
 
 
-def extract_solution(model: linopy.Model, tree: ScenarioTree) -> dict:
-    """Return per-node capacities and dispatch time-series from the solved model.
+@dataclass
+class NodePlan:
+    """The plant standing at one node of the tree."""
 
-    Produces, per node: installed capacities (pv, batt, ge, inv), the capacity
-    increments decided there, and the operating arrays (P_ge, P_ch, P_dis, e, q, l,
-    y) on the representative-day grid. Stub for the skeleton.
-    """
-    raise NotImplementedError("Read solution values from model.variables.")
+    node: int
+    pv_kw: float
+    battery_kwh: float
+    inverter_kw: float
+    generator_kw: float
+
+
+def extract_solution(programme, cfg) -> dict[int, NodePlan]:
+    """Installed capacity at every node, accumulated along its path from the root."""
+    v, c = programme.variables, programme.coords
+    ratings = np.asarray(cfg.gen_catalog_kw, dtype=float)
+    added = {name: np.asarray(v[name].solution, dtype=float)
+             for name in ("b_pv", "b_batt", "b_inv")}
+    chosen = np.asarray(v["z_ge"].solution, dtype=float)
+    index = {int(n): k for k, n in enumerate(c.node)}
+
+    plans = {}
+    for node in c.node:
+        node = int(node)
+        chain, cursor = [], node
+        while cursor is not None:
+            chain.append(index[cursor])
+            cursor = c.parent[cursor]
+        plans[node] = NodePlan(
+            node=node,
+            pv_kw=cfg.pv_unit_kw * sum(added["b_pv"][k] for k in chain),
+            battery_kwh=cfg.batt_unit_kwh * sum(added["b_batt"][k] for k in chain),
+            inverter_kw=cfg.inv_unit_kw * sum(added["b_inv"][k] for k in chain),
+            generator_kw=float(ratings @ chosen[index[node]]),
+        )
+    return plans

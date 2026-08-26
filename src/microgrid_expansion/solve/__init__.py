@@ -1,4 +1,4 @@
 """Solver driver."""
-from .driver import solve
+from .driver import Solution, solve
 
-__all__ = ["solve"]
+__all__ = ["Solution", "solve"]

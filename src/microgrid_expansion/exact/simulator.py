@@ -142,12 +142,21 @@ class Capacities:
     matches the array, which is how controllers and string inverters are ordinarily sized.
     """
 
+    #: Array on the hybrid inverter's own trackers, feeding the battery's bus.
     pv_kw: float
     battery_kwh: float
     inverter_kw: float
     generator_kw: float
-    architecture: str = "dc"
+    #: Array on string inverters, feeding the load's bus. Zero recovers a plant whose whole
+    #: field is on the hybrid inverter; setting ``pv_kw`` to zero recovers the converse.
+    pv_ac_kw: float = 0.0
+    architecture: str = "mixte"
     pv_conversion_kw: float | None = None
+
+    @property
+    def pv_total_kw(self) -> float:
+        """Installed array, both buses together."""
+        return self.pv_kw + self.pv_ac_kw
 
     @property
     def conversion_kw(self) -> float:
@@ -159,9 +168,17 @@ class Capacities:
         """
         return self.pv_kw if self.pv_conversion_kw is None else self.pv_conversion_kw
 
-    def admissible(self, ratio_max: float) -> bool:
-        """Whether the array is within what its conversion admits."""
-        return self.pv_kw <= ratio_max * self.inverter_kw + 1e-9
+    def admissible(self, ratio_dc: float, ratio_ac: float | None = None) -> bool:
+        """Whether each part of the array is within what its converter admits.
+
+        The two parts are limited separately and for different reasons: the trackers
+        integrated in the hybrid inverter accept a bounded array per unit of rating, and an
+        array on the load's bus must be absorbable by the battery inverter the instant the
+        load falls away.
+        """
+        ratio_ac = ratio_dc if ratio_ac is None else ratio_ac
+        return (self.pv_kw <= ratio_dc * self.inverter_kw + 1e-9
+                and self.pv_ac_kw <= ratio_ac * self.inverter_kw + 1e-9)
 
 
 def night_reserve(demand_kw: np.ndarray, pv_kw: np.ndarray,
@@ -287,7 +304,9 @@ def simulate(
 ) -> Dispatch:
     """Run the controller over a series and return its trajectory."""
     demand = np.asarray(demand_kw, dtype=float)
-    pv = np.asarray(specific_yield, dtype=float) * capacities.pv_kw
+    # The whole field produces, whichever bus each part of it is on; the split governs the
+    # path to the load, not the output.
+    pv = np.asarray(specific_yield, dtype=float) * capacities.pv_total_kw
     temperature = np.asarray(t_amb_c, dtype=float)
     n = demand.size
     if pv.size != n or temperature.size != n:
@@ -318,52 +337,60 @@ def simulate(
     spill = 0.0
 
     floor = battery.soc_min * capacities.battery_kwh
-    conversion = capacities.conversion_kw
-    ac_coupled = capacities.architecture == "ac"
-    # Array energy that reaches storage across the alternating bus is converted twice, up
-    # by the string inverter and down by the hybrid inverter. Charging the battery is what
-    # this architecture pays for the conversion it saves on the way to the load.
-    charge_efficiency = (battery.charge_efficiency * config.AC_DOUBLE_CONVERSION_EFF
-                         if ac_coupled else battery.charge_efficiency)
+    total_array = capacities.pv_total_kw
+    share_dc = (capacities.pv_kw / total_array) if total_array > 0 else 0.0
+    # Array energy reaching storage across the load's bus is converted twice, up by the
+    # string inverter and down again by the hybrid inverter. That second conversion is what
+    # a field placed on the load's bus pays for the one it saves on the way to the load.
+    eta_ac = battery.charge_efficiency * config.AC_DOUBLE_CONVERSION_EFF
     clipped_total = 0.0
     for h in range(n):
         energy = max(soc[h] - losses[h], floor)
         ceiling = ceilings[h]
 
-        # The array cannot deliver more than its own conversion equipment is rated for.
-        # What it offers beyond that is clipped at the controller or string inverter and
-        # never reaches any bus, whatever the plant would have done with it.
-        available_pv = min(pv[h], conversion)
-        clipped = pv[h] - available_pv
+        # Neither part of the array delivers more than its own converter is rated for; the
+        # excess is clipped and reaches no bus at all.
+        offered = pv[h] * share_dc
+        offered_ac = pv[h] - offered
+        available_dc = min(offered, capacities.pv_kw)
+        available_ac = min(offered_ac, capacities.pv_ac_kw)
+        clipped = (offered - available_dc) + (offered_ac - available_ac)
         clipped_total += clipped
 
         inverter_left = capacities.inverter_kw
-        if ac_coupled:
-            # The array is on the load's own bus and reaches it without the hybrid inverter.
-            served = min(available_pv, demand[h])
-        else:
-            # The array is on the battery's bus; everything it sends the load is converted.
-            served = min(available_pv, demand[h], inverter_left)
-            inverter_left -= served
-            inverter_flow[h] += served
-        surplus = available_pv - served
+        # The field on the load's bus serves it without conversion, and is therefore drawn
+        # on first; what the field on the battery's bus sends the load is converted.
+        served_ac = min(available_ac, demand[h])
+        remaining_demand = demand[h] - served_ac
+        served_dc = min(available_dc, remaining_demand, inverter_left)
+        inverter_left -= served_dc
+        inverter_flow[h] += served_dc
+
+        served = served_ac + served_dc
+        surplus_dc = available_dc - served_dc
+        surplus_ac = available_ac - served_ac
         deficit = demand[h] - served
         pv_to_load[h] = served
 
-        # 1. photovoltaic surplus charges the battery, the rest is curtailed. Under
-        #    direct-current coupling the battery shares the array's bus and the surplus
-        #    reaches it without conversion; under alternating-current coupling it must be
-        #    rectified, and the hybrid inverter limits it.
+        # 1. the surplus charges the battery. From the battery's own bus it arrives without
+        #    conversion; from the load's bus it must be rectified, and the hybrid inverter
+        #    limits it.
         headroom = max(ceiling - energy, 0.0)
-        charge_ceiling = min(inverter_left, power_limit) if ac_coupled else power_limit
-        charge_kw = min(surplus, charge_ceiling,
-                        headroom / charge_efficiency / timestep_h)
-        charge_kw = max(charge_kw, 0.0)
-        energy += charge_efficiency * charge_kw * timestep_h
-        if ac_coupled:
-            inverter_left -= charge_kw
-            inverter_flow[h] += charge_kw
-        curtailed[h] = surplus - charge_kw + clipped
+        charge_dc = min(surplus_dc, power_limit,
+                        headroom / battery.charge_efficiency / timestep_h)
+        charge_dc = max(charge_dc, 0.0)
+        energy += battery.charge_efficiency * charge_dc * timestep_h
+
+        headroom = max(ceiling - energy, 0.0)
+        charge_ac = min(surplus_ac, inverter_left, power_limit - charge_dc,
+                        headroom / eta_ac / timestep_h)
+        charge_ac = max(charge_ac, 0.0)
+        energy += eta_ac * charge_ac * timestep_h
+        inverter_left -= charge_ac
+        inverter_flow[h] += charge_ac
+
+        charge_kw = charge_dc + charge_ac
+        curtailed[h] = (surplus_dc - charge_dc) + (surplus_ac - charge_ac) + clipped
         charge[h] = charge_kw
 
         if deficit > 0:

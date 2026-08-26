@@ -9,6 +9,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from microgrid_expansion import config
+
 from microgrid_expansion.exact.certify import Lattice, _Box, _centre, _split
 from microgrid_expansion.exact.simulator import Capacities
 from microgrid_expansion.timedomain.kmedoids import kmedoids, pairwise_distances
@@ -96,10 +98,19 @@ def test_representative_days_account_for_every_day():
 
 
 def test_representative_days_are_days_of_the_year():
-    """Each representative profile must be lifted from the instance, not synthesised."""
+    """Each representative profile must be lifted from the instance, not synthesised.
+
+    Lifted from the *aligned* grid: a representative day runs sunrise to sunrise, so it is
+    a real day of the year read from the hour the array starts producing, not a slice of
+    the calendar. The property that matters — a medoid is an outcome that occurred, never
+    an average of two that did not — is unchanged.
+    """
+    from microgrid_expansion.timedomain.rep_days import sunrise_hour
+
     instance = synthetic_year()
     rep = reduce_to_rep_days(instance, 6)
-    days = instance.demand_kw.reshape(-1, HOURS_PER_DAY)
+    offset = sunrise_hour(instance.specific_yield)
+    days = np.roll(instance.demand_kw, -offset).reshape(-1, HOURS_PER_DAY)
     for row, source in zip(rep.demand, rep.medoid_days):
         assert np.allclose(row, days[source])
 
@@ -128,9 +139,28 @@ def test_features_combine_both_drivers():
     assert np.isfinite(features).all()
 
 
-def test_asking_for_more_days_than_the_year_holds_is_rejected():
-    with pytest.raises(ValueError, match="representative days"):
-        reduce_to_rep_days(synthetic_year(days=5), 10)
+def test_asking_for_the_whole_year_returns_the_whole_year():
+    """The uncompressed year must be reachable through the same door.
+
+    Compression is imposed on the programme, which cannot solve every hour of every node of
+    a scenario tree. It must not be imposed on the simulation, because the price of the
+    heuristic is the price of not knowing what tomorrow brings and a representative day has
+    no tomorrow of its own: simulated alone it truncates the night at midnight and the
+    price triples; repeated, the morrow becomes a copy of the day and the price collapses.
+    Asking for as many days as the year holds is therefore not an error but the setting
+    under which the two oracles are comparable at all.
+    """
+    instance = synthetic_year(days=5)
+    days = reduce_to_rep_days(instance, 10)
+
+    assert days.n_days == 5
+    assert (days.weight == 1.0).all()
+    assert days.demand.ravel() == pytest.approx(instance.demand_kw)
+    assert days.specific_yield.ravel() == pytest.approx(instance.specific_yield)
+    # and the compression it replaces is exact by construction
+    error = reduction_error(instance, days)
+    assert abs(error["energy_error_pct"]) < 1e-9
+    assert abs(error["peak_error_pct"]) < 1e-9
 
 
 # ---------------------------------------------------------------- the lattice
@@ -145,22 +175,37 @@ def test_the_lattice_is_sized_around_the_instance():
 
 
 def test_lattice_points_map_to_physical_capacities():
-    lattice = Lattice(1.0, 5.0, 2.0, (5.0, 10.0), (0, 4), (0, 3), (1, 2))
-    caps = lattice.capacities(2, 3, 1, 10.0)
-    assert caps == Capacities(pv_kw=2.0, battery_kwh=15.0,
-                              inverter_kw=2.0, generator_kw=10.0)
-    # Not every combination is a plant: an array is limited by what its converter admits,
-    # so the lattice counts the buildable pairs rather than the Cartesian product. With one
-    # inverter unit of 2 kW only 0 to 2 kW of array can be wired, with two units 0 to 4.
-    buildable_pairs = sum(1
-                          for n_inv in (1, 2)
-                          for n_pv in range(0, 5)
-                          if lattice.admits(n_pv, n_inv))
-    assert lattice.size == buildable_pairs * 4 * 2
-    assert lattice.size < 5 * 4 * 2 * 2          # the product would include unwirable ones
+    """A lattice index must resolve to the plant it denotes, split included."""
+    lattice = Lattice(pv_unit_kw=0.5, batt_unit_kwh=5.0, inv_unit_kw=2.0,
+                      generator_ratings=(5.0, 10.0), n_pv=(0, 4), n_batt=(0, 3),
+                      n_inv=(1, 2), n_pv_ac=(0, 2))
+    caps = lattice.capacities(4, 3, 2, 10.0)
+
+    # With the split derived, the count is the whole field and the parts follow from the
+    # inverter: what its integrated trackers admit goes on the battery's bus, the rest on
+    # the load's.
+    assert caps.pv_total_kw == pytest.approx(2.0)
+    assert caps.pv_kw == pytest.approx(min(2.0, 1.3 * 4.0))
+    assert caps.pv_ac_kw == pytest.approx(2.0 - caps.pv_kw)
+    assert caps.battery_kwh == pytest.approx(15.0)
+    assert caps.inverter_kw == pytest.approx(4.0)
+    assert caps.generator_kw == pytest.approx(10.0)
+
+    # Not every combination is a plant: each part of the field is limited by its own
+    # converter, so the count of buildable designs falls short of the Cartesian product.
+    buildable = sum(1
+                    for n_inv in (1, 2)
+                    for n_pv in range(0, 5)
+                    if lattice.admits(n_pv, n_inv))
+    assert lattice.size == buildable * 4 * 2
+
+    # With an inverter too small for the field, part of the product is excluded outright.
+    serré = Lattice(pv_unit_kw=0.5, batt_unit_kwh=5.0, inv_unit_kw=0.5,
+                    generator_ratings=(5.0,), n_pv=(0, 6), n_batt=(0, 1),
+                    n_inv=(1, 2), n_pv_ac=(0, 6))
+    assert serré.size < 7 * 2 * 2 * 7
 
 
-# --------------------------------------------------------------- box splitting
 def test_splitting_partitions_a_box_without_loss():
     box = _Box(0.0, (0, 9), (0, 3), (1, 2), (5.0, 10.0))
     children = _split(box)
@@ -181,15 +226,17 @@ def test_a_singleton_box_is_recognised():
 
 
 def test_the_centre_of_a_box_lies_inside_it():
-    box = _Box(0.0, (2, 8), (1, 5), (1, 3), (5.0, 10.0, 16.0))
-    n_pv, n_bt, n_iv, gen = _centre(box)
+    """The representative point of a box must belong to it on every axis."""
+    box = _Box(0.0, pv=(2, 9), batt=(0, 6), inv=(1, 4), gens=(5.0, 10.0), pv_ac=(1, 7))
+    n_pv, n_bt, n_iv, gen, n_ac = _centre(box)
+
     assert box.pv[0] <= n_pv <= box.pv[1]
     assert box.batt[0] <= n_bt <= box.batt[1]
     assert box.inv[0] <= n_iv <= box.inv[1]
+    assert box.pv_ac[0] <= n_ac <= box.pv_ac[1]
     assert gen in box.gens
 
 
-# ------------------------------------------------------- the certificate itself
 def _tiny_instance(days: int = 3):
     """A short instance, so that a relaxation costs a fraction of a second."""
     return synthetic_year(days=days)
@@ -303,31 +350,28 @@ def test_the_array_reaches_the_load_only_through_its_conversion():
     assert dispatch.charge_kw.max() > caps.inverter_kw
 
 
-def test_the_two_architectures_are_not_the_same_plant():
-    """Coupling changes what the inverter carries, and so changes the trajectory.
+def test_the_two_buses_are_not_the_same_path():
+    """A field on the load's bus reaches it without crossing the hybrid inverter.
 
-    Were the two indistinguishable there would be nothing to arbitrate and the search could
-    settle the architecture by price alone. They are not: on the same design the hybrid
-    inverter carries the array's output under one and the battery's under the other.
+    That is the whole content of the coupling distinction, and it is why the split is a
+    decision rather than a convention: the field on the battery's bus competes with the
+    discharge for the inverter's rating, and the field on the load's bus does not.
     """
     from microgrid_expansion.exact.simulator import (
         BatteryModel, Capacities, Controller, GeneratorModel, simulate)
 
     instance = _tiny_instance()
-    # An inverter deliberately below the demand peak, so that the constraint has something
-    # to bite on: it is the only regime in which the two architectures can differ.
     rating = 0.4 * float(instance.demand_kw.max())
     flows = {}
-    for architecture in ("dc", "ac"):
-        caps = Capacities(pv_kw=12.0, battery_kwh=15.0, inverter_kw=rating,
-                          generator_kw=5.0, architecture=architecture)
-        dispatch = simulate(instance.demand_kw, instance.specific_yield, instance.t_amb_c,
-                            caps, BatteryModel(), GeneratorModel(), Controller())
-        flows[architecture] = dispatch
-        assert dispatch.inverter_flow_kw.max() <= caps.inverter_kw + 1e-9
+    for name, dc, ac in (("continu", 3.0, 0.0), ("alternatif", 0.0, 3.0)):
+        caps = Capacities(dc, 15.0, rating, 5.0, pv_ac_kw=ac)
+        flows[name] = simulate(instance.demand_kw, instance.specific_yield,
+                               instance.t_amb_c, caps, BatteryModel(), GeneratorModel(),
+                               Controller())
+        assert flows[name].inverter_flow_kw.max() <= rating + 1e-9
 
-    assert flows["dc"].pv_to_load_kw.max() <= rating + 1e-9
-    assert flows["ac"].pv_to_load_kw.max() > rating   # the array bypasses the inverter
+    assert flows["continu"].pv_to_load_kw.max() <= rating + 1e-9
+    assert flows["alternatif"].pv_to_load_kw.max() > rating
 
 
 def test_no_charge_controller_is_sized_outside_the_hybrid_inverter():
@@ -353,17 +397,18 @@ def test_an_array_is_enlarged_only_by_enlarging_its_converter():
     from microgrid_expansion.exact.certify import Lattice
 
     lattice = Lattice(pv_unit_kw=1.0, batt_unit_kwh=5.0, inv_unit_kw=2.0,
-                      generator_ratings=(5.0,), n_pv=(0, 8), n_batt=(0, 1),
+                      generator_ratings=(5.0,), n_pv=(0, 20), n_batt=(0, 1),
                       n_inv=(1, 2), architecture="dc")
-    ratio = lattice.ratio_max
+    # Both converters admit their share, so the ceiling on the whole field is their sum.
+    ratio = config.DC_AC_RATIO_MAX + config.AC_RATIO_MAX
     for n_inv in (1, 2):
-        admitted = [n for n in range(0, 9) if lattice.admits(n, n_inv)]
+        admitted = [n for n in range(0, 21) if lattice.admits(n, n_inv)]
         assert max(admitted) * lattice.pv_unit_kw <= ratio * n_inv * lattice.inv_unit_kw
         # one more unit of array than the converter admits must be refused
         assert not lattice.admits(max(admitted) + 1, n_inv)
     # and a larger inverter admits a strictly larger array
-    assert (max(n for n in range(0, 9) if lattice.admits(n, 2))
-            > max(n for n in range(0, 9) if lattice.admits(n, 1)))
+    assert (max(n for n in range(0, 21) if lattice.admits(n, 2))
+            > max(n for n in range(0, 21) if lattice.admits(n, 1)))
 
 
 def test_the_cost_optimal_design_is_buildable():
@@ -495,3 +540,29 @@ def test_an_unwirable_design_costs_infinity():
     from microgrid_expansion.exact.certify import certify
     result = certify(instance, lattice, coarse_step=2, max_relaxations=60, verbose=False)
     assert result.design.admissible(lattice.ratio_max)
+
+
+def test_a_representative_day_runs_from_sunrise_to_sunrise():
+    """The calendar day cuts the night in half, and leaves the shorter half at the end.
+
+    On the reference site the evening peak falls at nineteen hours, four before the array
+    runs out, while the night it opens lasts thirteen. A controller whose whole function is
+    to carry that night therefore sees a third of it and provisions for a third of it — a
+    property of where the day was cut, not of the plant. Rolling the year to the hour the
+    array starts producing halves the error a compressed year makes on the operating cost,
+    from about thirty-five per cent to fourteen.
+    """
+    from microgrid_expansion.timedomain.rep_days import sunrise_hour
+
+    instance = synthetic_year(days=30)
+    hour = sunrise_hour(instance.specific_yield)
+    assert 0 <= hour < 24
+
+    aligned = reduce_to_rep_days(instance, 6, align_to_sunrise=True)
+    calendar = reduce_to_rep_days(instance, 6, align_to_sunrise=False)
+
+    # the aligned day opens with the array already producing
+    assert aligned.specific_yield[:, 0].mean() > calendar.specific_yield[:, 0].mean()
+    # and closes in the dark, the night having been brought inside the day
+    assert aligned.specific_yield[:, -1].mean() <= calendar.specific_yield[:, -1].mean() + 1e-9
+    assert aligned.weight.sum() == pytest.approx(calendar.weight.sum())

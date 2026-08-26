@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import heapq
 import itertools
+from functools import lru_cache
 import time
 from dataclasses import dataclass, field
 
@@ -56,6 +57,24 @@ class Lattice:
     n_pv: tuple[int, int]
     n_batt: tuple[int, int]
     n_inv: tuple[int, int]
+    #: Modules placed on the load's bus, behind string inverters. Searched only when the
+    #: split is not derived; otherwise it follows from the total field and the inverter.
+    n_pv_ac: tuple[int, int] = (0, 0)
+    #: Whether ``n_pv`` counts the whole field and the split is derived from it.
+    #:
+    #: The two parts of the field produce the same energy per kilowatt and differ in three
+    #: respects: the part on the battery's bus costs less, having no string inverters to
+    #: buy; it reaches storage without a second conversion; and it competes with the
+    #: discharge for the hybrid inverter on its way to the load. The first two favour it
+    #: unconditionally, and the third weighs only when the inverter is congested in
+    #: daylight — which the measured trajectories are not, the flow peaking at 45 per cent
+    #: of the plate because the inverter is sized by the field it must admit rather than by
+    #: the power it must carry. Filling the battery's bus to its ceiling and placing the
+    #: remainder on the load's bus is therefore the split the search would choose, and
+    #: deriving it removes a dimension that multiplied the space by a thousand.
+    #:
+    #: The rule is validated against the undivided search rather than asserted.
+    derive_split: bool = True
     #: Where the array joins the plant. One lattice describes one architecture: the two
     #: differ in what the hybrid inverter carries and in what conversion costs, so a design
     #: means something different under each and they cannot share a bound.
@@ -63,35 +82,54 @@ class Lattice:
 
     @property
     def ratio_max(self) -> float:
-        """Array admitted per kilowatt of hybrid inverter under this architecture."""
-        return (config.DC_AC_RATIO_MAX if self.architecture == "dc"
-                else config.AC_RATIO_MAX)
+        """Field admitted per kilowatt of hybrid inverter by its integrated trackers."""
+        return config.DC_AC_RATIO_MAX
 
-    def admits(self, n_pv: int, n_inv: int) -> bool:
-        """Whether an array of ``n_pv`` units can be wired to ``n_inv`` of inverter.
+    def admits(self, n_pv: int, n_inv: int, n_pv_ac: int = 0) -> bool:
+        """Whether a field can be wired to ``n_inv`` of inverter.
 
-        The converter admits only so much array, so the two counts are not free of one
-        another. Designs that fail this are not expensive, they are unbuildable, and
+        Each part is limited by its own converter, so neither count is free of the
+        inverter's. Designs that fail this are not expensive, they are unbuildable, and
         enumerating them would certify an optimum over a set containing plants nobody can
-        install.
+        install. With the split derived, ``n_pv`` counts the whole field and the two
+        ceilings add.
         """
-        return (n_pv * self.pv_unit_kw
-                <= self.ratio_max * n_inv * self.inv_unit_kw + 1e-9)
+        capacity = n_inv * self.inv_unit_kw
+        if self.derive_split:
+            ceiling = (config.DC_AC_RATIO_MAX + config.AC_RATIO_MAX) * capacity
+            return n_pv * self.pv_unit_kw <= ceiling + 1e-9
+        return (n_pv * self.pv_unit_kw <= config.DC_AC_RATIO_MAX * capacity + 1e-9
+                and n_pv_ac * self.pv_unit_kw <= config.AC_RATIO_MAX * capacity + 1e-9)
 
     @property
     def size(self) -> int:
-        pairs = sum(1
-                    for n_inv in range(self.n_inv[0], self.n_inv[1] + 1)
-                    for n_pv in range(self.n_pv[0], self.n_pv[1] + 1)
-                    if self.admits(n_pv, n_inv))
+        if self.derive_split:
+            pairs = sum(1
+                        for n_inv in range(self.n_inv[0], self.n_inv[1] + 1)
+                        for n_pv in range(self.n_pv[0], self.n_pv[1] + 1)
+                        if self.admits(n_pv, n_inv))
+        else:
+            pairs = sum(1
+                        for n_inv in range(self.n_inv[0], self.n_inv[1] + 1)
+                        for n_pv in range(self.n_pv[0], self.n_pv[1] + 1)
+                        for n_ac in range(self.n_pv_ac[0], self.n_pv_ac[1] + 1)
+                        if self.admits(n_pv, n_inv, n_ac))
         return (pairs * (self.n_batt[1] - self.n_batt[0] + 1)
                 * len(self.generator_ratings))
 
-    def capacities(self, n_pv: int, n_batt: int, n_inv: int, gen: float) -> Capacities:
-        return Capacities(pv_kw=n_pv * self.pv_unit_kw,
-                          battery_kwh=n_batt * self.batt_unit_kwh,
-                          inverter_kw=n_inv * self.inv_unit_kw,
-                          generator_kw=gen, architecture=self.architecture)
+    def capacities(self, n_pv: int, n_batt: int, n_inv: int, gen: float,
+                   n_pv_ac: int = 0) -> Capacities:
+        inverter = n_inv * self.inv_unit_kw
+        if self.derive_split:
+            field = n_pv * self.pv_unit_kw
+            on_battery_bus = min(field, config.DC_AC_RATIO_MAX * inverter)
+            on_load_bus = field - on_battery_bus
+        else:
+            on_battery_bus = n_pv * self.pv_unit_kw
+            on_load_bus = n_pv_ac * self.pv_unit_kw
+        return Capacities(pv_kw=on_battery_bus, battery_kwh=n_batt * self.batt_unit_kwh,
+                          inverter_kw=inverter, generator_kw=gen,
+                          pv_ac_kw=on_load_bus, architecture=self.architecture)
 
     @classmethod
     def around(cls, instance: SiteYear, settings: ProjectSettings | None = None,
@@ -117,8 +155,7 @@ class Lattice:
         # The inverter must cover the peak, but it must also admit the array: capping it at
         # a multiple of the peak alone would forbid the larger arrays by the back door,
         # and the lattice would exclude optima it was never asked to exclude.
-        ratio = (settings.coupling.dc_ac_ratio_max if architecture == "dc"
-                 else settings.coupling.ac_ratio_max)
+        ratio = settings.coupling.dc_ac_ratio_max + settings.coupling.ac_ratio_max
         inv_for_peak = peak * inverter_headroom
         inv_for_array = pv_max * settings.photovoltaic.unit_kw / ratio
         inv_max = int(np.ceil(max(inv_for_peak, inv_for_array)
@@ -128,7 +165,7 @@ class Lattice:
                    inv_unit_kw=settings.inverter.unit_kw,
                    generator_ratings=tuple(sorted(g.rating_kw for g in settings.generators)),
                    n_pv=(0, pv_max), n_batt=(0, batt_max), n_inv=(1, inv_max),
-                   architecture=architecture)
+                   n_pv_ac=(0, 0), architecture=architecture)
 
 
 @dataclass(order=True)
@@ -140,6 +177,7 @@ class _Box:
     batt: tuple[int, int] = field(compare=False)
     inv: tuple[int, int] = field(compare=False)
     gens: tuple[float, ...] = field(compare=False)
+    pv_ac: tuple[int, int] = field(default=(0, 0), compare=False)
 
     @property
     def n_points(self) -> int:
@@ -151,19 +189,22 @@ class _Box:
         the discarded would claim to have covered a lattice larger than the one that exists.
         """
         return ((self.pv[1] - self.pv[0] + 1) * (self.batt[1] - self.batt[0] + 1)
-                * (self.inv[1] - self.inv[0] + 1) * len(self.gens))
+                * (self.inv[1] - self.inv[0] + 1) * len(self.gens)
+                * (self.pv_ac[1] - self.pv_ac[0] + 1))
 
     def n_admissible(self, lattice: "Lattice") -> int:
         """Buildable designs inside the box — what coverage must account for."""
-        pairs = sum(1
-                    for n_inv in range(self.inv[0], self.inv[1] + 1)
-                    for n_pv in range(self.pv[0], self.pv[1] + 1)
-                    if lattice.admits(n_pv, n_inv))
-        return pairs * (self.batt[1] - self.batt[0] + 1) * len(self.gens)
+        triples = sum(1
+                      for n_inv in range(self.inv[0], self.inv[1] + 1)
+                      for n_pv in range(self.pv[0], self.pv[1] + 1)
+                      for n_ac in range(self.pv_ac[0], self.pv_ac[1] + 1)
+                      if lattice.admits(n_pv, n_inv, n_ac))
+        return triples * (self.batt[1] - self.batt[0] + 1) * len(self.gens)
 
     def widest(self) -> str:
         spans = {"pv": self.pv[1] - self.pv[0], "batt": self.batt[1] - self.batt[0],
-                 "inv": self.inv[1] - self.inv[0], "gen": len(self.gens) - 1}
+                 "inv": self.inv[1] - self.inv[0], "gen": len(self.gens) - 1,
+                 "pv_ac": self.pv_ac[1] - self.pv_ac[0]}
         return max(spans, key=spans.get)
 
     def is_singleton(self) -> bool:
@@ -205,11 +246,36 @@ class Certificate:
 
     def summary(self) -> str:
         d = self.design
-        return (f"PV {d.pv_kw:.1f} kW · batterie {d.battery_kwh:.0f} kWh · "
+        return (f"PV {d.pv_kw:.1f} kW continu + {d.pv_ac_kw:.1f} kW alternatif · "
+                f"batterie {d.battery_kwh:.0f} kWh · "
                 f"onduleur {d.inverter_kw:.1f} kW · groupe {d.generator_kw:.0f} kW\n"
                 f"z_B* = {self.z_rule:,.0f} $/an   optimum prouvé : {self.proven}\n"
                 f"écart à la borne coût-optimal : {self.gap_rel:.2f} % "
                 f"(tend vers le prix de l'heuristique, non vers zéro)")
+
+
+@lru_cache(maxsize=1)
+def _string_inverter_cost() -> float:
+    """Annual cost of one kilowatt of string inverter, capital and maintenance."""
+    return config.CONV_STRING_USD_KW * (config.crf(n=config.CONV_LIFETIME_Y)
+                                        + config.CONV_OM_RATE)
+
+
+@lru_cache(maxsize=None)
+def _generator_models(diesel_price: float) -> dict:
+    """One fuel model per catalogue rating, built once."""
+    settings = default_settings()
+    return {spec.rating_kw: GeneratorModel.from_spec(spec, diesel_price)
+            for spec in settings.generators}
+
+
+def _generator_for(rating_kw: float, fallback: GeneratorModel) -> GeneratorModel:
+    """The fuel model of the unit a design installs."""
+    models = _generator_models(fallback.fuel_price_usd_l)
+    if not models:
+        return fallback
+    nearest = min(models, key=lambda r: abs(r - rating_kw))
+    return models[nearest]
 
 
 def _evaluate_rule(instance, capacities, economics, battery, generator, controller,
@@ -225,13 +291,23 @@ def _evaluate_rule(instance, capacities, economics, battery, generator, controll
     the inverter, so the ceiling is the only thing standing between the search and free
     photovoltaic capacity.
     """
-    ratio = (config.DC_AC_RATIO_MAX if capacities.architecture == "dc"
-             else config.AC_RATIO_MAX)
-    if not capacities.admissible(ratio):
+    if not capacities.admissible(config.DC_AC_RATIO_MAX, config.AC_RATIO_MAX):
         return float("inf")
+    # The design says which generating set is installed, and the fuel curve belongs to that
+    # set. Evaluating every design with the largest unit's curve charged the small ones an
+    # efficiency they do not have — a quarter more fuel per kilowatt-hour separates the ends
+    # of this catalogue — and so favoured them in the search that chose between them.
+    generator = _generator_for(capacities.generator_kw, generator)
     dispatch = simulate(instance.demand_kw, instance.specific_yield, instance.t_amb_c,
                         capacities, battery, generator, controller)
-    capital = (annualised[0] * capacities.pv_kw + annualised[1] * capacities.battery_kwh
+    # Both parts of the field buy their modules; only the part on the load's bus buys the
+    # string inverters that put it there. Charging the first coefficient to ``pv_kw`` alone
+    # left the second part free, which understated every design that used it and let the
+    # relaxation exceed a cost that had not been fully counted.
+    capital = (annualised[0] * capacities.pv_kw
+               + _string_inverter_cost() * capacities.pv_ac_kw
+               + annualised[0] * capacities.pv_ac_kw
+               + annualised[1] * capacities.battery_kwh
                + annualised[2] * capacities.inverter_kw
                + annualised[3] * capacities.generator_kw)
     scale = 8760.0 / instance.demand_kw.size
@@ -261,8 +337,9 @@ def coarse_incumbent(instance, lattice, economics, battery, generator, controlle
             pv_range = range(lattice.n_pv[0], lattice.n_pv[1] + 1, spacing)
             bt_range = range(lattice.n_batt[0], lattice.n_batt[1] + 1, spacing)
             iv_range = range(lattice.n_inv[0], lattice.n_inv[1] + 1, max(1, spacing // 2))
+            ac_range = range(lattice.n_pv_ac[0], lattice.n_pv_ac[1] + 1, 2 * spacing)
         else:
-            n_pv0, n_bt0, n_iv0 = centre
+            n_pv0, n_bt0, n_iv0, n_ac0 = centre
             reach = 2 * spacing
             pv_range = range(max(lattice.n_pv[0], n_pv0 - reach),
                              min(lattice.n_pv[1], n_pv0 + reach) + 1, spacing)
@@ -270,18 +347,20 @@ def coarse_incumbent(instance, lattice, economics, battery, generator, controlle
                              min(lattice.n_batt[1], n_bt0 + reach) + 1, spacing)
             iv_range = range(max(lattice.n_inv[0], n_iv0 - 1),
                              min(lattice.n_inv[1], n_iv0 + 1) + 1)
+            ac_range = range(max(lattice.n_pv_ac[0], n_ac0 - reach),
+                             min(lattice.n_pv_ac[1], n_ac0 + reach) + 1, spacing)
 
-        for n_pv, n_bt, n_iv, gen in itertools.product(pv_range, bt_range, iv_range,
-                                                       lattice.generator_ratings):
-            if not lattice.admits(n_pv, n_iv):
+        for n_pv, n_bt, n_iv, gen, n_ac in itertools.product(
+                pv_range, bt_range, iv_range, lattice.generator_ratings, ac_range):
+            if not lattice.admits(n_pv, n_iv, n_ac):
                 continue
-            design = lattice.capacities(n_pv, n_bt, n_iv, gen)
+            design = lattice.capacities(n_pv, n_bt, n_iv, gen, n_ac)
             value = _evaluate_rule(instance, design, economics, battery, generator,
                                    controller, annualised)
             calls += 1
             if value < best:
                 best, best_design = value, design
-                centre = (n_pv, n_bt, n_iv)
+                centre = (n_pv, n_bt, n_iv, n_ac)
     return best, best_design, calls
 
 
@@ -292,22 +371,26 @@ def _refine(instance, lattice, centre, economics, battery, generator, controller
     n_pv0 = int(round(centre.pv_kw / lattice.pv_unit_kw))
     n_bt0 = int(round(centre.battery_kwh / lattice.batt_unit_kwh))
     n_iv0 = int(round(centre.inverter_kw / lattice.inv_unit_kw))
+    n_ac0 = int(round(centre.pv_ac_kw / lattice.pv_unit_kw))
 
     for d_pv in range(-radius, radius + 1):
         for d_bt in range(-radius, radius + 1):
             for d_iv in range(-1, 2):
-                for gen in lattice.generator_ratings:
-                    n_pv = min(max(n_pv0 + d_pv, lattice.n_pv[0]), lattice.n_pv[1])
-                    n_bt = min(max(n_bt0 + d_bt, lattice.n_batt[0]), lattice.n_batt[1])
-                    n_iv = min(max(n_iv0 + d_iv, lattice.n_inv[0]), lattice.n_inv[1])
-                    if not lattice.admits(n_pv, n_iv):
-                        continue
-                    design = lattice.capacities(n_pv, n_bt, n_iv, gen)
-                    value = _evaluate_rule(instance, design, economics, battery,
-                                           generator, controller, annualised)
-                    calls += 1
-                    if value < best:
-                        best, best_design = value, design
+                for d_ac in range(-radius, radius + 1):
+                    for gen in lattice.generator_ratings:
+                        n_pv = min(max(n_pv0 + d_pv, lattice.n_pv[0]), lattice.n_pv[1])
+                        n_bt = min(max(n_bt0 + d_bt, lattice.n_batt[0]), lattice.n_batt[1])
+                        n_iv = min(max(n_iv0 + d_iv, lattice.n_inv[0]), lattice.n_inv[1])
+                        n_ac = min(max(n_ac0 + d_ac, lattice.n_pv_ac[0]),
+                                   lattice.n_pv_ac[1])
+                        if not lattice.admits(n_pv, n_iv, n_ac):
+                            continue
+                        design = lattice.capacities(n_pv, n_bt, n_iv, gen, n_ac)
+                        value = _evaluate_rule(instance, design, economics, battery,
+                                               generator, controller, annualised)
+                        calls += 1
+                        if value < best:
+                            best, best_design = value, design
     return best, best_design, calls
 
 
@@ -335,15 +418,16 @@ def narrow_to_incumbent(instance, lattice, incumbent, economics, battery, genera
     What it removes is *counted as discarded*, not forgotten: the certificate still accounts
     for every design of the lattice it was asked to search.
     """
-    axes = ("pv", "batt", "inv")
-    ranges = {"pv": lattice.n_pv, "batt": lattice.n_batt, "inv": lattice.n_inv}
+    axes = ("pv", "pv_ac", "batt", "inv")
+    ranges = {"pv": lattice.n_pv, "pv_ac": lattice.n_pv_ac,
+              "batt": lattice.n_batt, "inv": lattice.n_inv}
     calls = 0
 
     def bound_over(current: dict) -> float:
         nonlocal calls
         calls += 1
         box = _Box(-np.inf, current["pv"], current["batt"], current["inv"],
-                   lattice.generator_ratings)
+                   lattice.generator_ratings, current["pv_ac"])
         return _bound(instance, lattice, box, economics, battery, generator, solver=solver)
 
     def excluded(current: dict) -> bool:
@@ -378,16 +462,17 @@ def narrow_to_incumbent(instance, lattice, incumbent, economics, battery, genera
                        inv_unit_kw=lattice.inv_unit_kw,
                        generator_ratings=lattice.generator_ratings,
                        n_pv=ranges["pv"], n_batt=ranges["batt"], n_inv=ranges["inv"],
-                       architecture=lattice.architecture)
+                       n_pv_ac=ranges["pv_ac"], architecture=lattice.architecture)
     removed = lattice.size - narrowed.size
     if verbose:
         print(f"  resserrement par bornes : {lattice.size:,} → {narrowed.size:,} "
               f"dimensionnements ({100.0 * removed / max(lattice.size, 1):.1f} % écartés, "
               f"{calls} relaxations)", flush=True)
-        for name, axis, unit in (("PV", "pv", lattice.pv_unit_kw),
+        for name, axis, unit in (("PV continu", "pv", lattice.pv_unit_kw),
+                                 ("PV alternatif", "pv_ac", lattice.pv_unit_kw),
                                  ("stockage", "batt", lattice.batt_unit_kwh),
                                  ("onduleur", "inv", lattice.inv_unit_kw)):
-            before, after = getattr(lattice, f"n_{'batt' if axis == 'batt' else axis}"), ranges[axis]
+            before, after = getattr(lattice, f"n_{axis}"), ranges[axis]
             print(f"      {name:9s} {before[0]*unit:6.0f}–{before[1]*unit:<6.0f} → "
                   f"{after[0]*unit:6.0f}–{after[1]*unit:<6.0f}", flush=True)
     return narrowed, removed, calls
@@ -408,16 +493,35 @@ def _capital_floor(lattice, box, annualised) -> float:
             + annualised[3] * min(box.gens))
 
 
+def _field_bounds(lattice, box) -> dict:
+    """How the relaxation may place the field, given how the search counts it.
+
+    When the search counts the whole field and derives the split, the relaxation is handed
+    the total and both ceilings and left to divide it as it likes. That is a relaxation of
+    the rule the search applies, so the value it returns still minorises every design the
+    search can reach.
+    """
+    inverter_high = box.inv[1] * lattice.inv_unit_kw
+    if not lattice.derive_split:
+        return {"pv_kw": (box.pv[0] * lattice.pv_unit_kw, box.pv[1] * lattice.pv_unit_kw),
+                "pv_ac_kw": (box.pv_ac[0] * lattice.pv_unit_kw,
+                             box.pv_ac[1] * lattice.pv_unit_kw)}
+    total = (box.pv[0] * lattice.pv_unit_kw, box.pv[1] * lattice.pv_unit_kw)
+    return {"pv_kw": (0.0, min(total[1], config.DC_AC_RATIO_MAX * inverter_high)),
+            "pv_ac_kw": (0.0, min(total[1], config.AC_RATIO_MAX * inverter_high)),
+            "pv_total_kw": total}
+
+
 def _bound(instance, lattice, box, economics, battery, generator,
            relax_commitment: bool = True, solver: str | None = None) -> float:
     """Cost-optimal relaxation over a box: the lower bound of Proposition 1."""
     capacity_box = CapacityBox(
-        pv_kw=(box.pv[0] * lattice.pv_unit_kw, box.pv[1] * lattice.pv_unit_kw),
         battery_kwh=(box.batt[0] * lattice.batt_unit_kwh,
                      box.batt[1] * lattice.batt_unit_kwh),
         architecture=lattice.architecture,
         inverter_kw=(box.inv[0] * lattice.inv_unit_kw, box.inv[1] * lattice.inv_unit_kw),
         generator_kw=(min(box.gens), max(box.gens)),
+        **_field_bounds(lattice, box),
     )
     # The operating cost must be annualised *inside* the objective, not after it. On a
     # window shorter than a year the relaxation is free to choose the capacities, and
@@ -437,23 +541,24 @@ def _split(box: _Box) -> list[_Box]:
     axis = box.widest()
     if axis == "gen":
         half = len(box.gens) // 2
-        return [_Box(box.bound, box.pv, box.batt, box.inv, box.gens[:half]),
-                _Box(box.bound, box.pv, box.batt, box.inv, box.gens[half:])]
+        return [_Box(box.bound, box.pv, box.batt, box.inv, box.gens[:half], box.pv_ac),
+                _Box(box.bound, box.pv, box.batt, box.inv, box.gens[half:], box.pv_ac)]
     lo, hi = getattr(box, axis)
     mid = (lo + hi) // 2
     children = []
     for span in ((lo, mid), (mid + 1, hi)):
-        fields = {"pv": box.pv, "batt": box.batt, "inv": box.inv}
-        fields[axis] = span
-        children.append(_Box(box.bound, fields["pv"], fields["batt"], fields["inv"],
-                             box.gens))
+        spans = {"pv": box.pv, "batt": box.batt, "inv": box.inv, "pv_ac": box.pv_ac}
+        spans[axis] = span
+        children.append(_Box(box.bound, spans["pv"], spans["batt"], spans["inv"],
+                             box.gens, spans["pv_ac"]))
     return children
 
 
-def _centre(box: _Box) -> tuple[int, int, int, float]:
+def _centre(box: _Box) -> tuple[int, int, int, float, int]:
     """A representative integer point of a box."""
     return ((box.pv[0] + box.pv[1]) // 2, (box.batt[0] + box.batt[1]) // 2,
-            (box.inv[0] + box.inv[1]) // 2, box.gens[len(box.gens) // 2])
+            (box.inv[0] + box.inv[1]) // 2, box.gens[len(box.gens) // 2],
+            (box.pv_ac[0] + box.pv_ac[1]) // 2)
 
 
 def certify(
@@ -508,7 +613,7 @@ def certify(
         solver=solver, verbose=verbose)
 
     root = _Box(-np.inf, lattice.n_pv, lattice.n_batt, lattice.n_inv,
-                lattice.generator_ratings)
+                lattice.generator_ratings, lattice.n_pv_ac)
     root.bound = _bound(instance, lattice, root, economics, battery, generator,
                         solver=solver)
     relaxations, boxes, pruned_points, enumerated, free_prunes = (
@@ -527,27 +632,29 @@ def certify(
             continue
 
         if box.n_points <= threshold:
-            for n_pv, n_bt, n_iv, gen in itertools.product(
+            for n_pv, n_bt, n_iv, gen, n_ac in itertools.product(
                     range(box.pv[0], box.pv[1] + 1), range(box.batt[0], box.batt[1] + 1),
-                    range(box.inv[0], box.inv[1] + 1), box.gens):
-                if not lattice.admits(n_pv, n_iv):
+                    range(box.inv[0], box.inv[1] + 1), box.gens,
+                    range(box.pv_ac[0], box.pv_ac[1] + 1)):
+                if not lattice.admits(n_pv, n_iv, n_ac):
                     continue
-                value = _evaluate_rule(instance, lattice.capacities(n_pv, n_bt, n_iv, gen),
-                                       economics, battery, generator, controller, annualised)
+                value = _evaluate_rule(
+                    instance, lattice.capacities(n_pv, n_bt, n_iv, gen, n_ac),
+                    economics, battery, generator, controller, annualised)
                 sims += 1
                 enumerated += 1
                 if value < incumbent:
                     incumbent = value
-                    design = lattice.capacities(n_pv, n_bt, n_iv, gen)
+                    design = lattice.capacities(n_pv, n_bt, n_iv, gen, n_ac)
             continue
 
-        n_pv, n_bt, n_iv, gen = _centre(box)
-        value = _evaluate_rule(instance, lattice.capacities(n_pv, n_bt, n_iv, gen),
+        n_pv, n_bt, n_iv, gen, n_ac = _centre(box)
+        value = _evaluate_rule(instance, lattice.capacities(n_pv, n_bt, n_iv, gen, n_ac),
                                economics, battery, generator, controller, annualised)
         sims += 1
         if value < incumbent:
             incumbent = value
-            design = lattice.capacities(n_pv, n_bt, n_iv, gen)
+            design = lattice.capacities(n_pv, n_bt, n_iv, gen, n_ac)
 
         for child in _split(box):
             floor = _capital_floor(lattice, child, annualised)
@@ -563,6 +670,13 @@ def certify(
                               _bound(instance, lattice, child, economics, battery,
                                      generator, solver=solver))
             relaxations += 1
+            if child.bound >= incumbent - margin:
+                # Nothing inside can beat the sizing already in hand — and a box holding no
+                # buildable design at all comes back with an infinite bound, which belongs
+                # among the discarded rather than in the queue, where it would be reported
+                # as the search's remaining lower bound.
+                pruned_points += child.n_admissible(lattice)
+                continue
             heapq.heappush(queue, child)
 
     exhausted = not queue
@@ -610,12 +724,14 @@ def _best_cost_optimal(instance, lattice, near, economics, battery, generator,
     and, being attained at a lattice point, a tight one.
     """
     whole = CapacityBox(
-        pv_kw=(lattice.n_pv[0] * lattice.pv_unit_kw, lattice.n_pv[1] * lattice.pv_unit_kw),
         battery_kwh=(lattice.n_batt[0] * lattice.batt_unit_kwh,
                      lattice.n_batt[1] * lattice.batt_unit_kwh),
         inverter_kw=(lattice.n_inv[0] * lattice.inv_unit_kw,
                      lattice.n_inv[1] * lattice.inv_unit_kw),
         generator_kw=(min(lattice.generator_ratings), max(lattice.generator_ratings)),
+        **_field_bounds(lattice, _Box(-np.inf, lattice.n_pv, lattice.n_batt,
+                                      lattice.n_inv, lattice.generator_ratings,
+                                      lattice.n_pv_ac)),
         architecture=lattice.architecture,
     )
     scale = 8760.0 / instance.demand_kw.size
@@ -669,37 +785,28 @@ def main(argv: list[str] | None = None) -> int:
 
     instance = build_site_year(args.site, args.year, trajectory=args.trajectory,
                                maturity_months=args.maturity_months)
-    architectures = settings.coupling.architectures()
     print(f"{args.site} {args.year} — trajectoire {args.trajectory}, "
           f"ancienneté {args.maturity_months} mois")
     print(f"solveur  : {settings.solver.name}")
-    print("couplage : " + ("les deux, mis en concurrence"
-                           if len(architectures) > 1 else architectures[0]))
+    print("couplage : mixte — la répartition du champ entre les deux bus est décidée")
 
-    # The architecture is a design decision like any other, and is settled the same way:
-    # each is certified over its own lattice and the cheaper optimum wins. Enumerating them
-    # separately is not a convenience — a box spanning both could not be bounded by one
-    # linear programme, the two imposing different constraints on the same variables.
-    outcomes = []
-    for architecture in architectures:
-        lattice = Lattice.around(instance, settings, architecture=architecture)
-        print(f"\n— couplage {architecture} — treillis {lattice.size:,} dimensionnements")
-        if args.method == "exhaustive":
-            outcome = certify_exhaustive(instance, lattice, settings,
-                                         coarse_step=args.coarse_step)
-        else:
-            outcome = certify(instance, lattice, settings,
-                              max_relaxations=args.max_relaxations,
-                              coarse_step=args.coarse_step)
-        outcomes.append((architecture, outcome))
-
-    ranked = sorted(outcomes, key=lambda pair: pair[1].z_rule)
-    architecture, result = ranked[0]
-    if len(ranked) > 1:
-        runner_up, second = ranked[1]
-        margin = second.z_rule - result.z_rule
-        print(f"\ncouplage retenu : {architecture}, moins cher que {runner_up} de "
-              f"{margin:,.0f} $/an ({100.0 * margin / second.z_rule:.1f} %)")
+    # The coupling is no longer a choice between two arrangements but a split of the field
+    # between two buses, each with its own converter, its own ceiling and its own price. A
+    # field wholly on the battery's bus and a field wholly on the load's bus are the two
+    # corners of that split, so nothing is lost by searching over it — and something was
+    # being lost by not doing so, the ceiling on the first having been saturated at every
+    # optimum certified when only the corners were available.
+    lattice = Lattice.around(instance, settings)
+    print(f"espace de recherche : {lattice.size:,} dimensionnements câblables")
+    architecture = "mixte"
+    if args.method == "exhaustive":
+        result = certify_exhaustive(instance, lattice, settings,
+                                    coarse_step=args.coarse_step)
+    else:
+        result = certify(instance, lattice, settings,
+                         max_relaxations=args.max_relaxations,
+                         coarse_step=args.coarse_step)
+    ranked = [(architecture, result)]
 
     print("\n" + result.summary())
     print(f"\n  élagués sans simulation : {result.pruned_points:,} "
@@ -733,12 +840,12 @@ def main(argv: list[str] | None = None) -> int:
     target = (settings.economics.tariff_usd_kwh
               if settings.economics.tariff_is_target else None)
     cost = life_cycle_cost(
-        {"pv": design.pv_kw, "battery": design.battery_kwh,
+        {"pv": design.pv_total_kw, "battery": design.battery_kwh,
          "inverter": design.inverter_kw, "generator": design.generator_kw,
-         "conversion": design.conversion_kw},
+         "conversion": design.pv_ac_kw},
         operating, served, horizon_years=settings.economics.horizon_years,
         discount_rate=settings.economics.discount_rate, tariff_target_usd_kwh=target,
-        assets=assets_from_settings(settings, architecture=architecture))
+        assets=assets_from_settings(settings, architecture="ac"))
     local = settings.currency.to_local
 
     print(f"\n  énergie servie          : {served:,.0f} kWh  "
@@ -772,11 +879,13 @@ def main(argv: list[str] | None = None) -> int:
         "maturity_months": args.maturity_months,
         "voll_usd_kwh": settings.economics.value_of_lost_load_usd_kwh,
         "design": {"pv_kw": result.design.pv_kw, "battery_kwh": result.design.battery_kwh,
+                   "pv_ac_kw": result.design.pv_ac_kw,
                    "inverter_kw": result.design.inverter_kw,
                    "generator_kw": result.design.generator_kw},
         "z_rule_usd_yr": result.z_rule, "z_opt_usd_yr": result.z_opt,
         "design_opt": (None if result.design_opt is None else {
             "pv_kw": result.design_opt.pv_kw,
+            "pv_ac_kw": result.design_opt.pv_ac_kw,
             "battery_kwh": result.design_opt.battery_kwh,
             "inverter_kw": result.design_opt.inverter_kw,
             "generator_kw": result.design_opt.generator_kw}),

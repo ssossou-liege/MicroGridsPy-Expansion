@@ -37,6 +37,12 @@ class CapacityBox:
     battery_kwh: tuple[float, float]
     inverter_kw: tuple[float, float]
     generator_kw: tuple[float, float]
+    #: Field on string inverters, feeding the load's bus.
+    pv_ac_kw: tuple[float, float] = (0.0, 0.0)
+    #: Bounds on the whole field, both buses together. Supplied when the search fixes the
+    #: total and leaves the split to be resolved: the relaxation is then free to divide it,
+    #: which relaxes the rule the search applies and therefore still minorises it.
+    pv_total_kw: tuple[float, float] | None = None
     #: Where the array joins the plant. A box spans capacities, never architectures: the
     #: two impose different constraints, so a box holding both could not be bounded by one
     #: linear programme. The search enumerates them separately.
@@ -49,6 +55,7 @@ class CapacityBox:
                    battery_kwh=(capacities.battery_kwh, capacities.battery_kwh),
                    inverter_kw=(capacities.inverter_kw, capacities.inverter_kw),
                    generator_kw=(capacities.generator_kw, capacities.generator_kw),
+                   pv_ac_kw=(capacities.pv_ac_kw, capacities.pv_ac_kw),
                    architecture=capacities.architecture)
 
 
@@ -75,6 +82,8 @@ class Economics:
     #: and so is folded into the array's own coefficient rather than carried as a fifth
     #: dimension the search would have to explore for nothing.
     conversion_usd_kw: float = 0.0
+    #: String inverters, bought per kilowatt of field placed on the load's bus.
+    string_inverter_usd_kw: float = config.CONV_STRING_USD_KW
     conversion_om_rate: float = config.CONV_OM_RATE
     conversion_lifetime_y: int = config.CONV_LIFETIME_Y
     fuel_usd_l: float = config.DIESEL_PRICE_USD_L
@@ -103,6 +112,29 @@ class Economics:
                 self.battery_usd_kwh * (config.crf(n=life_batt) + om_batt),
                 self.inverter_usd_kw * (config.crf(n=life_inv) + om_inv),
                 self.generator_usd_kw * (config.crf(n=life_gen) + om_gen))
+
+
+def catalogue_fuel_minorant(generator: GeneratorModel,
+                            rating_range: tuple[float, float]) -> tuple[float, float]:
+    """A fuel line below every catalogue unit the box allows.
+
+    Falls back to the supplied model when no catalogue unit falls inside the range, which
+    is the degenerate case of a box pinned to a rating the project does not stock.
+    """
+    from ..settings import default_settings
+
+    low, high = rating_range
+    intercepts, slopes = [], []
+    for spec in default_settings().generators:
+        if not (low - 1e-9 <= spec.rating_kw <= high + 1e-9):
+            continue
+        unit = GeneratorModel.from_spec(spec, generator.fuel_price_usd_l)
+        intercept, slope = fuel_minorant(unit, spec.rating_kw)
+        intercepts.append(intercept)
+        slopes.append(slope)
+    if not intercepts:
+        return fuel_minorant(generator, high if high > 0 else 1.0)
+    return min(intercepts), min(slopes)
 
 
 def fuel_minorant(generator: GeneratorModel, rating_kw: float) -> tuple[float, float]:
@@ -179,12 +211,21 @@ def cost_optimal_dispatch(
     steps = np.arange(n)
 
     big_m = box.generator_kw[1]
-    fuel_0, fuel_1 = fuel_minorant(generator, big_m if big_m > 0 else 1.0)
+    # A box may span several catalogue ratings, and the relaxation is free to choose among
+    # them. Its fuel model must therefore lie below every one of them: taking the minorant
+    # of a single unit and applying it to a design that installs another charges an
+    # efficiency that was never bought — a quarter of a litre per kilowatt-hour separates
+    # the ends of this catalogue — and the bound then stops bounding.
+    fuel_0, fuel_1 = catalogue_fuel_minorant(generator, box.generator_kw)
     a_pv, a_batt, a_inv, a_gen = economics.annualised()
+    a_pv_ac = a_pv + economics.string_inverter_usd_kw * (
+        config.crf(n=economics.conversion_lifetime_y) + economics.conversion_om_rate)
 
     m = linopy.Model()
     if integer_units is None:
         cap_pv = m.add_variables(lower=box.pv_kw[0], upper=box.pv_kw[1], name="cap_pv")
+        cap_pv_ac = m.add_variables(lower=box.pv_ac_kw[0], upper=box.pv_ac_kw[1],
+                                    name="cap_pv_ac")
         cap_batt = m.add_variables(lower=box.battery_kwh[0], upper=box.battery_kwh[1],
                                    name="cap_batt")
         cap_inv = m.add_variables(lower=box.inverter_kw[0], upper=box.inverter_kw[1],
@@ -208,7 +249,11 @@ def cost_optimal_dispatch(
         n_inv = m.add_variables(lower=int(round(box.inverter_kw[0] / inv_unit)),
                                 upper=int(round(box.inverter_kw[1] / inv_unit)),
                                 integer=True, name="n_inv")
+        n_pv_ac = m.add_variables(lower=int(round(box.pv_ac_kw[0] / pv_unit)),
+                                  upper=int(round(box.pv_ac_kw[1] / pv_unit)),
+                                  integer=True, name="n_pv_ac")
         cap_pv, cap_batt, cap_inv = n_pv * pv_unit, n_batt * batt_unit, n_inv * inv_unit
+        cap_pv_ac = n_pv_ac * pv_unit
         ratings = tuple(generator_ratings or (box.generator_kw[1],))
         choose = m.add_variables(coords={"unit": np.arange(len(ratings))},
                                  binary=True, name="choose")
@@ -229,6 +274,9 @@ def cost_optimal_dispatch(
     # and the battery around it, under alternating-current coupling the reverse.
     pv_load = m.add_variables(lower=0.0, coords=coords, name="pv_load")
     pv_batt = m.add_variables(lower=0.0, coords=coords, name="pv_batt")
+    ac_load = m.add_variables(lower=0.0, coords=coords, name="ac_load")
+    ac_batt = m.add_variables(lower=0.0, coords=coords, name="ac_batt")
+    ac_curtail = m.add_variables(lower=0.0, coords=coords, name="ac_curtail")
     gen_load = m.add_variables(lower=0.0, coords=coords, name="gen_load")
     gen_batt = m.add_variables(lower=0.0, coords=coords, name="gen_batt")
     soc = m.add_variables(lower=0.0, coords={"step": np.arange(n + 1)}, name="soc")
@@ -242,14 +290,16 @@ def cost_optimal_dispatch(
     yield_ = as_series(instance.specific_yield)
     # Every kilowatt the array produces goes to the load, to the battery, or nowhere.
     m.add_constraints(pv_load + pv_batt + curtail - yield_ * cap_pv == 0, name="pv_split")
+    m.add_constraints(ac_load + ac_batt + ac_curtail - yield_ * cap_pv_ac == 0,
+                      name="pv_ac_split")
     # The generator likewise; what it cannot place is burnt for nothing.
     gen_curtail = m.add_variables(lower=0.0, coords=coords, name="gen_curtail")
     m.add_constraints(gen_load + gen_batt + gen_curtail - p_gen == 0, name="gen_split")
     # The battery is charged from one or the other.
-    m.add_constraints(p_ch - pv_batt - gen_batt == 0, name="charge_split")
+    m.add_constraints(p_ch - pv_batt - ac_batt - gen_batt == 0, name="charge_split")
     # What reaches the load.
-    m.add_constraints(pv_load + gen_load + p_dis + unserved == as_series(demand),
-                      name="balance")
+    m.add_constraints(pv_load + ac_load + gen_load + p_dis + unserved
+                      == as_series(demand), name="balance")
 
     # generator
     m.add_constraints(p_gen - cap_gen <= 0, name="gen_rating")
@@ -268,11 +318,10 @@ def cost_optimal_dispatch(
     # is rectified once whichever bus it crosses. The two charging streams therefore do not
     # share an efficiency, and the relaxation must apply the same penalty as the controller
     # or it would minorise a plant with better storage than the one being certified.
-    eta_pv = (battery.charge_efficiency * config.AC_DOUBLE_CONVERSION_EFF
-              if box.architecture == "ac" else battery.charge_efficiency)
+    eta_ac = battery.charge_efficiency * config.AC_DOUBLE_CONVERSION_EFF
     m.add_constraints(
         soc_next - retention * soc_prev
-        - eta_pv * pv_batt - battery.charge_efficiency * gen_batt
+        - battery.charge_efficiency * (pv_batt + gen_batt) - eta_ac * ac_batt
         + (1.0 / battery.discharge_efficiency) * p_dis == 0,
         name="soc_dynamics")
     if terminal == "cyclic":
@@ -289,22 +338,23 @@ def cost_optimal_dispatch(
         coords={"step": np.arange(n + 1)}, dims="step")
     m.add_constraints(soc - ceiling * cap_batt <= 0, name="soc_upper")
     m.add_constraints(soc - battery.soc_min * cap_batt >= 0, name="soc_lower")
-    if box.architecture == "dc":
-        # Array and battery share the direct-current bus; only what leaves it for the load
-        # is converted, together with what the generator rectifies back into storage.
-        m.add_constraints(pv_load + p_dis + gen_batt - cap_inv <= 0, name="inverter_rating")
-    elif box.architecture == "ac":
-        # Array and load share the alternating-current bus; the inverter stands between
-        # them and the battery, and carries everything entering or leaving storage.
-        m.add_constraints(p_ch + p_dis - cap_inv <= 0, name="inverter_rating")
-    else:
-        raise ValueError(f"architecture must be 'dc' or 'ac', not {box.architecture!r}")
-    # The array cannot exceed what its converter admits: the hybrid inverter's own trackers
-    # under direct-current coupling, its ability to absorb the array under alternating.
-    # This is what ties the two capacities together — an array is enlarged by buying
-    # conversion, not independently of it.
-    ratio = (config.DC_AC_RATIO_MAX if box.architecture == "dc" else config.AC_RATIO_MAX)
-    m.add_constraints(cap_pv - ratio * cap_inv <= 0, name="array_ratio")
+    # The hybrid inverter carries what the field on the battery's bus sends the load, every
+    # discharge, and everything rectified into storage from the load's bus. A field on the
+    # load's bus reaches that load without crossing it.
+    m.add_constraints(pv_load + p_dis + gen_batt + ac_batt - cap_inv <= 0,
+                      name="inverter_rating")
+    # Each part of the array is limited by its own converter, and for different reasons: the
+    # trackers integrated in the hybrid inverter accept a bounded field per unit of rating,
+    # and a field on the load's bus must be absorbable by the battery inverter the instant
+    # the load falls away. Neither part is enlarged without buying the conversion it needs.
+    m.add_constraints(cap_pv - config.DC_AC_RATIO_MAX * cap_inv <= 0,
+                      name="array_ratio_dc")
+    m.add_constraints(cap_pv_ac - config.AC_RATIO_MAX * cap_inv <= 0,
+                      name="array_ratio_ac")
+    if box.pv_total_kw is not None:
+        low, high = box.pv_total_kw
+        m.add_constraints(cap_pv + cap_pv_ac - high <= 0, name="field_upper")
+        m.add_constraints(cap_pv + cap_pv_ac - low >= 0, name="field_lower")
     m.add_constraints(p_ch - battery.c_rate * cap_batt <= 0, name="charge_rate")
     m.add_constraints(p_dis - battery.c_rate * cap_batt <= 0, name="discharge_rate")
 
@@ -315,7 +365,10 @@ def cost_optimal_dispatch(
         + (w * economics.degradation_usd_kwh * p_dis).sum()
         + (w * economics.voll_usd_kwh * unserved).sum()
     )
-    capital = a_pv * cap_pv + a_batt * cap_batt + a_inv * cap_inv + a_gen * cap_gen
+    # A field on the battery's bus buys only its modules, the conversion coming with the
+    # hybrid inverter; a field on the load's bus buys its string inverters as well.
+    capital = (a_pv * cap_pv + a_pv_ac * cap_pv_ac + a_batt * cap_batt
+               + a_inv * cap_inv + a_gen * cap_gen)
     m.add_objective(operating + capital)
 
     # The bound is solved thousands of times; its progress bars would drown every other
@@ -342,11 +395,13 @@ def cost_optimal_dispatch(
                                                 battery_kwh=box.battery_kwh[0],
                                                 inverter_kw=box.inverter_kw[0],
                                                 generator_kw=box.generator_kw[0],
+                                                pv_ac_kw=box.pv_ac_kw[0],
                                                 architecture=box.architecture),
                           operating_cost=float("inf"), capital_cost=float("inf"),
                           relaxed_commitment=relax_commitment, status=status)
 
     if integer_units is None:
+        resolved_ac = float(m.variables["cap_pv_ac"].solution)
         resolved = (float(m.variables["cap_pv"].solution),
                     float(m.variables["cap_batt"].solution),
                     float(m.variables["cap_inv"].solution),
@@ -354,6 +409,7 @@ def cost_optimal_dispatch(
     else:
         pv_unit, batt_unit, inv_unit = integer_units
         picked = np.asarray(m.variables["choose"].solution, dtype=float)
+        resolved_ac = round(float(m.variables["n_pv_ac"].solution)) * pv_unit
         resolved = (round(float(m.variables["n_pv"].solution)) * pv_unit,
                     round(float(m.variables["n_batt"].solution)) * batt_unit,
                     round(float(m.variables["n_inv"].solution)) * inv_unit,
@@ -363,9 +419,11 @@ def cost_optimal_dispatch(
         battery_kwh=resolved[1],
         inverter_kw=resolved[2],
         generator_kw=resolved[3],
+        pv_ac_kw=resolved_ac,
         architecture=box.architecture,
     )
-    capital_value = (a_pv * solution.pv_kw + a_batt * solution.battery_kwh
+    capital_value = (a_pv * solution.pv_kw + a_pv_ac * solution.pv_ac_kw
+                     + a_batt * solution.battery_kwh
                      + a_inv * solution.inverter_kw + a_gen * solution.generator_kw)
     total = float(m.objective.value)
     return LowerBound(value=total, capacities=solution,

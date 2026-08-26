@@ -79,6 +79,9 @@ GEN_INITIAL_KW = GEN_CATALOG_KW[0]
 class ModelConfig:
     """Top-level configuration for one model run."""
 
+    # --- What is being sized ---
+    site: str = "Samionta"
+
     # --- Stage calendar (milestone years, relative to commissioning) ---
     stage_years: tuple[int, ...] = (0, 5, 10, 15, 20)
 
@@ -90,10 +93,16 @@ class ModelConfig:
     # --- Time-domain reduction ---
     n_rep_days: int = 8                  # representative days per node
 
-    # --- Operating layer encoding ---
-    # "rule_faithful" adds the night-reserve floor (eq. night-reserve);
-    # "baseline" uses cost-optimal dispatch within the operating envelope.
-    dispatch_variant: str = "rule_faithful"
+    # --- Horizon and discounting, shared with the project settings ---
+    horizon_years: int = PROJECT_YEARS
+    discount_rate: float = DISCOUNT_RATE
+
+    # The operating layer once offered a second, "rule-faithful", encoding which added the
+    # night-reserve floor to the cost objective and claimed to reproduce the field
+    # controller. It is gone: the rule trajectory sits below that floor in four to sixty
+    # per cent of the hours, so the constraint excludes the behaviour it claims to encode,
+    # and a programme minimising over a whole horizon is anticipative where the controller
+    # is causal. The controller is simulated instead, which is the premise of the method.
 
     # --- Solver ---
     solver: str = "highs"
@@ -128,8 +137,11 @@ class ModelConfig:
             raise ValueError(
                 "branching must have one entry per stage in stage_years"
             )
-        if self.dispatch_variant not in {"rule_faithful", "baseline"}:
-            raise ValueError("dispatch_variant must be 'rule_faithful' or 'baseline'")
+        if self.branching and self.branching[0] != 1:
+            raise ValueError("the first stage is the here-and-now decision and holds one "
+                             "node; branching starts after it")
+        if self.n_rep_days < 1:
+            raise ValueError("a node needs at least one representative day")
         if self.gen_initial_kw not in (0.0, *self.gen_catalog_kw):
             raise ValueError("gen_initial_kw must be 0 or a catalogue size")
         from .battery import CHEMISTRIES

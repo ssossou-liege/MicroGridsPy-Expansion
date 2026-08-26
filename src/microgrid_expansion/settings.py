@@ -299,6 +299,117 @@ class CouplingSpec:
         return ("dc", "ac") if self.architecture == "auto" else (self.architecture,)
 
 
+@dataclass
+class CostTrajectory:
+    """How one price moves over the planning horizon, under three futures.
+
+    A twenty-year plan cannot be costed at today's prices. Equipment gets cheaper and fuel
+    does not move predictably, and the *rates* at which they do are themselves uncertain —
+    which is why they are carried as three futures rather than one, and why the sizing is
+    reported across them rather than at a central case.
+
+    Rates are real, annual, and compound: a price at year ``y`` is the base price times
+    ``(1 + rate) ** y``. A negative rate is a decline. Two segments are allowed because the
+    published projections break at the mid-2030s, beyond which the learning literature
+    expects the decline to flatten as the cheap reductions are exhausted.
+    """
+
+    #: Annual real rate to ``break_year``, by scenario.
+    early: dict[str, float] = field(default_factory=dict)
+    #: Annual real rate after ``break_year``, by scenario.
+    late: dict[str, float] = field(default_factory=dict)
+    break_year: int = 10
+    provenance: Provenance = field(default_factory=lambda: Provenance(source=""))
+
+    def factor(self, scenario: str, years_ahead: int) -> float:
+        """Multiplier on the base price ``years_ahead`` years from the base year."""
+        if scenario not in self.early:
+            raise ValueError(f"unknown cost scenario {scenario!r}; "
+                             f"available: {sorted(self.early)}")
+        first = min(years_ahead, self.break_year)
+        rest = max(years_ahead - self.break_year, 0)
+        return ((1.0 + self.early[scenario]) ** first
+                * (1.0 + self.late[scenario]) ** rest)
+
+    def scenarios(self) -> tuple[str, ...]:
+        return tuple(self.early)
+
+
+def default_cost_trajectories() -> dict[str, CostTrajectory]:
+    """Price trajectories for each technology and for fuel, from the literature.
+
+    Photovoltaic modules and their balance of system follow experience curves whose rate
+    is itself declining: the industry's learning rate over 1976--2025 is put at 26 % per
+    doubling and is expected to fall towards 17 % by 2050, while balance-of-system costs
+    — today the larger share of a mini-grid's photovoltaic capital — learn far more slowly
+    than modules. Against that, African mini-grid capital costs fell about a fifth between
+    2020 and 2024 and remain roughly twice the global figure, so there is room to converge
+    that a mature market does not have.
+
+    Storage is the fastest-moving and the best documented. The three futures below reproduce
+    the reductions a national laboratory publishes for small-scale battery storage between
+    2022 and 2035 — seventeen, thirty and fifty-two per cent — and the flattening it
+    projects thereafter.
+
+    Fuel is the one that does not learn. The near-term outlook is dominated by supply shocks
+    rather than by any trend, and the long-run scenarios disagree in sign: prices rise to
+    2050 where policy does not tighten, and fall where it does. The three futures are
+    therefore built around a flat real price rather than around a forecast, which is an
+    admission of ignorance rather than a projection.
+
+    Scenario names are shared across technologies so that a draw is coherent: ``bas``
+    reduces prices slowly, ``central`` at the published median, ``haut`` quickly. For fuel,
+    the same names order the *price*, not the rate of learning — ``haut`` is the expensive
+    fuel future, which is the one that favours a larger array.
+    """
+    learning = Provenance(
+        source="photovoltaic: experience curve at 26 % per doubling over 1976-2025, "
+               "expected to decline towards 17 % by 2050, with balance-of-system learning "
+               "more slowly than modules; African mini-grid capital fell about 20 % over "
+               "2020-2024 and stands near twice the global figure",
+        verified=True,
+        note="rates are inferred from published learning rates and deployment outlooks, "
+             "not read from a table of prices")
+    storage = Provenance(
+        source="small-scale battery storage capital falls 17 %, 30 % and 52 % between "
+               "2022 and 2035 under the conservative, moderate and advanced cases of a "
+               "national laboratory's technology baseline, flattening to 0.3 % and 1.5 % "
+               "a year thereafter",
+        verified=True)
+    fuel = Provenance(
+        source="near-term outlooks are dominated by supply shocks rather than trend "
+               "(Brent projected at 86 then 70 dollars a barrel over two consecutive "
+               "years), and long-run scenarios disagree in sign; the band is centred on a "
+               "flat real price",
+        verified=False,
+        note="the weakest-sourced trajectory of the four, and the reason the fuel price "
+             "is an uncertainty axis rather than a parameter")
+
+    return {
+        "pv": CostTrajectory(early={"bas": -0.015, "central": -0.030, "haut": -0.050},
+                             late={"bas": -0.005, "central": -0.015, "haut": -0.025},
+                             provenance=learning),
+        "battery": CostTrajectory(early={"bas": -0.014, "central": -0.023, "haut": -0.040},
+                                  late={"bas": -0.003, "central": -0.015, "haut": -0.020},
+                                  provenance=storage),
+        # Converters follow the balance of system rather than the modules, and generating
+        # sets are a mature technology whose real price barely moves.
+        "inverter": CostTrajectory(early={"bas": -0.010, "central": -0.020, "haut": -0.030},
+                                   late={"bas": -0.005, "central": -0.010, "haut": -0.015},
+                                   provenance=learning),
+        "generator": CostTrajectory(early={"bas": 0.0, "central": -0.005, "haut": -0.010},
+                                    late={"bas": 0.0, "central": -0.005, "haut": -0.010},
+                                    provenance=Provenance(
+                                        source="reciprocating generating sets are a mature "
+                                               "technology; real capital cost is taken as "
+                                               "flat to slowly declining",
+                                        verified=False)),
+        "diesel": CostTrajectory(early={"bas": -0.010, "central": 0.0, "haut": 0.020},
+                                 late={"bas": -0.010, "central": 0.0, "haut": 0.020},
+                                 provenance=fuel),
+    }
+
+
 # ---------------------------------------------------------------------- economics
 @dataclass
 class EconomicSettings:
@@ -401,6 +512,23 @@ class SolverSettings:
 
 
 # ------------------------------------------------------------------------- project
+def _rebuild(existing, item):
+    """Restore ``item`` to the type of the value it replaces, however it is nested.
+
+    Reconstruction keyed on a field's *name* left every differently named record as a plain
+    mapping; keyed on its type it survives renaming, and it reaches into dictionaries and
+    lists, which is where the cost trajectories live.
+    """
+    if is_dataclass(existing) and isinstance(item, dict):
+        fields_of = {f.name for f in fields(type(existing))}
+        kwargs = {k: _rebuild(getattr(existing, k, None), v)
+                  for k, v in item.items() if k in fields_of}
+        return type(existing)(**kwargs)
+    if isinstance(existing, dict) and isinstance(item, dict):
+        return {k: _rebuild(existing.get(k), v) for k, v in item.items()}
+    return item
+
+
 @dataclass
 class ProjectSettings:
     """Everything a project needs beyond its measured data."""
@@ -416,6 +544,8 @@ class ProjectSettings:
     battery: BatterySpec = field(default_factory=BatterySpec)
     inverter: InverterSpec = field(default_factory=InverterSpec)
     coupling: CouplingSpec = field(default_factory=CouplingSpec)
+    cost_trajectories: dict[str, CostTrajectory] = field(
+        default_factory=default_cost_trajectories)
     generators: list[GeneratorSpec] = field(default_factory=default_generator_catalogue)
     economics: EconomicSettings = field(default_factory=EconomicSettings)
     controller: ControllerSettings = field(default_factory=ControllerSettings)
@@ -478,6 +608,11 @@ class ProjectSettings:
             elif isinstance(obj, (list, tuple)):
                 for i, item in enumerate(obj):
                     walk(item, f"{path}[{i}]")
+            elif isinstance(obj, dict):
+                # Parameters keyed by name — the cost trajectories, one per technology —
+                # were walked past entirely, so an unsourced one announced nothing.
+                for key, item in obj.items():
+                    walk(item, f"{path}[{key}]")
 
         walk(self, "")
         return found
@@ -533,7 +668,13 @@ class ProjectSettings:
                     for g in value])
             elif isinstance(value, dict):
                 current = getattr(settings, f.name)
-                if is_dataclass(current):
+                if isinstance(current, dict):
+                    # Parameters keyed by name — the cost trajectories, one per technology.
+                    # Left as plain mappings they lose their type, and with it the
+                    # provenance that says whether anybody sourced them.
+                    setattr(settings, f.name,
+                            {k: _rebuild(current.get(k), v) for k, v in value.items()})
+                elif is_dataclass(current):
                     for key, item in value.items():
                         if not hasattr(current, key):
                             continue
@@ -544,8 +685,7 @@ class ProjectSettings:
                         # parameter at all and the one guarantee this file makes was void
                         # for exactly the projects that read their settings from a file.
                         existing = getattr(current, key)
-                        if is_dataclass(existing) and isinstance(item, dict):
-                            item = type(existing)(**item)
+                        item = _rebuild(existing, item)
                         setattr(current, key, item)
                 else:
                     setattr(settings, f.name, value)

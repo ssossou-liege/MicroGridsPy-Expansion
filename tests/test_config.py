@@ -30,7 +30,17 @@ def test_config_validate_rejects_mismatched_branching():
         cfg.validate()
 
 
-def test_config_validate_rejects_unknown_variant():
-    cfg = ModelConfig(dispatch_variant="nonsense")
-    with pytest.raises(ValueError):
-        cfg.validate()
+def test_the_first_stage_holds_one_node():
+    """Branching starts after the here-and-now decision, never at it.
+
+    The first stage is the plant that gets built; a tree that branches there would be
+    asking which of several plants was built, which is not a decision anybody makes.
+    """
+    with pytest.raises(ValueError, match="here-and-now"):
+        ModelConfig(stage_years=(0, 5), branching=(2, 2)).validate()
+    ModelConfig(stage_years=(0, 5), branching=(1, 2)).validate()
+
+
+def test_a_node_needs_at_least_one_day():
+    with pytest.raises(ValueError, match="representative day"):
+        ModelConfig(n_rep_days=0).validate()

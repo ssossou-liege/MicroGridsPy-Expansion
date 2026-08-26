@@ -38,9 +38,11 @@ def main(argv: list[str] | None = None) -> int:
 
     projection = sub.add_parser("cmip6", help="climate projections (scenario tree)")
     projection.add_argument("--site", required=True)
-    projection.add_argument("--year", type=int, required=True)
+    projection.add_argument("--years", type=int, nargs="+", required=True,
+                            help="milestone years of the scenario tree")
     projection.add_argument("--scenarios", nargs="*", default=list(cmip6.SCENARIOS))
     projection.add_argument("--models", nargs="*", default=list(cmip6.GCM_MODELS))
+    projection.add_argument("--seed", type=int, default=0)
 
     args = parser.parse_args(argv)
     site = get_site(args.site)
@@ -51,12 +53,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     for scenario in args.scenarios:
-        for model in args.models:
-            for variable in cmip6.CMIP6_VARIABLES:
-                path = cmip6.download_projection(site, scenario, model, variable,
-                                                 args.year)
-                print(f"  {scenario:9s} {model:14s} {variable:8s} "
-                      f"{'ok' if path else 'indisponible'}")
+        for year in args.years:
+            written = cmip6.write_hourly_series(site, scenario, year,
+                                                models=tuple(args.models),
+                                                seed=args.seed)
+            print(f"  {scenario:8s} {year}  "
+                  f"{written.name if written else 'indisponible'}")
     return 0
 
 

@@ -16,7 +16,7 @@ from, and what produces it.
 | `irradiance/gbowele_weather_hourly_2016_2025.csv` | ERA5-Land via the Copernicus Climate Data Store | Same quantities for Gbowele (7.62 N, 2.20 E) | ✅ |
 | `irradiance/raw/` | Climate Data Store downloads | Cached NetCDF archives, so reprocessing never re-queues a request | ✅ (not committed) |
 | `irradiance/download.py` | CLI over `microgrid_expansion.resource.{era5,cmip6}` | Acquisition of the historical series and of the SSP projections | ✅ |
-| `irradiance/` per-SSP series | Output of `download.py cmip6` | SSP1-2.6 / SSP2-4.5 / SSP3-7.0 hourly profiles per milestone year | ⬜ pending (layer L4) |
+| `irradiance/<site>_<pathway>_<year>_hourly.csv` | `download.py cmip6`, from NASA's downscaled CMIP6 archive | Hourly irradiance, temperature and wind under SSP1-2.6 / SSP2-4.5 / SSP3-7.0, at the milestone years of the scenario tree | ✅ |
 | `ramp_params/reference/archetype_hourly_shapes.csv` | Measured, by `demand/build_archetype_shapes.py` | Mean 24-hour shape of each behavioural archetype, normalised. The calibration targeted daily energy and peak alone, so the shape had never been a target | ✅ |
 | `ramp_params/reference/pue_class_profiles.csv` | Meter records of all 57 enterprises | Mean hourly load of one enterprise of each activity class, and its day-to-day spread | ✅ |
 | `ramp_params/reference/pue_class_mix.csv` | Activity survey joined to the roster | Share of connections in each class, per growth trajectory | ✅ |
@@ -88,8 +88,16 @@ or `auto` to have both certified and the cheaper reported.
   labels each value by the **end** of that hour (so relabelling to local hour-beginning
   means subtracting one hour and adding the UTC offset — which cancel exactly for West
   Africa Time). Getting either wrong distorts or displaces the day without raising.
-- Climate scenarios are not yet generated; the available series are the historical ERA5
-  reanalysis. SSP-downscaled series are added here as `download.py cmip6` is run.
+- Climate projections come from NASA's downscaled CMIP6 archive rather than from the raw
+  model output. Two reasons: it is already bias-corrected to a quarter of a degree, which is
+  the downscaling step this study would otherwise have to perform and could not validate;
+  and its subset service returns a single grid point openly, so a site needs kilobytes where
+  the raw archive needs hundreds of megabytes per variable-year and a licence agreement that
+  the Copernicus route would not grant without a manual acceptance. Three models are averaged
+  before downscaling — the spread between modelling centres over West Africa is comparable to
+  the spread between pathways at this horizon. Note that the grid label in a file name is a
+  property of the model (`gr1`, `gr`, `gn`), and that requesting the wrong one returns a 404
+  indistinguishable from a model which does not publish that pathway.
 - Three pathways are retained (SSP1-2.6, SSP2-4.5, SSP3-7.0). SSP5-8.5 is deliberately
   excluded as an implausible high-forcing trajectory rather than a business-as-usual
   baseline; see the formulation's uncertainty-space section.

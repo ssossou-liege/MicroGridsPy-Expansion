@@ -34,17 +34,37 @@ SOLAR_CONSTANT_W_M2 = 1361.0
 
 #: Shared socio-economic pathways retained; SSP5-8.5 is deliberately excluded, its emission
 #: trajectory no longer being regarded as a plausible baseline.
-SCENARIOS = ("ssp1_2_6", "ssp2_4_5", "ssp3_7_0")
+SCENARIOS = ("ssp126", "ssp245", "ssp370")
 
-#: Global climate models forming the multi-model ensemble.
-GCM_MODELS = ("ipsl_cm6a_lr", "ec_earth3", "gfdl_esm4")
+#: Global climate models forming the multi-model ensemble. Three independent modelling
+#: centres rather than one: the spread between models over West Africa is comparable to the
+#: spread between pathways at this horizon, and a single model would present one structural
+#: assumption as if it were the climate.
+GCM_MODELS = ("GFDL-ESM4", "EC-Earth3", "IPSL-CM6A-LR")
 
-#: CMIP6 variables requested, by short name.
+#: The ensemble member published for every model in this archive.
+VARIANT = "r1i1p1f1"
+
+#: Grid label each model's files carry. It is a property of the model's native grid, not of
+#: the archive, and it differs between centres — a detail worth declaring rather than
+#: guessing, since guessing it wrong returns a 404 that looks exactly like a model which
+#: does not publish the pathway.
+GRID_LABEL = {"GFDL-ESM4": "gr1", "EC-Earth3": "gr", "IPSL-CM6A-LR": "gr",
+              "MPI-ESM1-2-HR": "gn", "MRI-ESM2-0": "gn", "ACCESS-CM2": "gn"}
+
+#: Daily variables requested, by their archive short name.
 CMIP6_VARIABLES = {
-    "rsds": "surface_downwelling_shortwave_radiation",
-    "tas": "near_surface_air_temperature",
-    "sfcWind": "near_surface_wind_speed",
+    "rsds": "surface downwelling shortwave radiation [W/m2]",
+    "tas": "near-surface air temperature [K]",
+    "sfcWind": "near-surface wind speed [m/s]",
 }
+
+#: Source of the projections. NASA's downscaled archive is used in place of the raw model
+#: output for two reasons: it is already bias-corrected and downscaled to a quarter degree,
+#: which is the step this study would otherwise have to perform itself and could not
+#: validate; and it is served openly, a point at a time, so that a site needs kilobytes
+#: where the raw archive would need hundreds of megabytes a year and a licence agreement.
+ARCHIVE = "https://ds.nccs.nasa.gov/thredds/ncss/grid/AMES/NEX/GDDP-CMIP6"
 
 
 def cos_zenith(latitude: float, longitude: float, day_of_year: np.ndarray,
@@ -148,39 +168,167 @@ def extract_netcdf(archive: Path, destination: Path) -> Path:
     return destination
 
 
+def _archive_url(model: str, scenario: str, variable: str, year: int) -> str:
+    """Address of one model-scenario-variable-year in the downscaled archive."""
+    grid = GRID_LABEL.get(model, "gn")
+    stem = f"{variable}_day_{model}_{scenario}_{VARIANT}_{grid}_{year}"
+    return (f"{ARCHIVE}/{model}/{scenario}/{VARIANT}/{variable}/"
+            f"{stem}_v2.0.nc")
+
+
 def download_projection(site: Site, scenario: str, model: str, variable: str,
-                        year: int, raw_dir: Path | None = None) -> Path | None:
-    """Download one CMIP6 daily field for one model, scenario, variable and year."""
-    import cdsapi
+                        year: int, raw_dir: Path | None = None,
+                        timeout_s: int = 300) -> Path | None:
+    """Fetch one daily series at the site's grid point, and cache it.
+
+    The archive's subset service returns the single grid cell containing the site, so what
+    crosses the network is a few kilobytes of comma-separated values rather than the
+    global field. A model that does not publish a pathway simply yields nothing, which is
+    reported and skipped rather than raised: the ensemble is what is available, and
+    pretending otherwise would silently drop a site.
+    """
+    import requests
 
     raw_dir = (IRRADIANCE_DIR / "raw") if raw_dir is None else raw_dir
     raw_dir.mkdir(parents=True, exist_ok=True)
-    target = raw_dir / f"cmip6_{site.name.lower()}_{model}_{scenario}_{variable}_{year}.nc"
-    if target.exists():
+    target = raw_dir / f"nexgddp_{site.name.lower()}_{model}_{scenario}_{variable}_{year}.csv"
+    if target.exists() and target.stat().st_size > 0:
         return target
 
-    box = [site.latitude + 0.13, site.longitude - 0.13,
-           site.latitude - 0.13, site.longitude + 0.13]
-    archive = target.with_suffix(".zip")
+    query = {
+        "var": variable,
+        "latitude": f"{site.latitude:.4f}",
+        "longitude": f"{site.longitude:.4f}",
+        "time_start": f"{year}-01-01T12:00:00Z",
+        "time_end": f"{year}-12-31T12:00:00Z",
+        "accept": "csv",
+    }
     try:
-        cdsapi.Client().retrieve(
-            "projections-cmip6",
-            {
-                "format": "zip",
-                "temporal_resolution": "daily",
-                "experiment": scenario,
-                "level": "single_levels",
-                "variable": CMIP6_VARIABLES[variable],
-                "model": model,
-                "date": f"{year}-01-01/{year}-12-31",
-                "area": box,
-            },
-            str(archive),
-        )
-        extract_netcdf(archive, target)
+        response = requests.get(_archive_url(model, scenario, variable, year),
+                                params=query, timeout=timeout_s)
+        response.raise_for_status()
+        text = response.text
+        if "time" not in text.split("\n", 1)[0]:
+            raise ValueError("the archive returned no series")
+        target.write_text(text)
         return target
-    except Exception as error:                      # a model may not publish a scenario
-        print(f"    indisponible: {model} {scenario} {variable} {year} -> {error}")
+    except Exception as error:
+        print(f"    indisponible: {model} {scenario} {variable} {year} -> "
+              f"{type(error).__name__}: {str(error)[:120]}")
+        target.unlink(missing_ok=True)
         return None
-    finally:
-        archive.unlink(missing_ok=True)
+
+
+def read_projection(path: Path, variable: str) -> pd.Series:
+    """Daily series of one variable, indexed by date, in the model's own units."""
+    frame = pd.read_csv(path)
+    time_column = next(c for c in frame.columns if c.startswith("time"))
+    value_column = next(c for c in frame.columns if c.startswith(variable))
+    series = pd.Series(frame[value_column].to_numpy(dtype=float),
+                       index=pd.to_datetime(frame[time_column]).dt.tz_localize(None).dt.normalize(),
+                       name=variable)
+    return series[~series.index.duplicated(keep="first")].sort_index()
+
+
+def ensemble_daily(site: Site, scenario: str, year: int,
+                   models: tuple[str, ...] = GCM_MODELS,
+                   raw_dir: Path | None = None) -> pd.DataFrame | None:
+    """Multi-model mean of the daily fields at the site, for one pathway and year.
+
+    Averaging across models before downscaling rather than downscaling each and averaging
+    after is deliberate: the disaggregation is non-linear in the daily mean only through
+    the clear-sky ceiling, and averaging first keeps a single coherent series whose
+    inter-model spread is reported rather than propagated into a false hourly precision.
+    """
+    collected: dict[str, list[pd.Series]] = {v: [] for v in CMIP6_VARIABLES}
+    for model in models:
+        for variable in CMIP6_VARIABLES:
+            path = download_projection(site, scenario, model, variable, year,
+                                       raw_dir=raw_dir)
+            if path is not None:
+                collected[variable].append(read_projection(path, variable))
+    if not all(collected.values()):
+        return None
+
+    frame = pd.DataFrame({
+        variable: pd.concat(series, axis=1).mean(axis=1)
+        for variable, series in collected.items()
+    }).dropna()
+    frame["tas"] = frame["tas"] - 273.15                     # kelvin to celsius
+    return frame.rename(columns={"rsds": "ghi_daily_w_m2", "tas": "t_amb_c",
+                                 "sfcWind": "wind_speed_m_s"})
+
+
+def build_hourly_series(site: Site, scenario: str, year: int,
+                        history: pd.DataFrame | None = None,
+                        models: tuple[str, ...] = GCM_MODELS,
+                        seed: int = 0,
+                        raw_dir: Path | None = None) -> pd.DataFrame | None:
+    """Hourly meteorological series for one pathway and milestone year.
+
+    Runs the three stages of the downscaling on the ensemble daily means: the clear-sky
+    ceiling calibrated on the site's own history, the deterministic disaggregation of each
+    daily mean over its hours, and the stochastic restoration of cloud variability.
+    """
+    from .yield_model import load_irradiance
+
+    daily = ensemble_daily(site, scenario, year, models=models, raw_dir=raw_dir)
+    if daily is None:
+        return None
+    # ``load_irradiance`` indexes by timestamp; the calibration reads it as a column.
+    history = load_irradiance(site).reset_index() if history is None else history
+    calibration = calibrate_sky(history, site)
+
+    index = pd.date_range(f"{year}-01-01", periods=24 * len(daily), freq="h")
+    envelope = clear_sky_ghi(site.latitude, site.longitude, index) * calibration.transmission
+    deterministic = disaggregate_daily_irradiance(
+        daily["ghi_daily_w_m2"].to_numpy(dtype=float), site, index)
+    irradiance = perturb_clearness(deterministic, envelope, calibration,
+                                   np.random.default_rng(seed))
+
+    hourly = pd.DataFrame({
+        "timestamp": index,
+        "irradiance_w_m2": irradiance,
+        "temperature_c": np.repeat(daily["t_amb_c"].to_numpy(dtype=float), 24),
+        "wind_speed_m_s": np.repeat(daily["wind_speed_m_s"].to_numpy(dtype=float), 24),
+    })
+    hourly["year"] = year
+    return hourly
+
+
+#: All projected series for a site live in one document, indexed by pathway and year. A file
+#: per pathway and milestone meant fifteen of them per site, each a copy of the same columns,
+#: with the pathway and the year encoded in the file name — where nothing can read them
+#: without parsing a string, and where adding a milestone means remembering the convention.
+PROJECTION_FILE = "{site}_cmip6_hourly.csv"
+
+
+def projection_path(site: Site) -> Path:
+    return IRRADIANCE_DIR / PROJECTION_FILE.format(site=site.name.lower())
+
+
+def write_hourly_series(site: Site, scenario: str, year: int, **kwargs) -> Path | None:
+    """Build one pathway-year and merge it into the site's projection document."""
+    hourly = build_hourly_series(site, scenario, year, **kwargs)
+    if hourly is None:
+        return None
+    hourly.insert(1, "pathway", scenario)
+
+    destination = projection_path(site)
+    if destination.exists():
+        existing = pd.read_csv(destination)
+        keep = ~((existing["pathway"] == scenario) & (existing["year"] == year))
+        hourly = pd.concat([existing[keep], hourly], ignore_index=True)
+    hourly = hourly.sort_values(["pathway", "year", "timestamp"], kind="stable")
+    hourly.to_csv(destination, index=False)
+    return destination
+
+
+def read_projection_series(site: Site, pathway: str, year: int) -> pd.DataFrame | None:
+    """One pathway-year out of the site's projection document."""
+    path = projection_path(site)
+    if not path.exists():
+        return None
+    frame = pd.read_csv(path, parse_dates=["timestamp"])
+    block = frame[(frame["pathway"] == pathway) & (frame["year"] == year)]
+    return None if block.empty else block.drop(columns=["pathway"]).reset_index(drop=True)

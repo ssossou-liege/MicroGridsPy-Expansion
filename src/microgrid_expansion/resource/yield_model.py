@@ -161,6 +161,7 @@ def simulate_resource_year(
     module: ModuleSpec = ModuleSpec(),
     t_amb_c: float | np.ndarray | None = None,
     chemistry=None,
+    frame: pd.DataFrame | None = None,
 ) -> ResourceYear:
     """Build the resource year for ``site``.
 
@@ -172,11 +173,18 @@ def simulate_resource_year(
     Faiman cell-temperature model is used in place of the nominal-operating-cell model,
     which resolves the convective cooling instead of folding it into a constant.
     """
-    frame = load_irradiance(site)
-    frame = frame[frame.index.year == year]
-    if frame.empty:
-        years = sorted(load_irradiance(site).index.year.unique())
-        raise ValueError(f"no irradiance for {site.name} in {year}; available: {years}")
+    if frame is None:
+        # A projected series may be supplied directly. It goes through this one converter
+        # rather than through a second reader of its own: the cell-temperature model and
+        # the conventions of the acquisition live here, and two readers of the same
+        # quantity eventually disagree about one of them.
+        frame = load_irradiance(site)
+        frame = frame[frame.index.year == year]
+        if frame.empty:
+            years = sorted(load_irradiance(site).index.year.unique())
+            raise ValueError(f"no irradiance for {site.name} in {year}; available: {years}")
+    elif "timestamp" in frame.columns:
+        frame = frame.set_index("timestamp").sort_index()
 
     ghi = frame["irradiance_w_m2"].to_numpy(dtype=float)
     isothermal = False

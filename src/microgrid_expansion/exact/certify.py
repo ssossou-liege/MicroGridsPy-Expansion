@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import heapq
 import itertools
+import os
 from functools import lru_cache
 import time
 from dataclasses import dataclass, field
@@ -314,8 +315,88 @@ def _evaluate_rule(instance, capacities, economics, battery, generator, controll
     return dispatch.operating_cost(generator, voll_usd_kwh=economics.voll_usd_kwh) * scale + capital
 
 
+# --------------------------------------------------------------- évaluation en parallèle
+#: Contexte d'un processus ouvrier, posé une fois à l'ouverture du pool.
+_WORKER: dict = {}
+
+
+def _init_worker(instance, economics, battery, generator, controller, annualised) -> None:
+    _WORKER.update(instance=instance, economics=economics, battery=battery,
+                   generator=generator, controller=controller, annualised=annualised)
+
+
+def _evaluate_in_worker(capacities: Capacities) -> float:
+    return _evaluate_rule(_WORKER["instance"], capacities, _WORKER["economics"],
+                          _WORKER["battery"], _WORKER["generator"],
+                          _WORKER["controller"], _WORKER["annualised"])
+
+
+class _Evaluator:
+    """Evaluates batches of designs, across processes when the batch repays the postage.
+
+    Every bulk use of the simulation oracle is a minimum over independent points: the coarse
+    sweep, the local refinement, and the enumeration of a box small enough that a relaxation
+    would cost more than simulating it outright. None of them consults the incumbent while
+    it runs, so evaluating them together and reducing afterwards returns exactly what the
+    sequential loop returned, and the certificate is unchanged.
+
+    The simulation is a scalar recursion over the hours of the year and holds the
+    interpreter lock throughout, so threads would serialise; processes are the only way to
+    use the other cores. A batch smaller than ``_MIN_BATCH`` is run in the caller, the
+    round trip through the pool costing more than the simulations it would carry.
+    """
+
+    #: Below this many designs the pool costs more than it saves.
+    _MIN_BATCH = 96
+
+    @property
+    def batch_size(self) -> int:
+        """How many designs to cut from an ordered scan before reducing.
+
+        Large enough to keep every worker fed, small enough that the incumbent is refreshed
+        often and the capital bound keeps biting.
+        """
+        return max(self._MIN_BATCH, 64 * self._workers)
+
+    def __init__(self, args: tuple, workers: int | None = None):
+        self._args = args
+        self._workers = workers if workers is not None else (os.cpu_count() or 1)
+        self._pool = None
+
+    def __enter__(self) -> "_Evaluator":
+        if self._workers > 1:
+            from concurrent.futures import ProcessPoolExecutor
+            self._pool = ProcessPoolExecutor(max_workers=self._workers,
+                                             initializer=_init_worker,
+                                             initargs=self._args)
+        return self
+
+    def __exit__(self, *exc) -> None:
+        if self._pool is not None:
+            self._pool.shutdown(wait=True)
+            self._pool = None
+
+    def map(self, designs: list[Capacities]) -> list[float]:
+        if not designs:
+            return []
+        if self._pool is None or len(designs) < self._MIN_BATCH:
+            return [_evaluate_rule(*self._args[:1], d, *self._args[1:])
+                    for d in designs]
+        chunk = max(16, len(designs) // (self._workers * 4) + 1)
+        return list(self._pool.map(_evaluate_in_worker, designs, chunksize=chunk))
+
+    def best(self, designs: list[Capacities]) -> tuple[float, Capacities | None, int]:
+        """The cheapest of ``designs``, its value, and how many were simulated."""
+        values = self.map(designs)
+        if not values:
+            return float("inf"), None, 0
+        k = min(range(len(values)), key=values.__getitem__)
+        return values[k], designs[k], len(designs)
+
+
 def coarse_incumbent(instance, lattice, economics, battery, generator, controller,
-                     annualised, step: int = 4) -> tuple[float, Capacities, int]:
+                     annualised, step: int = 4,
+                     evaluator: "_Evaluator | None" = None) -> tuple[float, Capacities, int]:
     """Locate a near-optimal design with the cheap oracle alone, coarse to fine.
 
     A uniform sweep of a lattice this size would cost thousands of simulations; sweeping at
@@ -324,6 +405,9 @@ def coarse_incumbent(instance, lattice, economics, battery, generator, controlle
     repaid many times over, since a good incumbent prunes boxes that would each otherwise
     demand a relaxation sixty times more expensive.
     """
+    if evaluator is None:      # appelé hors certification : évaluation en série
+        evaluator = _Evaluator((instance, economics, battery, generator, controller,
+                                annualised), workers=1)
     best, best_design, calls = float("inf"), None, 0
     centre = None
     spacing = max(step, 1)
@@ -350,29 +434,39 @@ def coarse_incumbent(instance, lattice, economics, battery, generator, controlle
             ac_range = range(max(lattice.n_pv_ac[0], n_ac0 - reach),
                              min(lattice.n_pv_ac[1], n_ac0 + reach) + 1, spacing)
 
+        indices, designs = [], []
         for n_pv, n_bt, n_iv, gen, n_ac in itertools.product(
                 pv_range, bt_range, iv_range, lattice.generator_ratings, ac_range):
             if not lattice.admits(n_pv, n_iv, n_ac):
                 continue
-            design = lattice.capacities(n_pv, n_bt, n_iv, gen, n_ac)
-            value = _evaluate_rule(instance, design, economics, battery, generator,
-                                   controller, annualised)
-            calls += 1
+            indices.append((n_pv, n_bt, n_iv, n_ac))
+            designs.append(lattice.capacities(n_pv, n_bt, n_iv, gen, n_ac))
+
+        # The centre is read when the next level's ranges are built, never inside the
+        # level, so the whole level goes out as one batch and reduces afterwards.
+        values = evaluator.map(designs)
+        calls += len(designs)
+        for k, value in enumerate(values):
             if value < best:
-                best, best_design = value, design
-                centre = (n_pv, n_bt, n_iv, n_ac)
+                best, best_design = value, designs[k]
+                centre = indices[k]
     return best, best_design, calls
 
 
 def _refine(instance, lattice, centre, economics, battery, generator, controller,
-            annualised, radius: int = 3) -> tuple[float, Capacities, int]:
+            annualised, radius: int = 3,
+            evaluator: "_Evaluator | None" = None) -> tuple[float, Capacities, int]:
     """Local search around a design, again with the cheap oracle only."""
+    if evaluator is None:      # appelé hors certification : évaluation en série
+        evaluator = _Evaluator((instance, economics, battery, generator, controller,
+                                annualised), workers=1)
     best, best_design, calls = float("inf"), centre, 0
     n_pv0 = int(round(centre.pv_kw / lattice.pv_unit_kw))
     n_bt0 = int(round(centre.battery_kwh / lattice.batt_unit_kwh))
     n_iv0 = int(round(centre.inverter_kw / lattice.inv_unit_kw))
     n_ac0 = int(round(centre.pv_ac_kw / lattice.pv_unit_kw))
 
+    designs = []
     for d_pv in range(-radius, radius + 1):
         for d_bt in range(-radius, radius + 1):
             for d_iv in range(-1, 2):
@@ -385,12 +479,11 @@ def _refine(instance, lattice, centre, economics, battery, generator, controller
                                    lattice.n_pv_ac[1])
                         if not lattice.admits(n_pv, n_iv, n_ac):
                             continue
-                        design = lattice.capacities(n_pv, n_bt, n_iv, gen, n_ac)
-                        value = _evaluate_rule(instance, design, economics, battery,
-                                               generator, controller, annualised)
-                        calls += 1
-                        if value < best:
-                            best, best_design = value, design
+                        designs.append(lattice.capacities(n_pv, n_bt, n_iv, gen, n_ac))
+
+    value, winner, calls = evaluator.best(designs)
+    if winner is not None and value < best:
+        best, best_design = value, winner
     return best, best_design, calls
 
 
@@ -570,6 +663,7 @@ def certify(
     max_relaxations: int = 400,
     relaxation_cost_ratio: float = 58.0,
     coarse_step: int = 6,
+    workers: int | None = None,
     verbose: bool = True,
 ) -> Certificate:
     """Certify the optimal sizing for the deployed controller over the whole lattice."""
@@ -589,12 +683,24 @@ def certify(
     annualised = economics.annualised()
 
     started = time.time()
+    evaluator = _Evaluator((instance, economics, battery, generator, controller,
+                            annualised), workers=workers)
+    with evaluator:
+        return _certify(instance, lattice, settings, tolerance, max_relaxations,
+                        relaxation_cost_ratio, coarse_step, verbose, evaluator,
+                        economics, battery, generator, controller, annualised, started)
+
+
+def _certify(instance, lattice, settings, tolerance, max_relaxations,
+             relaxation_cost_ratio, coarse_step, verbose, evaluator,
+             economics, battery, generator, controller, annualised, started) -> Certificate:
     # --- phase 1: a strong incumbent, bought with the cheap oracle only
     incumbent, design, sims = coarse_incumbent(instance, lattice, economics, battery,
                                                generator, controller, annualised,
-                                               step=coarse_step)
+                                               step=coarse_step, evaluator=evaluator)
     refined, refined_design, more = _refine(instance, lattice, design, economics, battery,
-                                            generator, controller, annualised)
+                                            generator, controller, annualised,
+                                            evaluator=evaluator)
     sims += more
     if refined < incumbent:
         incumbent, design = refined, refined_design
@@ -633,20 +739,18 @@ def certify(
             continue
 
         if box.n_points <= threshold:
-            for n_pv, n_bt, n_iv, gen, n_ac in itertools.product(
-                    range(box.pv[0], box.pv[1] + 1), range(box.batt[0], box.batt[1] + 1),
-                    range(box.inv[0], box.inv[1] + 1), box.gens,
-                    range(box.pv_ac[0], box.pv_ac[1] + 1)):
-                if not lattice.admits(n_pv, n_iv, n_ac):
-                    continue
-                value = _evaluate_rule(
-                    instance, lattice.capacities(n_pv, n_bt, n_iv, gen, n_ac),
-                    economics, battery, generator, controller, annualised)
-                sims += 1
-                enumerated += 1
-                if value < incumbent:
-                    incumbent = value
-                    design = lattice.capacities(n_pv, n_bt, n_iv, gen, n_ac)
+            designs = [lattice.capacities(n_pv, n_bt, n_iv, gen, n_ac)
+                       for n_pv, n_bt, n_iv, gen, n_ac in itertools.product(
+                           range(box.pv[0], box.pv[1] + 1),
+                           range(box.batt[0], box.batt[1] + 1),
+                           range(box.inv[0], box.inv[1] + 1), box.gens,
+                           range(box.pv_ac[0], box.pv_ac[1] + 1))
+                       if lattice.admits(n_pv, n_iv, n_ac)]
+            value, winner, evaluated = evaluator.best(designs)
+            sims += evaluated
+            enumerated += evaluated
+            if winner is not None and value < incumbent:
+                incumbent, design = value, winner
             continue
 
         n_pv, n_bt, n_iv, gen, n_ac = _centre(box)
@@ -768,6 +872,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="exhaustive: free capital bound then enumeration, faster when "
                              "the simulation oracle is cheap; branch: branch-and-simulate "
                              "with the cost-optimal relaxation")
+    parser.add_argument("--workers", type=int, default=None,
+                        help="processus d'évaluation ; par défaut tous les cœurs. La "
+                             "simulation tient le verrou de l'interpréteur, donc seuls "
+                             "des processus séparés utilisent les autres cœurs")
     parser.add_argument("--solver", default=None,
                         help="overrides the project setting; gurobi is about four times "
                              "faster than highs on the wide boxes of the search, when a "
@@ -802,11 +910,12 @@ def main(argv: list[str] | None = None) -> int:
     architecture = "mixte"
     if args.method == "exhaustive":
         result = certify_exhaustive(instance, lattice, settings,
-                                    coarse_step=args.coarse_step)
+                                    coarse_step=args.coarse_step,
+                                    workers=args.workers)
     else:
         result = certify(instance, lattice, settings,
                          max_relaxations=args.max_relaxations,
-                         coarse_step=args.coarse_step)
+                         coarse_step=args.coarse_step, workers=args.workers)
     ranked = [(architecture, result)]
 
     print("\n" + result.summary())
@@ -922,6 +1031,7 @@ def certify_exhaustive(
     lattice: Lattice | None = None,
     settings: ProjectSettings | None = None,
     coarse_step: int = 16,
+    workers: int | None = None,
     verbose: bool = True,
 ) -> Certificate:
     """Certify by the cheapest valid bound there is, then enumerate what survives.
@@ -958,11 +1068,22 @@ def certify_exhaustive(
     annualised = economics.annualised()
 
     started = time.time()
+    with _Evaluator((instance, economics, battery, generator, controller, annualised),
+                    workers=workers) as evaluator:
+        return _certify_exhaustive(instance, lattice, settings, coarse_step, verbose,
+                                   evaluator, economics, battery, generator, controller,
+                                   annualised, started)
+
+
+def _certify_exhaustive(instance, lattice, settings, coarse_step, verbose, evaluator,
+                        economics, battery, generator, controller, annualised,
+                        started) -> Certificate:
     incumbent, design, sims = coarse_incumbent(instance, lattice, economics, battery,
                                                generator, controller, annualised,
-                                               step=coarse_step)
+                                               step=coarse_step, evaluator=evaluator)
     refined, refined_design, more = _refine(instance, lattice, design, economics, battery,
-                                            generator, controller, annualised)
+                                            generator, controller, annualised,
+                                            evaluator=evaluator)
     sims += more
     if refined < incumbent:
         incumbent, design = refined, refined_design
@@ -987,18 +1108,31 @@ def certify_exhaustive(
               if lattice.admits(p, i)]
     points.sort(key=lambda row: row[0])
 
+    # Designs are ordered by increasing capital, so the capital bound, once it bites, bites
+    # on every design left: the scan stops rather than skipping. The incumbent falls as the
+    # scan proceeds, which is why the batch is a slice rather than the whole list — a slice
+    # is evaluated against the incumbent standing when it was cut, and since the incumbent
+    # only falls, that bound is the conservative one. A design a sequential pass would have
+    # pruned mid-batch is therefore simulated rather than skipped, which costs a simulation
+    # and cannot change the minimum.
     pruned = enumerated = 0
-    for capital, n_pv, n_bt, n_iv, gen in points:
-        if capital >= incumbent:
-            pruned += 1                       # cannot beat the incumbent, whatever it does
-            continue
-        value = _evaluate_rule(instance, lattice.capacities(n_pv, n_bt, n_iv, gen),
-                               economics, battery, generator, controller, annualised)
-        sims += 1
-        enumerated += 1
-        if value < incumbent:
-            incumbent = value
-            design = lattice.capacities(n_pv, n_bt, n_iv, gen)
+    batch = max(evaluator.batch_size, 1)
+    cursor = 0
+    while cursor < len(points):
+        window = points[cursor:cursor + batch]
+        if window[0][0] >= incumbent:
+            break
+        keep = [row for row in window if row[0] < incumbent]
+        pruned += len(window) - len(keep)
+        designs = [lattice.capacities(p, b, i, g) for _, p, b, i, g in keep]
+        values = evaluator.map(designs)
+        sims += len(designs)
+        enumerated += len(designs)
+        for k, value in enumerate(values):
+            if value < incumbent:
+                incumbent, design = value, designs[k]
+        cursor += batch
+    pruned += len(points) - cursor if cursor < len(points) else 0
 
     design_opt, z_opt = _best_cost_optimal(instance, lattice, design, economics, battery,
                                            generator, annualised,

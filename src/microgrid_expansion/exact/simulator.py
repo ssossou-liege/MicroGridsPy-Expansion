@@ -181,6 +181,31 @@ class Capacities:
                 and self.pv_ac_kw <= ratio_ac * self.inverter_kw + 1e-9)
 
 
+def _night_reserve_loop(n, horizon, deficit, pv, demand, reserve):
+    """Sum each hour's deficit up to the next surplus, filling ``reserve`` in place.
+
+    Written as an explicit scan rather than with array primitives: the interpreted version
+    called ``flatnonzero`` once per hour, eight thousand times per simulated year, and that
+    single line outweighed the whole dispatch recursion once the latter was compiled.
+    """
+    for h in range(n):
+        end = min(h + horizon, n)
+        total = 0.0
+        for k in range(h, end):
+            if pv[k] > demand[k]:
+                break
+            total += deficit[k]
+        reserve[h] = total
+
+
+try:                                   # compiled when numba is present, interpreted if not
+    from numba import njit as _njit_reserve
+
+    _night_reserve_loop = _njit_reserve(cache=True)(_night_reserve_loop)
+except Exception:                      # pragma: no cover - depends on the installation
+    pass
+
+
 def night_reserve(demand_kw: np.ndarray, pv_kw: np.ndarray,
                   controller: Controller) -> np.ndarray:
     """Energy needed to reach the next photovoltaic surplus [kWh].
@@ -197,13 +222,7 @@ def night_reserve(demand_kw: np.ndarray, pv_kw: np.ndarray,
     n = demand.size
 
     reserve = np.zeros(n)
-    for h in range(n):
-        end = min(h + horizon, n)
-        window = deficit[h:end]
-        surplus = np.flatnonzero(pv[h:end] > demand[h:end])
-        if surplus.size:
-            window = window[:surplus[0]]
-        reserve[h] = window.sum()
+    _night_reserve_loop(n, horizon, deficit, pv, demand, reserve)
     return controller.reserve_multiplier * reserve
 
 
@@ -292,6 +311,136 @@ class Dispatch:
         }
 
 
+
+
+# ------------------------------------------------------------------- noyau de l'automate
+def _controller_loop(n, demand, pv, soc, losses, ceilings, next_ceiling, reserve,
+                     gen, charge, discharge, curtailed, unserved, pv_to_load,
+                     inverter_flow, floor, share_dc, eta_ac, power_limit, timestep_h,
+                     cap_pv_kw, cap_pv_ac_kw, cap_inverter_kw, cap_generator_kw,
+                     eta_charge, eta_discharge, gen_setpoint, gen_min_load):
+    """The controller's hour-by-hour recursion, over scalars and arrays alone.
+
+    Lifted out of :func:`simulate` so that it can be compiled. The body is a scalar
+    recursion over the hours of a year and holds the interpreter lock throughout, which made
+    it the floor under every search built on this oracle: a certification spends most of its
+    time here, and interpreted it runs at about a hundred and thirty thousand hours a
+    second. Compiled, the same arithmetic runs untouched.
+
+    The arrays are filled in place; the two running totals come back as the return value.
+    """
+    spill = 0.0
+    clipped_total = 0.0
+    for h in range(n):
+        energy = max(soc[h] - losses[h], floor)
+        ceiling = ceilings[h]
+
+        # Neither part of the array delivers more than its own converter is rated for; the
+        # excess is clipped and reaches no bus at all.
+        offered = pv[h] * share_dc
+        offered_ac = pv[h] - offered
+        available_dc = min(offered, cap_pv_kw)
+        available_ac = min(offered_ac, cap_pv_ac_kw)
+        clipped = (offered - available_dc) + (offered_ac - available_ac)
+        clipped_total += clipped
+
+        inverter_left = cap_inverter_kw
+        # The field on the load's bus serves it without conversion, and is therefore drawn
+        # on first; what the field on the battery's bus sends the load is converted.
+        served_ac = min(available_ac, demand[h])
+        remaining_demand = demand[h] - served_ac
+        served_dc = min(available_dc, remaining_demand, inverter_left)
+        inverter_left -= served_dc
+        inverter_flow[h] += served_dc
+
+        served = served_ac + served_dc
+        surplus_dc = available_dc - served_dc
+        surplus_ac = available_ac - served_ac
+        deficit = demand[h] - served
+        pv_to_load[h] = served
+
+        # 1. the surplus charges the battery. From the battery's own bus it arrives without
+        #    conversion; from the load's bus it must be rectified, and the hybrid inverter
+        #    limits it.
+        headroom = max(ceiling - energy, 0.0)
+        charge_dc = min(surplus_dc, power_limit,
+                        headroom / eta_charge / timestep_h)
+        charge_dc = max(charge_dc, 0.0)
+        energy += eta_charge * charge_dc * timestep_h
+
+        headroom = max(ceiling - energy, 0.0)
+        charge_ac = min(surplus_ac, inverter_left, power_limit - charge_dc,
+                        headroom / eta_ac / timestep_h)
+        charge_ac = max(charge_ac, 0.0)
+        energy += eta_ac * charge_ac * timestep_h
+        inverter_left -= charge_ac
+        inverter_flow[h] += charge_ac
+
+        charge_kw = charge_dc + charge_ac
+        curtailed[h] = (surplus_dc - charge_dc) + (surplus_ac - charge_ac) + clipped
+        charge[h] = charge_kw
+
+        if deficit > 0:
+            # 2. the battery may serve the load only above the look-ahead reserve
+            reserve_floor = min(max(floor, reserve[h]), ceiling)
+            available = max(energy - reserve_floor, 0.0) * eta_discharge
+            from_battery = min(deficit, inverter_left, power_limit, available / timestep_h)
+            from_battery = max(from_battery, 0.0)
+
+            if from_battery >= deficit - 1e-9:
+                discharge[h] = from_battery
+                energy -= from_battery / eta_discharge * timestep_h
+                inverter_left -= from_battery
+                inverter_flow[h] += from_battery
+            else:
+                # 3. the generator starts, at least at its minimum stable loading
+                remaining = deficit
+                target = max(remaining,
+                             gen_setpoint * cap_generator_kw,
+                             gen_min_load * cap_generator_kw)
+                output = min(cap_generator_kw, target)
+                gen[h] = output
+
+                to_load = min(output, remaining)
+                remaining -= to_load
+                spare = output - to_load
+                if spare > 0:
+                    headroom = max(ceiling - energy, 0.0)
+                    extra = min(spare, inverter_left, power_limit - charge[h],
+                                headroom / eta_charge / timestep_h)
+                    extra = max(extra, 0.0)
+                    energy += eta_charge * extra * timestep_h
+                    charge[h] += extra
+                    inverter_left -= extra
+                    inverter_flow[h] += extra
+                    curtailed[h] += spare - extra      # generator power with nowhere to go
+                if remaining > 1e-9:
+                    # the battery covers what the generator could not, down to its floor
+                    available = max(energy - floor, 0.0) * eta_discharge
+                    from_battery = min(remaining, inverter_left, power_limit,
+                                       available / timestep_h)
+                    from_battery = max(from_battery, 0.0)
+                    discharge[h] = from_battery
+                    energy -= from_battery / eta_discharge * timestep_h
+                    inverter_flow[h] += from_battery
+                    remaining -= from_battery
+                unserved[h] = max(remaining, 0.0)
+
+        closing = min(max(energy, floor), ceiling)
+        derated = min(closing, next_ceiling[h])
+        spill += closing - derated
+        soc[h + 1] = derated
+    return spill, clipped_total
+
+
+try:                                   # compiled when numba is present, interpreted if not
+    from numba import njit
+
+    _controller_loop = njit(cache=True)(_controller_loop)
+except Exception:                      # pragma: no cover - depends on the installation
+    pass
+
+
 def simulate(
     demand_kw: np.ndarray,
     specific_yield: np.ndarray,
@@ -334,7 +483,6 @@ def simulate(
     soc = np.zeros(n + 1)
     soc[0] = min(battery.initial_soc_fraction * battery.soc_max * capacities.battery_kwh,
                  ceilings[0] if n else 0.0)
-    spill = 0.0
 
     floor = battery.soc_min * capacities.battery_kwh
     total_array = capacities.pv_total_kw
@@ -343,106 +491,13 @@ def simulate(
     # string inverter and down again by the hybrid inverter. That second conversion is what
     # a field placed on the load's bus pays for the one it saves on the way to the load.
     eta_ac = battery.charge_efficiency * config.AC_DOUBLE_CONVERSION_EFF
-    clipped_total = 0.0
-    for h in range(n):
-        energy = max(soc[h] - losses[h], floor)
-        ceiling = ceilings[h]
-
-        # Neither part of the array delivers more than its own converter is rated for; the
-        # excess is clipped and reaches no bus at all.
-        offered = pv[h] * share_dc
-        offered_ac = pv[h] - offered
-        available_dc = min(offered, capacities.pv_kw)
-        available_ac = min(offered_ac, capacities.pv_ac_kw)
-        clipped = (offered - available_dc) + (offered_ac - available_ac)
-        clipped_total += clipped
-
-        inverter_left = capacities.inverter_kw
-        # The field on the load's bus serves it without conversion, and is therefore drawn
-        # on first; what the field on the battery's bus sends the load is converted.
-        served_ac = min(available_ac, demand[h])
-        remaining_demand = demand[h] - served_ac
-        served_dc = min(available_dc, remaining_demand, inverter_left)
-        inverter_left -= served_dc
-        inverter_flow[h] += served_dc
-
-        served = served_ac + served_dc
-        surplus_dc = available_dc - served_dc
-        surplus_ac = available_ac - served_ac
-        deficit = demand[h] - served
-        pv_to_load[h] = served
-
-        # 1. the surplus charges the battery. From the battery's own bus it arrives without
-        #    conversion; from the load's bus it must be rectified, and the hybrid inverter
-        #    limits it.
-        headroom = max(ceiling - energy, 0.0)
-        charge_dc = min(surplus_dc, power_limit,
-                        headroom / battery.charge_efficiency / timestep_h)
-        charge_dc = max(charge_dc, 0.0)
-        energy += battery.charge_efficiency * charge_dc * timestep_h
-
-        headroom = max(ceiling - energy, 0.0)
-        charge_ac = min(surplus_ac, inverter_left, power_limit - charge_dc,
-                        headroom / eta_ac / timestep_h)
-        charge_ac = max(charge_ac, 0.0)
-        energy += eta_ac * charge_ac * timestep_h
-        inverter_left -= charge_ac
-        inverter_flow[h] += charge_ac
-
-        charge_kw = charge_dc + charge_ac
-        curtailed[h] = (surplus_dc - charge_dc) + (surplus_ac - charge_ac) + clipped
-        charge[h] = charge_kw
-
-        if deficit > 0:
-            # 2. the battery may serve the load only above the look-ahead reserve
-            reserve_floor = min(max(floor, reserve[h]), ceiling)
-            available = max(energy - reserve_floor, 0.0) * battery.discharge_efficiency
-            from_battery = min(deficit, inverter_left, power_limit, available / timestep_h)
-            from_battery = max(from_battery, 0.0)
-
-            if from_battery >= deficit - 1e-9:
-                discharge[h] = from_battery
-                energy -= from_battery / battery.discharge_efficiency * timestep_h
-                inverter_left -= from_battery
-                inverter_flow[h] += from_battery
-            else:
-                # 3. the generator starts, at least at its minimum stable loading
-                remaining = deficit
-                target = max(remaining,
-                             controller.generator_setpoint * capacities.generator_kw,
-                             generator.min_load_fraction * capacities.generator_kw)
-                output = min(capacities.generator_kw, target)
-                gen[h] = output
-
-                to_load = min(output, remaining)
-                remaining -= to_load
-                spare = output - to_load
-                if spare > 0:
-                    headroom = max(ceiling - energy, 0.0)
-                    extra = min(spare, inverter_left, power_limit - charge[h],
-                                headroom / battery.charge_efficiency / timestep_h)
-                    extra = max(extra, 0.0)
-                    energy += battery.charge_efficiency * extra * timestep_h
-                    charge[h] += extra
-                    inverter_left -= extra
-                    inverter_flow[h] += extra
-                    curtailed[h] += spare - extra      # generator power with nowhere to go
-                if remaining > 1e-9:
-                    # the battery covers what the generator could not, down to its floor
-                    available = max(energy - floor, 0.0) * battery.discharge_efficiency
-                    from_battery = min(remaining, inverter_left, power_limit,
-                                       available / timestep_h)
-                    from_battery = max(from_battery, 0.0)
-                    discharge[h] = from_battery
-                    energy -= from_battery / battery.discharge_efficiency * timestep_h
-                    inverter_flow[h] += from_battery
-                    remaining -= from_battery
-                unserved[h] = max(remaining, 0.0)
-
-        closing = min(max(energy, floor), ceiling)
-        derated = min(closing, next_ceiling[h])
-        spill += closing - derated
-        soc[h + 1] = derated
+    spill, clipped_total = _controller_loop(
+        n, demand, pv, soc, losses, ceilings, next_ceiling, reserve,
+        gen, charge, discharge, curtailed, unserved, pv_to_load, inverter_flow,
+        floor, share_dc, eta_ac, power_limit, timestep_h,
+        capacities.pv_kw, capacities.pv_ac_kw, capacities.inverter_kw,
+        capacities.generator_kw, battery.charge_efficiency, battery.discharge_efficiency,
+        controller.generator_setpoint, generator.min_load_fraction)
 
     return Dispatch(
         generator_kw=gen, charge_kw=charge, discharge_kw=discharge, soc_kwh=soc,

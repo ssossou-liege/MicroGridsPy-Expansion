@@ -21,7 +21,8 @@ dependencies = [
     "highspy",
     "cdsapi",
     "netcdf4",
-    "dask"
+    "dask",
+    "numba"
 ]
 
 [project.optional-dependencies]

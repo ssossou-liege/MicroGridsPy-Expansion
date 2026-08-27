@@ -32,6 +32,7 @@ def node_kpis(plans: dict, node: int, tree: ScenarioTree, simulated: dict) -> di
         "stage": tree.stage[node],
         "probability": tree.prob[node],
         "pv_kw": plan.pv_kw,
+        "pv_ac_kw": getattr(plan, "pv_ac_kw", 0.0),
         "battery_kwh": plan.battery_kwh,
         "inverter_kw": plan.inverter_kw,
         "generator_kw": plan.generator_kw,

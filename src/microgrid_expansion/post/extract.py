@@ -15,6 +15,8 @@ class NodePlan:
     battery_kwh: float
     inverter_kw: float
     generator_kw: float
+    #: Array on the load's bus; zero unless the field is divided between the two.
+    pv_ac_kw: float = 0.0
 
 
 def extract_solution(programme, cfg) -> dict[int, NodePlan]:
@@ -22,7 +24,7 @@ def extract_solution(programme, cfg) -> dict[int, NodePlan]:
     v, c = programme.variables, programme.coords
     ratings = np.asarray(cfg.gen_catalog_kw, dtype=float)
     added = {name: np.asarray(v[name].solution, dtype=float)
-             for name in ("b_pv", "b_batt", "b_inv")}
+             for name in ("b_pv", "b_batt", "b_inv", "b_pv_ac")}
     chosen = np.asarray(v["z_ge"].solution, dtype=float)
     index = {int(n): k for k, n in enumerate(c.node)}
 
@@ -39,5 +41,6 @@ def extract_solution(programme, cfg) -> dict[int, NodePlan]:
             battery_kwh=cfg.batt_unit_kwh * sum(added["b_batt"][k] for k in chain),
             inverter_kw=cfg.inv_unit_kw * sum(added["b_inv"][k] for k in chain),
             generator_kw=float(ratings @ chosen[index[node]]),
+            pv_ac_kw=cfg.pv_unit_kw * sum(added["b_pv_ac"][k] for k in chain),
         )
     return plans

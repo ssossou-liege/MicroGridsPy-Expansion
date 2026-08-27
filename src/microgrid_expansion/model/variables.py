@@ -24,12 +24,16 @@ def add_variables(m: linopy.Model, c: Coords, relax_commitment: bool = True) -> 
     v["b_pv"] = m.add_variables(lower=0, coords=node, integer=True, name="b_pv")
     v["b_batt"] = m.add_variables(lower=0, coords=node, integer=True, name="b_batt")
     v["b_inv"] = m.add_variables(lower=0, coords=node, integer=True, name="b_inv")
+    # Modules on the load's bus, behind string inverters of their own. Zero everywhere
+    # under a pure arrangement; under the divided array it is what lets the field exceed
+    # what the battery bus admits without buying converter for the excess.
+    v["b_pv_ac"] = m.add_variables(lower=0, coords=node, integer=True, name="b_pv_ac")
     v["z_ge"] = m.add_variables(coords={"node": c.node, "gsize": c.gsize},
                                 binary=True, name="z_ge")
 
     # --- operating: every flow named by where it goes
     for name in ("pv_load", "pv_batt", "gen_load", "gen_batt", "gen_spill",
-                 "p_dis", "curtail"):
+                 "p_dis", "curtail", "ac_load", "ac_batt", "ac_curtail"):
         v[name] = m.add_variables(lower=0.0, coords=grid, name=name)
     v["unserved"] = m.add_variables(lower=0.0, coords=grid, name="unserved")
     v["p_gen"] = m.add_variables(lower=0.0, coords=grid, name="p_gen")

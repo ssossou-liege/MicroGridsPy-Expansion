@@ -45,10 +45,15 @@ def simulate_node(plan, year: dict, costs: dict, settings: ProjectSettings,
     capacities = Capacities(pv_kw=plan.pv_kw, battery_kwh=plan.battery_kwh,
                             inverter_kw=plan.inverter_kw,
                             generator_kw=plan.generator_kw,
+                            pv_ac_kw=getattr(plan, "pv_ac_kw", 0.0),
                             architecture=architecture)
 
-    ratio = (config.DC_AC_RATIO_MAX if architecture == "dc" else config.AC_RATIO_MAX)
-    if not capacities.admissible(ratio):
+    if architecture == "mixte":
+        admissible = capacities.admissible(config.DC_AC_RATIO_MAX, config.AC_RATIO_MAX)
+    else:
+        ratio = config.DC_AC_RATIO_MAX if architecture == "dc" else config.AC_RATIO_MAX
+        admissible = capacities.admissible(ratio)
+    if not admissible:
         return NodeTrace(float("inf"), 0.0, 0.0, 0.0, 0.0, False)
 
     degradation = settings.battery.degradation_usd_kwh()
@@ -64,8 +69,10 @@ def simulate_node(plan, year: dict, costs: dict, settings: ProjectSettings,
     thermal = trace["generator"]
 
     from ..model.economics import annualised_unit_costs
-    a_pv, a_batt, a_inv, a_gen = annualised_unit_costs(costs, architecture, settings)
-    capital = (a_pv * plan.pv_kw + a_batt * plan.battery_kwh
+    a_pv, a_batt, a_inv, a_gen, a_pv_ac = annualised_unit_costs(costs, architecture,
+                                                                settings)
+    capital = (a_pv * plan.pv_kw + a_pv_ac * capacities.pv_ac_kw
+               + a_batt * plan.battery_kwh
                + a_inv * plan.inverter_kw + a_gen * plan.generator_kw)
     return NodeTrace(annual_cost_usd=capital + operating, served_kwh=served,
                      unserved_kwh=unserved, generator_kwh=thermal, fuel_litres=fuel,

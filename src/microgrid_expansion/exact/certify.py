@@ -39,6 +39,13 @@ from .. import config
 from ..instances import SiteYear, build_site_year
 from ..settings import ProjectSettings, default_settings
 from .lower_bound import CapacityBox, Economics, cost_optimal_dispatch
+
+#: Relaxations a narrowing typically spends: four axes, two ends each, a handful of rounds.
+_NARROWING_RELAXATIONS = 36
+#: Seconds one of them takes on the wide boxes the narrowing works over.
+_RELAXATION_SECONDS = 5.0
+#: Designs timed to establish what one costs before deciding whether to narrow.
+_CALIBRATION_DESIGNS = 4096
 from .simulator import BatteryModel, Capacities, Controller, GeneratorModel, simulate
 
 
@@ -487,8 +494,44 @@ def _refine(instance, lattice, centre, economics, battery, generator, controller
     return best, best_design, calls
 
 
+def _first_true(candidates: list[int], flags: list[bool],
+                left: int, right: int) -> tuple[int, int]:
+    """Bracket the threshold from one round of a monotone predicate.
+
+    ``flags`` is non-decreasing along ``candidates``. The answer lies just above the last
+    candidate that came back false and no higher than the first that came back true.
+    """
+    for candidate, flag in zip(candidates, flags):
+        if flag:
+            return left, candidate
+        left = candidate + 1
+    return left, right
+
+
+def _search_threshold(evaluate, left: int, right: int, width: int) -> int:
+    """Smallest integer in ``[left, right)`` satisfying a monotone predicate.
+
+    Bisection halves the bracket per solve and is therefore sequential: eight rounds for a
+    range of two hundred, each waiting on the one before. Evaluating ``width`` thresholds at
+    once divides the bracket by ``width + 1`` per round instead, which turns those eight
+    rounds into two without changing the answer — the predicate being monotone, the same
+    threshold separates the false candidates from the true ones however many are probed.
+    """
+    while left < right:
+        span = right - left
+        count = max(1, min(width, span))
+        # Probes spread over the whole bracket, the first of them being ``left`` itself:
+        # a bracket of one is then still tested rather than assumed, which is where a
+        # bisection written to stop at a span of one silently returns the wrong end.
+        candidates = sorted({left + ((i + 1) * span) // (count + 1)
+                             for i in range(count)})
+        left, right = _first_true(candidates, evaluate(candidates), left, right)
+    return left
+
+
 def narrow_to_incumbent(instance, lattice, incumbent, economics, battery, generator,
                         solver: str | None = None, tolerance: float = 1e-6,
+                        width: int = 1,
                         verbose: bool = True) -> tuple["Lattice", int]:
     """Shrink each axis of the lattice to the interval no bound can exclude.
 
@@ -529,26 +572,31 @@ def narrow_to_incumbent(instance, lattice, incumbent, economics, battery, genera
 
     for axis in axes:
         low, high = ranges[axis]
+
+        def upper(candidates, _axis=axis, _high=high):
+            flags = []
+            for k in candidates:
+                trial = dict(ranges); trial[_axis] = (k, _high)
+                flags.append(excluded(trial))
+            return flags
+
         # smallest k with {axis >= k} excluded; everything from k up cannot win
-        left, right = low, high + 1
-        while left < right:
-            middle = (left + right) // 2
-            trial = dict(ranges); trial[axis] = (middle, high)
-            if excluded(trial):
-                right = middle
-            else:
-                left = middle + 1
-        new_high = left - 1
-        # largest k with {axis <= k} excluded; everything up to k cannot win either
-        left, right = low - 1, new_high
-        while left < right:
-            middle = (left + right + 1) // 2
-            trial = dict(ranges); trial[axis] = (low, middle)
-            if excluded(trial):
-                left = middle
-            else:
-                right = middle - 1
-        ranges[axis] = (left + 1, new_high)
+        new_high = _search_threshold(upper, low, high + 1, width) - 1
+
+        def kept(candidates, _axis=axis, _low=low):
+            # A wider {axis <= k} has a lower bound, so exclusion fails as k grows. Negating
+            # gives the non-decreasing predicate the search expects, and its threshold is
+            # the smallest k that survives -- the new floor of the axis.
+            flags = []
+            for k in candidates:
+                trial = dict(ranges); trial[_axis] = (_low, k)
+                flags.append(not excluded(trial))
+            return flags
+
+        # Searched from ``low`` rather than from a sentinel below it: an axis whose floor is
+        # already final would otherwise be probed at ``low - 1``, an inverted range that the
+        # relaxation prices rather than refuses, and the axis came back starting at minus one.
+        ranges[axis] = (_search_threshold(kept, low, new_high + 1, width), new_high)
         if ranges[axis][0] > ranges[axis][1]:            # nothing survives on this axis
             ranges[axis] = (new_high, new_high)
 
@@ -607,7 +655,8 @@ def _field_bounds(lattice, box) -> dict:
 
 
 def _bound(instance, lattice, box, economics, battery, generator,
-           relax_commitment: bool = True, solver: str | None = None) -> float:
+           relax_commitment: bool = True, solver: str | None = None,
+           threads: int | None = None) -> float:
     """Cost-optimal relaxation over a box: the lower bound of Proposition 1."""
     capacity_box = CapacityBox(
         battery_kwh=(box.batt[0] * lattice.batt_unit_kwh,
@@ -625,7 +674,7 @@ def _bound(instance, lattice, box, economics, battery, generator,
     weights = np.full(instance.demand_kw.size, scale)
     result = cost_optimal_dispatch(instance, capacity_box, economics, battery, generator,
                                    relax_commitment=relax_commitment, weights=weights,
-                                   terminal="free", solver=solver,
+                                   terminal="free", solver=solver, threads=threads,
                                    initial_soc_fraction=battery.initial_soc_fraction)
     return result.value
 
@@ -1075,6 +1124,53 @@ def certify_exhaustive(
                                    annualised, started)
 
 
+def _measure_design_cost(lattice: "Lattice", evaluator: "_Evaluator") -> float:
+    """Seconds one design costs, timed on a batch the size the enumeration will use.
+
+    Timed on the coarse sweep instead, this came out three times too high: that sweep is a
+    few hundred points, where opening the pool and posting the work dominate what the
+    simulations themselves take. The enumeration runs in batches two orders of magnitude
+    larger, whose marginal cost is what the trade actually turns on, so the calibration uses
+    a batch of that size and the decision follows the rate that will apply.
+    """
+    sample: list[Capacities] = []
+    for n_pv in range(lattice.n_pv[0], lattice.n_pv[1] + 1):
+        for n_bt in range(lattice.n_batt[0], lattice.n_batt[1] + 1):
+            n_iv = (lattice.n_inv[0] + lattice.n_inv[1]) // 2
+            if lattice.admits(n_pv, n_iv):
+                sample.append(lattice.capacities(n_pv, n_bt, n_iv,
+                                                 lattice.generator_ratings[0]))
+            if len(sample) >= _CALIBRATION_DESIGNS:
+                break
+        if len(sample) >= _CALIBRATION_DESIGNS:
+            break
+    if not sample:
+        return 0.0
+    started = time.time()
+    evaluator.map(sample)
+    return (time.time() - started) / len(sample)
+
+
+def _worth_narrowing(survivors: int, per_design_s: float, verbose: bool) -> bool:
+    """Whether solving the narrowing programmes costs less than enumerating without them.
+
+    The narrowing buys a smaller enumeration with about three dozen relaxations. That was a
+    bargain when a simulated year cost sixty-six milliseconds: a relaxation displaced a
+    hundred simulations and paid for itself many times over. Compiled and spread over the
+    cores a year costs a fraction of a millisecond, and the same relaxation must now displace
+    tens of thousands of designs before it earns its price. The trade is therefore decided on
+    the measured cost of a design rather than on the assumption that held when the search was
+    written, and on this machine it comes out against narrowing on both reference instances,
+    which enumerate five to eleven times more designs in a fraction of the time.
+    """
+    enumeration_s = survivors * per_design_s
+    narrowing_s = _NARROWING_RELAXATIONS * _RELAXATION_SECONDS
+    if verbose:
+        print(f"  énumérer {survivors:,} dimensionnements : ~{enumeration_s:.0f} s ; "
+              f"resserrer d'abord : ~{narrowing_s:.0f} s de relaxations", flush=True)
+    return enumeration_s > narrowing_s
+
+
 def _certify_exhaustive(instance, lattice, settings, coarse_step, verbose, evaluator,
                         economics, battery, generator, controller, annualised,
                         started) -> Certificate:
@@ -1090,11 +1186,27 @@ def _certify_exhaustive(instance, lattice, settings, coarse_step, verbose, evalu
     if verbose:
         print(f"  incumbent après {sims} simulations : {incumbent:,.0f} $/an", flush=True)
 
-    # Trim the lattice to what a bound cannot exclude before enumerating any of it.
+    # Trim the lattice to what a bound cannot exclude -- but only when that costs less than
+    # enumerating it. The capital bound is free, so what the enumeration would actually have
+    # to simulate is counted first, on the untrimmed lattice, and the relaxations are spent
+    # only if they would save more than they cost.
     full_size = lattice.size
-    lattice, removed_by_narrowing, narrowing_calls = narrow_to_incumbent(
-        instance, lattice, incumbent, economics, battery, generator,
-        solver=settings.solver.name, verbose=verbose)
+    survivors = sum(1 for p, b, i, g in itertools.product(
+                        range(lattice.n_pv[0], lattice.n_pv[1] + 1),
+                        range(lattice.n_batt[0], lattice.n_batt[1] + 1),
+                        range(lattice.n_inv[0], lattice.n_inv[1] + 1),
+                        lattice.generator_ratings)
+                    if lattice.admits(p, i)
+                    and (annualised[0] * p * lattice.pv_unit_kw
+                         + annualised[1] * b * lattice.batt_unit_kwh
+                         + annualised[2] * i * lattice.inv_unit_kw
+                         + annualised[3] * g) < incumbent)
+    if _worth_narrowing(survivors, _measure_design_cost(lattice, evaluator), verbose):
+        lattice, removed_by_narrowing, narrowing_calls = narrow_to_incumbent(
+            instance, lattice, incumbent, economics, battery, generator,
+            solver=settings.solver.name, verbose=verbose)
+    else:
+        removed_by_narrowing, narrowing_calls = 0, 0
 
     points = [(annualised[0] * p * lattice.pv_unit_kw
                + annualised[1] * b * lattice.batt_unit_kwh

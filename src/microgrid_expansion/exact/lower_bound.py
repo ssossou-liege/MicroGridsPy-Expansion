@@ -189,6 +189,7 @@ def cost_optimal_dispatch(
     initial_soc_fraction: float | None = None,
     integer_units: tuple[float, float, float] | None = None,
     generator_ratings: tuple[float, ...] | None = None,
+    threads: int | None = None,
 ) -> LowerBound:
     """Minimise annualised total cost over the box and return the bound.
 
@@ -377,12 +378,17 @@ def cost_optimal_dispatch(
         from ..settings import default_settings
         solver = default_settings().solver.name
     quiet = {"highs": {"output_flag": False}, "gurobi": {"OutputFlag": 0}}
+    options = dict(quiet.get(solver, {}))
+    if threads is not None:
+        # Several bounds solved at once must each keep to one thread, or sixteen solvers
+        # each claiming every core spend their time contending rather than solving.
+        options[{"gurobi": "Threads"}.get(solver, "threads")] = int(threads)
     if solver == "gurobi":
         # Gurobi prints its licence banner when the environment starts, before any model
         # option can apply; the global default has to be set first.
         import gurobipy
         gurobipy.setParam("OutputFlag", 0)
-    m.solve(solver_name=solver, progress=False, **quiet.get(solver, {}))
+    m.solve(solver_name=solver, progress=False, **options)
     status = str(m.status)
 
     if "ok" not in status:

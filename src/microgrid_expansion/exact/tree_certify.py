@@ -116,8 +116,9 @@ def certify_tree(plans: dict, tree: ScenarioTree, rep: dict[int, RepDays],
     A round tries every one-coordinate move from the incumbent, and those moves are
     independent of one another to evaluate: nothing one of them learns changes what another
     would cost. They are therefore scored across cores. On a forty-six node tree a round is
-    two hundred and seventy-six simulated plans — twelve minutes on one core, under one on
-    sixteen.
+    two hundred and seventy-six simulated plans, which the compiled controller now costs
+    about thirteen seconds on one core and under one on sixteen; before it was compiled the
+    same round took twelve minutes, and the descent, not the programme, set the pace.
 
     Scoring them in parallel is not the same as *taking* them in parallel, and the
     difference matters. Accepting only the single best move each round would turn a descent
@@ -133,6 +134,11 @@ def certify_tree(plans: dict, tree: ScenarioTree, rep: dict[int, RepDays],
     steps = {"pv_kw": settings.photovoltaic.unit_kw,
              "battery_kwh": settings.battery.unit_kwh,
              "inverter_kw": settings.inverter.unit_kw}
+    if architecture == "mixte":
+        # The array is divided, so the part on the load's bus is a coordinate of its own:
+        # left out, the descent could only move the whole field through the ceiling on the
+        # battery's bus, which is the restriction the divided array exists to lift.
+        steps["pv_ac_kw"] = settings.photovoltaic.unit_kw
     workers = workers or min(os.cpu_count() or 1, 16)
     grid = [(node, field, direction) for node in tree.nodes
             for field in steps for direction in (+1.0, -1.0)]

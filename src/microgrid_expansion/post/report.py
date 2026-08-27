@@ -23,7 +23,10 @@ def write_report(plans: dict, kpis: list[dict], expected: dict, tree: ScenarioTr
         "reduction_error": tree.reduction_error,
         "expected": expected,
         "root_plan": {
-            "pv_kw": plans[0].pv_kw, "battery_kwh": plans[0].battery_kwh,
+            # Both halves of the field. Reporting only the one on the battery's bus made a
+            # divided array look like a plant that had shrunk by two fifths.
+            "pv_kw": plans[0].pv_kw, "pv_ac_kw": getattr(plans[0], "pv_ac_kw", 0.0),
+            "battery_kwh": plans[0].battery_kwh,
             "inverter_kw": plans[0].inverter_kw, "generator_kw": plans[0].generator_kw,
         },
         "per_node": kpis,

@@ -76,6 +76,9 @@ def assets_from_settings(settings=None, architecture: str | None = None) -> dict
     coupling = settings.coupling
     architecture = (coupling.architecture if architecture is None else architecture)
     if architecture == "auto":
+        # The corner whose conversion comes with the inverter, which is what a per-kilowatt
+        # array price means when no arrangement has been settled. Under the divided array
+        # the two parts carry different prices and the caller passes the part it is pricing.
         architecture = "dc"
     conversion = Asset("conversion",
                        coupling.cost_usd_kw(architecture),

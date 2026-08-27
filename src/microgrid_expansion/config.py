@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .settings import default_settings
+from .settings import best_available_solver, default_settings
 
 _S = default_settings()
 
@@ -91,7 +91,13 @@ class ModelConfig:
     seed: int = 0
 
     # --- Time-domain reduction ---
-    n_rep_days: int = 8                  # representative days per node
+    # Sixty-four days, which is what produced every stored tree result: 777 538 columns
+    # over forty-six nodes and eleven flow variables is 1 536 steps a node, and 1 536 hours
+    # is sixty-four days. The default read eight and the command line read 365, neither of
+    # them the figure the results came from, and at 365 the programme grows sevenfold --
+    # 5.6 million columns and sixteen gigabytes -- for a bound whose compression error is
+    # measured and reported anyway.
+    n_rep_days: int = 64                 # 365 or more is the whole year
 
     # --- Horizon and discounting, shared with the project settings ---
     horizon_years: int = PROJECT_YEARS
@@ -105,7 +111,7 @@ class ModelConfig:
     # is causal. The controller is simulated instead, which is the premise of the method.
 
     # --- Solver ---
-    solver: str = "highs"
+    solver: str = field(default_factory=best_available_solver)
     time_limit_s: int = 3600
     mip_gap: float = 0.01
     threads: int = 0                     # 0 = solver default

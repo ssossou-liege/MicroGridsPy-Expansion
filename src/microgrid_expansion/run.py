@@ -107,8 +107,11 @@ def run(cfg: ModelConfig, out_dir: Path = RESULTS_DIR, verbose: bool = True) -> 
                            stem=f"summary_tree_{cfg.site.lower()}")
     if verbose:
         root = plans[0]
-        print(f"\nplan de premier niveau : PV {root.pv_kw:.1f} kW · "
-              f"batterie {root.battery_kwh:.0f} kWh · onduleur {root.inverter_kw:.1f} kW · "
+        champ = f"{root.pv_kw:.1f} kW"
+        if getattr(root, "pv_ac_kw", 0.0) > 0:
+            champ += f" + {root.pv_ac_kw:.1f} kW sur le bus charge"
+        print(f"\nplan de premier niveau : PV {champ} · "
+              f"batterie {root.battery_kwh:.0f} kWh · conversion {root.inverter_kw:.1f} kW · "
               f"groupe {root.generator_kw:.0f} kW   (couplage {architecture})")
         print(f"prix de l'heuristique  : {expected['price_of_heuristic_usd']:,.0f} $ "
               f"({expected['price_of_heuristic_pct']:.1f} %)")
@@ -118,16 +121,25 @@ def run(cfg: ModelConfig, out_dir: Path = RESULTS_DIR, verbose: bool = True) -> 
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Taken from the configuration rather than repeated here. Repeated, they drifted: the
+    # command line kept three stages branching two ways, seven nodes, while the
+    # configuration had moved to five stages and forty-six, so running the module with no
+    # arguments quietly built a different tree from the one the library builds — and wrote
+    # it over the stored results under the same name.
+    defaults = ModelConfig()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--site", default="Samionta")
-    parser.add_argument("--solver", default="gurobi", choices=["highs", "gurobi"])
-    parser.add_argument("--rep-days", type=int, default=365,
+    parser.add_argument("--solver", default=defaults.solver,
+                        choices=["highs", "gurobi"])
+    parser.add_argument("--rep-days", type=int, default=defaults.n_rep_days,
                         help="days per node in the programme; 365 or more is the whole "
                              "year, under which the two oracles are directly comparable")
-    parser.add_argument("--mc-paths", type=int, default=200)
-    parser.add_argument("--stage-years", type=int, nargs="+", default=[0, 10, 20])
-    parser.add_argument("--branching", type=int, nargs="+", default=[1, 2, 2])
-    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--mc-paths", type=int, default=defaults.n_mc_paths)
+    parser.add_argument("--stage-years", type=int, nargs="+",
+                        default=list(defaults.stage_years))
+    parser.add_argument("--branching", type=int, nargs="+",
+                        default=list(defaults.branching))
+    parser.add_argument("--seed", type=int, default=defaults.seed)
     args = parser.parse_args(argv)
 
     cfg = ModelConfig(solver=args.solver, n_rep_days=args.rep_days,

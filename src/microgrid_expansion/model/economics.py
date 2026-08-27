@@ -22,14 +22,21 @@ from .investment_constraints import capacity
 
 
 def annualised_unit_costs(costs: dict, architecture: str, settings) -> tuple[float, ...]:
-    """Annual cost of one unit of each capacity at a node's prices."""
-    conversion = (0.0 if architecture == "dc" else costs["capex_conv_ac"])
+    """Annual cost of one unit of each capacity at a node's prices.
+
+    Five figures under the divided array: the part of the field on the load's bus buys the
+    string inverters that put it there, which the part on the battery's bus does not.
+    """
+    conversion = (0.0 if architecture in ("dc", "mixte") else costs["capex_conv_ac"])
     return (
         costs["capex_pv"] * (config.crf(n=config.PV_LIFETIME_Y) + config.PV_OM_RATE)
         + conversion * (config.crf(n=config.CONV_LIFETIME_Y) + config.CONV_OM_RATE),
         costs["capex_batt"] * (config.crf(n=config.BATT_LIFETIME_Y) + config.BATT_OM_RATE),
         costs["capex_inv"] * (config.crf(n=config.INV_LIFETIME_Y) + config.INV_OM_RATE),
         costs["capex_ge"] * (config.crf(n=config.GEN_LIFETIME_Y) + config.GEN_OM_RATE),
+        costs["capex_pv"] * (config.crf(n=config.PV_LIFETIME_Y) + config.PV_OM_RATE)
+        + costs["capex_conv_ac"] * (config.crf(n=config.CONV_LIFETIME_Y)
+                                    + config.CONV_OM_RATE),
     )
 
 
@@ -50,11 +57,12 @@ def add_objective(m: linopy.Model, v: dict, c: Coords, cfg: ModelConfig, data: d
         block = data[node]
         weight = float(c.prob[node]) * float(c.disc[node])
         years = float(c.n_years[node])
-        cap_pv, cap_batt, cap_inv, cap_gen = capacity(v, c, node, cfg)
-        a_pv, a_batt, a_inv, a_gen = annualised_unit_costs(
+        cap_pv, cap_batt, cap_inv, cap_gen, cap_pv_ac = capacity(v, c, node, cfg)
+        a_pv, a_batt, a_inv, a_gen, a_pv_ac = annualised_unit_costs(
             block["costs"], architecture, settings)
 
-        capital = (a_pv * cap_pv + a_batt * cap_batt + a_inv * cap_inv + a_gen * cap_gen)
+        capital = (a_pv * cap_pv + a_pv_ac * cap_pv_ac + a_batt * cap_batt
+                   + a_inv * cap_inv + a_gen * cap_gen)
 
         # Representative days stand for many days each; the weights carry that, and the
         # operating cost is annualised inside the objective rather than scaled after it.

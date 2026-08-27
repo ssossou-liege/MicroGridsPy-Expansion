@@ -252,12 +252,16 @@ class CouplingSpec:
     hybrid inverter's own rating. It is also curtailed by frequency shift rather than by
     command, and it pays a second conversion on everything that reaches storage.
 
-    Which of the two is cheaper is not assumed: at ``"auto"`` both are certified and the
-    result reports which prevailed and by how much.
+    Neither is assumed cheaper, and neither has to be chosen: the default divides the array
+    between the two buses, each part limited by its own converter, so the pure arrangements
+    are the corners of one search rather than two cases to be tried. ``"auto"`` remains for
+    certifying the corners separately, which is how the divided array was first measured.
     """
 
-    #: ``"dc"``, ``"ac"``, or ``"auto"`` to let the search prove the choice.
-    architecture: str = "auto"
+    #: ``"dc"``, ``"ac"``, ``"mixte"``, or ``"auto"``. The divided array is the default:
+    #: it holds the two pure arrangements as its corners, so nothing is given up by
+    #: searching over it, and it removes the need to solve one programme per arrangement.
+    architecture: str = "mixte"
     #: Array admitted per kilowatt of hybrid inverter by its integrated trackers. 1.3 is
     #: what current three-phase units publish (30 kW of inverter, 39 kW of array).
     dc_ac_ratio_max: float = 1.3
@@ -281,11 +285,14 @@ class CouplingSpec:
 
     def cost_usd_kw(self, architecture: str) -> float:
         """Conversion bought per kilowatt of array, beyond the hybrid inverter itself."""
-        if architecture == "dc":
+        if architecture in ("dc", "mixte"):
+            # Under the divided array each part carries its own price, the one on the load's
+            # bus buying string inverters where this coefficient applies to the whole field.
             return 0.0                     # the trackers come inside the inverter
         if architecture == "ac":
             return self.string_inverter_cost_usd_kw
-        raise ValueError(f"architecture must be 'dc' or 'ac', not {architecture!r}")
+        raise ValueError("architecture must be 'dc', 'ac' or 'mixte', "
+                         f"not {architecture!r}")
 
     def array_ratio_max(self, architecture: str) -> float:
         """Array admitted per kilowatt of hybrid inverter under the given architecture."""
@@ -296,7 +303,12 @@ class CouplingSpec:
         raise ValueError(f"architecture must be 'dc' or 'ac', not {architecture!r}")
 
     def architectures(self) -> tuple[str, ...]:
-        """The architectures the search must consider."""
+        """The architectures the search must consider.
+
+        One under the divided array, where the split between the two buses is a decision of
+        the programme rather than a case to be tried: the pure arrangements are its corners,
+        so solving it once settles what solving two settled before.
+        """
         return ("dc", "ac") if self.architecture == "auto" else (self.architecture,)
 
 
@@ -586,9 +598,9 @@ class ProjectSettings:
             raise ValueError("battery state-of-charge limits must satisfy 0 <= min < max <= 1")
         if not 0.0 < self.economics.discount_rate < 1.0:
             raise ValueError("the discount rate must lie strictly between 0 and 1")
-        if self.coupling.architecture not in ("dc", "ac", "auto"):
-            raise ValueError("coupling.architecture must be 'dc', 'ac' or 'auto', "
-                             f"not {self.coupling.architecture!r}")
+        if self.coupling.architecture not in ("dc", "ac", "mixte", "auto"):
+            raise ValueError("coupling.architecture must be 'dc', 'ac', 'mixte' or "
+                             f"'auto', not {self.coupling.architecture!r}")
         if min(self.coupling.dc_ac_ratio_max, self.coupling.ac_ratio_max) <= 0.0:
             raise ValueError("the array-to-inverter ratios must be strictly positive")
         if self.economics.horizon_years <= 0:

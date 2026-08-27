@@ -45,6 +45,7 @@ docs/generator/
 # Supervisor follow-up and presentations -- kept local, never pushed.
 # The public repository stays strictly about the model.
 docs/suivi/
+docs/presentation/
 docs/figs/
 docs/figs_*.py
 docs/template/

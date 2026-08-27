@@ -16,10 +16,12 @@ Run:  python -m microgrid_expansion.exact.verify_bound --days 30
 from __future__ import annotations
 
 import argparse
+import math
 import time
 
 import numpy as np
 
+from .. import config
 from ..battery import usable_fraction
 from ..instances import SiteYear, build_site_year
 from .lower_bound import CapacityBox, Economics, cost_optimal_dispatch
@@ -39,17 +41,32 @@ def truncate(instance: SiteYear, hours: int) -> SiteYear:
 
 
 def sample_designs(instance: SiteYear, n: int = 6) -> list[Capacities]:
-    """Design points spanning the plausible range for the instance."""
+    """Design points spanning the plausible range for the instance.
+
+    The converter is sized from the array as well as from the peak. Holding it at a fixed
+    multiple of the peak while the array grows produces designs no installer could wire:
+    past ``DC_AC_RATIO_MAX`` kilowatts of modules per kilowatt of conversion the coupling
+    constraint is violated, the relaxation is infeasible, and the point contributes a NaN
+    rather than a test of the ordering. Every sampled design is admissible by construction.
+
+    The sweep also stops short of the capacities at which the generator never starts. Past
+    roughly the daily consumption in storage, operating cost collapses to the residue of
+    battery wear, the three quantities coincide, and the point stops saying anything about
+    an ordering it satisfies only by equality.
+    """
     peak = float(instance.demand_kw.max())
     daily = float(instance.demand_kw.sum()) / (instance.demand_kw.size / 24.0)
     yield_per_kw = float(instance.specific_yield.sum()) / (instance.demand_kw.size / 24.0)
 
     designs = []
-    for factor in np.linspace(0.5, 2.0, n):
-        pv = max(daily / max(yield_per_kw, 1e-6) * factor, 1.0)
-        designs.append(Capacities(pv_kw=round(pv, 1),
+    for factor in np.linspace(0.3, 1.0, n):
+        pv = round(max(daily / max(yield_per_kw, 1e-6) * factor, 1.0), 1)
+        # Rounded up, not to nearest: at the ceiling exactly, rounding the converter down
+        # by a tenth of a kilowatt puts the array back outside what it can admit.
+        inverter = math.ceil(max(peak * 1.2, pv / config.DC_AC_RATIO_MAX) * 10.0) / 10.0
+        designs.append(Capacities(pv_kw=pv,
                                   battery_kwh=round(daily * factor, 1),
-                                  inverter_kw=round(peak * 1.2, 1),
+                                  inverter_kw=inverter,
                                   generator_kw=round(peak * 1.3, 1)))
     return designs
 

@@ -26,6 +26,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+ui = ["fastapi", "uvicorn[standard]", "pywebview"]
 solver = ["gurobipy"]
 demand = ["rampdemand"]
 docs = ["python-docx"]
@@ -36,3 +37,7 @@ where = ["src"]
 
 [project.scripts]
 microgrid-expansion = "microgrid_expansion.run:main"
+microgrid-ui = "microgrid_expansion.ui.__main__:main"
+
+[tool.setuptools.package-data]
+"microgrid_expansion.ui" = ["static/*"]

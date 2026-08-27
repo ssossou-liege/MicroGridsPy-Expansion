@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MicroGrids — dimensionnement certifié</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="rail">
+    <div class="brand">
+      <h1>MicroGrids</h1>
+      <p>Dimensionnement certifié</p>
+    </div>
+    <nav class="nav">
+      <button data-view="site"   aria-current="true"><span class="dot"></span>Le site</button>
+      <button data-view="result"><span class="dot"></span>Dimensionnement</button>
+      <button data-view="plan"><span class="dot"></span>Plan d'extension</button>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <!-- ------------------------------------------------------------ site -->
+    <section class="page" data-page="site">
+      <div class="page-head">
+        <h2>Le site</h2>
+        <p>Renseignez ce qui distingue ce projet. Tout le reste porte une valeur par défaut
+           dont la source est indiquée, et que vous pouvez modifier.</p>
+      </div>
+      <div id="form"></div>
+    </section>
+
+    <!-- ---------------------------------------------------------- result -->
+    <section class="page hidden" data-page="result">
+      <div class="page-head">
+        <h2>Dimensionnement</h2>
+        <p>Le parc le moins coûteux sur une année de référence, sous l'automate qui sera
+           réellement embarqué.</p>
+      </div>
+      <div id="result"></div>
+    </section>
+
+    <!-- ------------------------------------------------------------ plan -->
+    <section class="page hidden" data-page="plan">
+      <div class="page-head">
+        <h2>Plan d'extension</h2>
+        <p>Ce qu'il faut engager aujourd'hui, sachant que la demande et les prix bougeront,
+           et ce qu'on se réserve d'ajouter selon la branche empruntée.</p>
+      </div>
+      <div id="plan"></div>
+    </section>
+  </main>
+</div>
+
+<div class="runbar">
+  <div style="min-width:280px">
+    <div class="state" id="state">Prêt.</div>
+    <div class="track hidden" id="track"><i style="width:0"></i></div>
+  </div>
+  <div class="spacer"></div>
+  <button class="btn quiet hidden" id="cancel">Arrêter</button>
+  <button class="btn quiet" id="run-plan">Planifier l'extension</button>
+  <button class="btn primary" id="run-size">Dimensionner</button>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

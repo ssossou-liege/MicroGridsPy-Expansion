@@ -318,6 +318,14 @@ def _evaluate_rule(instance, capacities, economics, battery, generator, controll
                + annualised[1] * capacities.battery_kwh
                + annualised[2] * capacities.inverter_kw
                + annualised[3] * capacities.generator_kw)
+    # A required service level bounds the search rather than describing its outcome. It
+    # only ever removes designs, so the certificate stays a certificate -- over the smaller
+    # set the requirement defines, which is the set the contract allows anyway.
+    if economics.min_service_fraction is not None:
+        demand = float(instance.demand_kw.sum())
+        served = demand - float(dispatch.unserved_kw.sum())
+        if demand > 0 and served / demand < economics.min_service_fraction - 1e-9:
+            return float("inf")
     scale = 8760.0 / instance.demand_kw.size
     return dispatch.operating_cost(generator, voll_usd_kwh=economics.voll_usd_kwh) * scale + capital
 
@@ -722,6 +730,7 @@ def certify(
     economics = Economics(
         fuel_usd_l=settings.economics.diesel_price_usd_l,
         voll_usd_kwh=settings.economics.value_of_lost_load_usd_kwh,
+        min_service_fraction=settings.economics.min_service_fraction,
         conversion_usd_kw=settings.coupling.cost_usd_kw(lattice.architecture))
     battery = BatteryModel.from_spec(settings.battery)
     biggest = max(settings.generators, key=lambda g: g.rating_kw)
@@ -1107,6 +1116,7 @@ def certify_exhaustive(
     economics = Economics(
         fuel_usd_l=settings.economics.diesel_price_usd_l,
         voll_usd_kwh=settings.economics.value_of_lost_load_usd_kwh,
+        min_service_fraction=settings.economics.min_service_fraction,
         conversion_usd_kw=settings.coupling.cost_usd_kw(lattice.architecture))
     battery = BatteryModel.from_spec(settings.battery)
     biggest = max(settings.generators, key=lambda g: g.rating_kw)

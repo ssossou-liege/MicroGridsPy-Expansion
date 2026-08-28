@@ -235,3 +235,25 @@ th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em;
           border-radius: var(--radius-sm); font-size: 13px; margin-bottom: 18px; }
 .notice b { font-weight: 600; }
 @media (max-width: 900px) { .arch { grid-template-columns: 1fr; } }
+
+/* ---------------------------------------------------------------- print
+   A sizing is defended on paper: the sheet a lender receives must carry the plant, the
+   assumptions and where each figure came from, and none of the interface around them. */
+@media print {
+  :root { --bg: #fff; --surface: #fff; --line: #d8dce3; --ink: #000; --ink-soft: #444;
+          --shadow: none; }
+  .rail, .runbar, .projectbar, .btn, .nav { display: none !important; }
+  .main { padding: 0; max-width: none; }
+  .page.hidden { display: block !important; }        /* every view goes on the sheet */
+  .card { break-inside: avoid; box-shadow: none; border: 1px solid var(--line);
+          margin-bottom: 14px; padding: 16px 18px; }
+  .page { page-break-after: always; }
+  .page:last-of-type { page-break-after: auto; }
+  .page-head h2 { font-size: 20px; }
+  .figure .v { font-size: 20px; }
+  .chart { max-height: 190px; }
+  body { font-size: 11px; }
+  a[href]:after { content: ""; }
+  .print-only { display: block !important; }
+}
+.print-only { display: none; }

@@ -35,8 +35,6 @@ class Field:
 
 #: What a developer states about the site. Everything else has a default worth trusting.
 ESSENTIAL: tuple[Field, ...] = (
-    Field("site", "Localité", kind="choice", choices=("Samionta", "Gbowele"),
-          hint="Site instrumenté servant de base à la demande."),
     Field("demand_trajectory", "Croissance de la demande", kind="choice",
           choices=("lente", "centrale", "rapide"),
           hint="Rythme auquel la consommation croît avec l'ancienneté du raccordement."),
@@ -50,6 +48,19 @@ ESSENTIAL: tuple[Field, ...] = (
     Field("economics.tariff_usd_kwh", "Tarif visé", "$/kWh", step=0.001,
           source_path="economics.tariff",
           hint="Cible de coût actualisé ; l'outil rapporte la subvention qui l'atteint."),
+)
+
+#: How amounts are shown. The model computes in dollars because that is the currency its
+#: sources are restated in; a developer negotiates, quotes and defends a budget in the
+#: currency of the country, and an interface that will not speak it forces a spreadsheet
+#: between the tool and every conversation it is meant to support.
+CURRENCY: tuple[Field, ...] = (
+    Field("currency.local_code", "Monnaie locale", kind="choice",
+          choices=("XOF", "USD", "EUR", "NGN", "GHS", "KES", "TZS", "ZMW", "MWK"),
+          hint="Les montants sont affichés dans cette monnaie ; le calcul reste en dollars."),
+    Field("currency.xof_per_eur", "Unités locales par euro", "", step=0.01,
+          hint="Parité fixe pour le franc CFA ; taux de marché pour les autres."),
+    Field("currency.usd_per_eur", "Dollars par euro", "", step=0.01),
 )
 
 #: Prices and equipment, which move from one market to another.
@@ -82,11 +93,17 @@ ADVANCED: tuple[Field, ...] = (
     Field("controller.generator_setpoint", "Consigne du groupe", "", step=0.05),
     Field("economics.value_of_lost_load_usd_kwh", "Énergie non distribuée", "$/kWh",
           step=0.1, source_path="economics.voll"),
+    Field("economics.min_service_fraction", "Taux de service exigé", "", step=0.005,
+          hint="Part minimale de la demande qu'un dimensionnement doit servir pour être "
+               "retenu. Laissez à zéro pour ne rien exiger et laisser le coût de l'énergie "
+               "non distribuée arbitrer seul ; portez-le à 0,98 quand une concession "
+               "l'impose."),
     Field("solver.name", "Solveur", kind="choice", choices=("gurobi", "highs")),
 )
 
 GROUPS: tuple[tuple[str, str, tuple[Field, ...]], ...] = (
-    ("essentiel", "Le site", ESSENTIAL),
+    ("essentiel", "Le projet", ESSENTIAL),
+    ("monnaie", "Monnaie d'affichage", CURRENCY),
     ("materiel", "Prix et matériel", EQUIPMENT),
     ("avance", "Architecture et conduite", ADVANCED),
 )
@@ -148,20 +165,35 @@ def describe(settings: ProjectSettings | None = None) -> list[dict]:
     return out
 
 
+#: Settled elsewhere than on the form -- the community page owns the site -- but still
+#: carried in the same bag of overrides, so ``apply`` must not reject them.
+ELSEWHERE = frozenset({"site"})
+
+
 def apply(settings: ProjectSettings, overrides: dict[str, Any]) -> ProjectSettings:
     """Write the page's answers back, converting to the type each field already holds."""
-    known = {f.path for _, _, group in GROUPS for f in group}
+    known = {f.path for _, _, group in GROUPS for f in group} | ELSEWHERE
     for path, value in overrides.items():
         if path not in known:
             raise KeyError(f"réglage inconnu : {path}")
         owner, name = _resolve(settings, path)
         current = getattr(owner, name)
+        if value is None:
+            # A field whose current value is absent round-trips as absent; converting it
+            # would turn "not required" into zero, which for a service floor is the
+            # difference between no requirement and an impossible one.
+            setattr(owner, name, None)
+            continue
         if isinstance(current, bool):
             value = bool(value)
         elif isinstance(current, int) and not isinstance(current, bool):
             value = int(round(float(value)))
-        elif isinstance(current, float):
+        elif isinstance(current, float) or current is None:
+            # A floor of zero is no floor: the field reads as a percentage a contract names,
+            # and leaving it at zero must mean "not required" rather than "serve nothing".
             value = float(value)
+            if path == "economics.min_service_fraction" and value <= 0.0:
+                value = None
         setattr(owner, name, value)
     settings.validate()
     return settings

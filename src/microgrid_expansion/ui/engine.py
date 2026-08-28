@@ -41,6 +41,7 @@ def size_site(job: Job, overrides: dict[str, Any]) -> dict:
     # The certificate settles which plant is cheapest; what it costs a customer is a second
     # question, answered by running the certified design once more and pricing its life.
     from ..post.economics import assets_from_settings, life_cycle_cost
+    from ..post.finance import appraise
     from ..exact.simulator import BatteryModel, GeneratorModel, simulate
 
     design = result.design
@@ -64,9 +65,29 @@ def size_site(job: Job, overrides: dict[str, Any]) -> dict:
         discount_rate=settings.economics.discount_rate, tariff_target_usd_kwh=target,
         assets=assets_from_settings(settings, architecture="ac"))
 
+    assets = assets_from_settings(settings, architecture="ac")
+    plant = {"pv": design.pv_total_kw, "battery": design.battery_kwh,
+             "inverter": design.inverter_kw, "generator": design.generator_kw,
+             "conversion": design.pv_ac_kw}
+    finance = appraise(plant, operating, served,
+                       tariff_usd_kwh=settings.economics.tariff_usd_kwh,
+                       horizon_years=settings.economics.horizon_years,
+                       discount_rate=settings.economics.discount_rate,
+                       assets=assets, subsidy_usd=cost.subsidy_usd or 0.0)
+    unsubsidised = appraise(plant, operating, served,
+                            tariff_usd_kwh=settings.economics.tariff_usd_kwh,
+                            horizon_years=settings.economics.horizon_years,
+                            discount_rate=settings.economics.discount_rate,
+                            assets=assets, subsidy_usd=0.0)
+
     return {
         "site": settings.site,
         "trajectory": settings.demand_trajectory,
+        "currency": _currency(settings),
+        "finance": finance.to_dict(),
+        "finance_unsubsidised": {"irr": unsubsidised.irr,
+                                 "payback_years": unsubsidised.payback_years,
+                                 "net_present_value_usd": unsubsidised.net_present_value},
         "dispatch": _dispatch_traces(instance, dispatch),
         "architecture": lattice.architecture,
         "lattice_size": lattice.size,
@@ -152,6 +173,7 @@ def plan_expansion(job: Job, overrides: dict[str, Any]) -> dict:
     root = certificate.plans[0]
     return {
         "site": settings.site,
+        "currency": _currency(settings),
         "architecture": architecture,
         "nodes": len(tree.nodes),
         "leaves": len(tree.leaves),
@@ -266,3 +288,15 @@ def describe_archetypes(site_name: str) -> dict:
     return {"archetypes": [a.to_dict() for a in local],
             "shipped": [a.to_dict() for a in A.shipped()],
             "adjusted": adjusted, "note": A.CALIBRATION_NOTE}
+
+
+def _currency(settings) -> dict:
+    """What the page needs to restate a dollar amount in the currency of the country.
+
+    The conversion is sent rather than applied, so every figure crossing the wire stays in
+    the unit the model computed it in and only the display changes. A result exported today
+    and reopened after the rate has moved is then still the same result.
+    """
+    c = settings.currency
+    return {"code": c.local_code, "per_usd": round(c.local_per_usd, 6),
+            "note": c.rate_note}

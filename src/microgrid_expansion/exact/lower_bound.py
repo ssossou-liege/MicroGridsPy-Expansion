@@ -89,6 +89,9 @@ class Economics:
     fuel_usd_l: float = config.DIESEL_PRICE_USD_L
     degradation_usd_kwh: float = None
     voll_usd_kwh: float = config.VOLL_USD_KWH
+    #: Least share of demand a design must serve; ``None`` when reliability is only priced.
+    #: Carried here so the rule oracle can reject what the contract forbids.
+    min_service_fraction: float | None = None
 
     def __post_init__(self) -> None:
         if self.crf is None:

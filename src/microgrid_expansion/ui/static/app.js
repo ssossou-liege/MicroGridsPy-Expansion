@@ -14,6 +14,16 @@ const nf = (v, d = 0) => v === null || v === undefined || Number.isNaN(v)
 const pct = (v, d = 1) => v === null || v === undefined ? "—" : nf(v, d) + " %";
 const money = v => v === null || v === undefined ? "—" : nf(Math.round(v));
 
+/* Amounts arrive in dollars and are shown in the currency of the country. The conversion
+   happens here and nowhere else, so nothing stored or exported depends on today's rate. */
+let devise = { code: "USD", per_usd: 1 };
+const enLocal = v => v === null || v === undefined ? null : v * devise.per_usd;
+const somme = (v, d = 0) => v === null || v === undefined ? "—"
+  : nf(enLocal(v), devise.per_usd > 50 ? 0 : d);
+const parKwh = v => v === null || v === undefined ? "—"
+  : nf(enLocal(v), devise.per_usd > 50 ? 0 : 4);
+const unite = suffixe => `${devise.code}${suffixe}`;
+
 function figure(k, v, u, note) {
   return `<div class="figure"><div class="k">${k}</div>
     <div class="v">${v}${u ? `<span class="u">${u}</span>` : ""}</div>
@@ -155,6 +165,7 @@ function fieldRow(f) {
 
 /* ------------------------------------------------------------------ results */
 function renderSize(r) {
+  if (r && r.currency) devise = r.currency;
   if (!r) {
     $("#result").innerHTML = `<div class="card empty"><h4>Rien à montrer pour l'instant</h4>
       <p>Lancez un dimensionnement depuis la barre du bas. Il faut de vingt secondes à deux
@@ -182,13 +193,14 @@ function renderSize(r) {
     <div class="card">
       <h3>Ce que cela coûte</h3>
       <div class="figures">
-        ${figure("Coût actualisé", nf(r.lcoe_usd_kwh, 4), "$/kWh",
-                 `tarif visé ${nf(r.tariff_target_usd_kwh, 3)}`)}
-        ${figure("Coût annualisé", money(r.z_rule_usd_yr), "$/an")}
+        ${figure("Coût actualisé", parKwh(r.lcoe_usd_kwh), unite("/kWh"),
+                 `tarif visé ${parKwh(r.tariff_target_usd_kwh)}`)}
+        ${figure("Coût annualisé", somme(r.z_rule_usd_yr), unite("/an"))}
         ${figure("Subvention", sub ? pct(sub * 100) : "aucune", "",
-                 sub ? "pour atteindre le tarif" : "le tarif est atteint")}
+                 sub ? `soit ${somme(r.subsidy_usd)} ${devise.code}`
+                     : "le tarif est atteint")}
         ${figure("Écart de dispatch", pct(r.price_rel_pct), "",
-                 `${money(r.price_abs_usd_yr)} $/an`)}
+                 `${somme(r.price_abs_usd_yr)} ${unite("/an")}`)}
       </div>
     </div>
 
@@ -204,6 +216,42 @@ function renderSize(r) {
     <div class="card">
       <h3>Ce que la centrale produit sur l'année</h3>
       ${chartMonths(r.dispatch.monthly)}
+    </div>` : ""}
+
+    ${r.finance ? `
+    <div class="card">
+      <h3>Ce que le projet rend</h3>
+      <div class="figures">
+        ${figure("Taux de rentabilité", r.finance.irr === null ? "aucun"
+                 : pct(r.finance.irr * 100), "",
+                 r.finance.irr === null ? "les recettes ne couvrent jamais le capital"
+                 : `au tarif de ${parKwh(r.tariff_target_usd_kwh)} ${unite("/kWh")}`)}
+        ${figure("Retour sur investissement",
+                 r.finance.payback_years === null ? "jamais"
+                 : nf(r.finance.payback_years, 1), r.finance.payback_years === null ? "" : "ans",
+                 r.finance.discounted_payback_years === null ? "actualisé : jamais"
+                 : `actualisé : ${nf(r.finance.discounted_payback_years, 1)} ans`)}
+        ${figure("Valeur actuelle nette", somme(r.finance.net_present_value_usd), devise.code)}
+        ${figure("Capital initial", somme(r.finance.initial_capital_usd), devise.code,
+                 r.finance.subsidy_usd ? `dont ${somme(r.finance.subsidy_usd)} subventionnés` : null)}
+      </div>
+      <table style="margin-top:18px">
+        <tr><th>Année</th><th>Investissement</th><th>Exploitation</th><th>Recettes</th>
+            <th>Flux net</th></tr>
+        ${r.finance.cash_flows.filter(c => c.year <= 3 || c.capital > 0 ||
+            c.year === r.finance.cash_flows.length - 1).slice(0, 9).map(c => `<tr>
+          <td>${c.year}</td><td>${c.capital ? somme(c.capital) : "—"}</td>
+          <td>${c.operating ? somme(c.operating) : "—"}</td>
+          <td>${c.revenue ? somme(c.revenue) : "—"}</td>
+          <td><b>${somme(c.net)}</b></td></tr>`).join("")}
+      </table>
+      <p class="hint" style="margin-top:12px">Avant impôt et sans effet de levier : un projet
+         qui ne passe pas la barre ici ne la passera pas après.
+         ${r.finance_unsubsidised && r.finance.subsidy_usd
+           ? `Sans la subvention, le taux serait de ${
+               r.finance_unsubsidised.irr === null ? "néant"
+               : pct(r.finance_unsubsidised.irr * 100)}.` : ""}
+         Les années portant un remplacement d'équipement sont incluses.</p>
     </div>` : ""}
 
     <div class="card">
@@ -222,11 +270,13 @@ function renderSize(r) {
       <div style="margin-top:16px;display:flex;gap:10px">
         <button class="btn quiet" onclick="exporter('size','csv')">Exporter en CSV</button>
         <button class="btn quiet" onclick="exporter('size','json')">Exporter en JSON</button>
+        <button class="btn quiet" onclick="imprimer()">Rapport imprimable</button>
       </div>
     </div>`;
 }
 
 function renderPlan(r) {
+  if (r && r.currency) devise = r.currency;
   if (!r) {
     $("#plan").innerHTML = `<div class="card empty"><h4>Aucun plan calculé</h4>
       <p>Le plan d'extension construit un arbre de scénarios et le résout. Comptez de cinq à
@@ -276,8 +326,8 @@ function renderPlan(r) {
     <div class="card">
       <h3>Ce que le plan coûte</h3>
       <div class="figures">
-        ${figure("Coût actualisé attendu", nf(e.expected_lcoe_usd_kwh, 4), "$/kWh")}
-        ${figure("Coût attendu", money(e.expected_rule_cost_usd), "$")}
+        ${figure("Coût actualisé attendu", parKwh(e.expected_lcoe_usd_kwh), unite("/kWh"))}
+        ${figure("Coût attendu", somme(e.expected_rule_cost_usd), devise.code)}
         ${figure("Écart de dispatch", pct(e.price_of_heuristic_pct), "")}
         ${figure("Évaluations de plans", nf(e.search_evaluations), "")}
       </div>
@@ -286,6 +336,7 @@ function renderPlan(r) {
       <div style="margin-top:16px;display:flex;gap:10px">
         <button class="btn quiet" onclick="exporter('plan','csv')">Exporter en CSV</button>
         <button class="btn quiet" onclick="exporter('plan','json')">Exporter en JSON</button>
+        <button class="btn quiet" onclick="imprimer()">Rapport imprimable</button>
       </div>
     </div>`;
 }
@@ -318,10 +369,18 @@ function renderLieu() {
              ${tpl ? "disabled" : ""}></div>
       </div>
       <div class="field">
-        <div><label for="hh">Foyers à raccorder</label>
-          <div class="hint">Le recensement de la communauté entière, pas d'un échantillon.</div></div>
-        <div class="control"><input id="hh" type="number" min="0" step="1"
-             value="${s.n_households ?? 0}" ${tpl ? "disabled" : ""}></div>
+        <div><label for="hh1">Foyers à raccorder</label>
+          <div class="hint">Le recensement de la communauté entière, pas d'un échantillon,
+            réparti par classe d'abonnement. La classe explique peu du comportement — les
+            consommations mesurées se recouvrent largement d'une classe à l'autre — et elle
+            ne déplace la demande que de quelques pour cent ; c'est l'ancienneté du
+            raccordement qui la gouverne.</div></div>
+        <div class="control" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+          ${["HH1", "HH2", "HH3"].map(t => `<div>
+             <label for="${t.toLowerCase()}" style="font-size:11.5px;color:var(--ink-faint)">${t}</label>
+             <input id="${t.toLowerCase()}" type="number" min="0" step="1"
+               value="${(s.census || {})[t] ?? 0}" ${tpl ? "disabled" : ""}></div>`).join("")}
+        </div>
       </div>
       <div class="field">
         <div><label for="pue">Activités productives attendues</label>
@@ -371,8 +430,10 @@ function renderLieu() {
 
   $("#site-pick").onchange = e => {
     if (e.target.value === "__new__") {
-      state.site = { name: "Nouvelle communauté", origin: "user", census: { HH1: 120 },
-                     n_households: 120, productive_units: 10, latitude: null, longitude: null };
+      state.site = { name: "Nouvelle communauté", origin: "user",
+                     census: { HH1: 120, HH2: 0, HH3: 0 }, n_households: 120,
+                     productive_units: null, latitude: null, longitude: null,
+                     utc_offset_hours: 1 };
     } else {
       state.site = state.sites.find(x => x.name === e.target.value);
       state.overrides["site"] = state.site.name;
@@ -453,7 +514,8 @@ async function saveSite() {
   const body = {
     name: ($("#site-name")?.value || s.name).trim(),
     latitude: parseFloat($("#lat").value), longitude: parseFloat($("#lon").value),
-    census: { HH1: parseInt($("#hh").value || 0, 10) },
+    census: Object.fromEntries(["HH1", "HH2", "HH3"].map(
+      t => [t, parseInt($("#" + t.toLowerCase()).value || 0, 10)])),
     productive_units: pue === "" ? null : parseInt(pue, 10),
     utc_offset_hours: parseInt($("#utc").value || 1, 10),
   };
@@ -547,6 +609,30 @@ function renderArchetypes() {
 }
 
 /* ------------------------------------------------------------------ projects */
+function imprimer() {
+  // Print, rather than a PDF written by hand: the browser already lays this page out and
+  // already knows how to make a file of it, and a second renderer would be a second thing
+  // to keep in step with the first. The print stylesheet decides what reaches the sheet.
+  const tete = document.createElement("div");
+  tete.className = "print-only";
+  tete.innerHTML = `<div style="margin-bottom:18px">
+      <h1 style="font-size:22px;margin:0">Dimensionnement certifié — ${state.site?.name ?? ""}</h1>
+      <p style="color:#444;margin:6px 0 0;font-size:11px">
+        ${state.projectName ? state.projectName + " · " : ""}
+        Édité le ${new Date().toLocaleDateString("fr-FR", { dateStyle: "long" })} ·
+        Montants en ${devise.code}${devise.per_usd !== 1
+          ? ` (1 USD = ${nf(devise.per_usd, 2)} ${devise.code})` : ""}</p>
+      <p style="color:#444;margin:8px 0 0;font-size:10.5px">
+        Comportements de consommation : ${state.arch?.adjusted
+          ? "archétypes ajustés pour ce site." : "archétypes livrés, non ajustés."}
+        ${state.arch?.note ?? ""}</p>
+    </div>`;
+  const main = $(".main");
+  main.prepend(tete);
+  window.print();
+  setTimeout(() => tete.remove(), 500);
+}
+
 async function exporter(kind, format) {
   const result = state.results[kind];
   if (!result) return;

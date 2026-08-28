@@ -441,6 +441,11 @@ class EconomicSettings:
     tariff_is_target: bool = True
     #: Value of lost load. See ``voll_provenance``: it fixes the reliability the design
     #: aims at, so it is reported across a range rather than asserted as one number.
+    #: Least share of the demand a design must serve to be admissible, or ``None`` when
+    #: reliability is priced rather than required. A concession contract usually names one,
+    #: and a sizing that reports the shortfall after the fact cannot honour it: the level
+    #: has to bound the search, not describe its outcome.
+    min_service_fraction: float | None = None
     value_of_lost_load_usd_kwh: float = 1.00
     value_of_lost_load_range_usd_kwh: tuple[float, float] = (0.50, 3.00)
     discount_provenance: Provenance = field(default_factory=lambda: Provenance(

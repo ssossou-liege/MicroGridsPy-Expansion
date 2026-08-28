@@ -67,6 +67,7 @@ def size_site(job: Job, overrides: dict[str, Any]) -> dict:
     return {
         "site": settings.site,
         "trajectory": settings.demand_trajectory,
+        "dispatch": _dispatch_traces(instance, dispatch),
         "architecture": lattice.architecture,
         "lattice_size": lattice.size,
         "design": {"pv_kw": design.pv_kw, "pv_ac_kw": design.pv_ac_kw,
@@ -165,3 +166,103 @@ def plan_expansion(job: Job, overrides: dict[str, Any]) -> dict:
         "per_node": [node_kpis(certificate.plans, n, tree, traces)
                      for n in tree.nodes],
     }
+
+
+def _dispatch_traces(instance, dispatch) -> dict:
+    """What the controller did, at two resolutions a reader can hold.
+
+    The year is 8 760 hours; sending it whole would be a megabyte of numbers to draw a line
+    nobody can read. Two views answer the questions a developer actually asks of a dispatch:
+    one week at full resolution, to see the shape of a day and how the night is carried, and
+    the monthly energy split, to see what the plant runs on over a year.
+
+    The week shown is the one whose generator runs most, since a plant is judged on its worst
+    stretch rather than its easiest.
+    """
+    import numpy as np
+
+    demand = np.asarray(instance.demand_kw, dtype=float)
+    n = demand.size
+    gen = np.asarray(dispatch.generator_kw, dtype=float)
+    pv_load = np.asarray(dispatch.pv_to_load_kw, dtype=float)
+    discharge = np.asarray(dispatch.discharge_kw, dtype=float)
+    charge = np.asarray(dispatch.charge_kw, dtype=float)
+    soc = np.asarray(dispatch.soc_kwh, dtype=float)[:n]
+    curtailed = np.asarray(dispatch.curtailed_kw, dtype=float)
+    unserved = np.asarray(dispatch.unserved_kw, dtype=float)
+
+    week = 24 * 7
+    if n >= week:
+        totals = [gen[i:i + week].sum() for i in range(0, n - week + 1, 24)]
+        start = int(np.argmax(totals)) * 24
+    else:
+        start = 0
+    sl = slice(start, min(start + week, n))
+    r = lambda a: [round(float(x), 3) for x in a[sl]]        # noqa: E731
+
+    months = np.minimum((np.arange(n) // 730), 11)           # 730 h ≈ one twelfth of a year
+    def par_mois(values):
+        return [round(float(values[months == m].sum()), 1) for m in range(12)]
+
+    return {
+        "week_start_hour": int(start),
+        "hours": list(range(int(start), int(start) + len(r(demand)))),
+        "demand": r(demand), "pv_load": r(pv_load), "discharge": r(discharge),
+        "generator": r(gen), "charge": r(charge), "soc": r(soc),
+        "unserved": r(unserved),
+        "monthly": {"pv_load": par_mois(pv_load), "discharge": par_mois(discharge),
+                    "generator": par_mois(gen), "curtailed": par_mois(curtailed),
+                    "unserved": par_mois(unserved)},
+        "soc_max_kwh": round(float(soc.max()), 1),
+    }
+
+
+def fetch_resource(job: Job, site_name: str, first_year: int = 2016,
+                   last_year: int = 2025) -> dict:
+    """Obtain the meteorological series for a described site's coordinates.
+
+    A community the tool has never seen has no irradiance record, and this is the one part
+    of describing a site that cannot be done from local knowledge alone: it needs a
+    reanalysis, and therefore a network and an account. The failure is reported as what it
+    is rather than as a modelling error, because a developer working from a field office
+    needs to know it is the connection that failed and not their site description.
+    """
+    from ..resource.era5 import download_era5
+    from ..sites import get_site, save_site
+    from dataclasses import replace
+
+    site = get_site(site_name)
+    if site.latitude is None or site.longitude is None:
+        raise ValueError("le site n'a pas de coordonnées ; placez-le sur la carte d'abord")
+
+    job.total = 2
+    job.stage = (f"demande de la réanalyse pour {site.latitude:.4f}, "
+                 f"{site.longitude:.4f} — plusieurs minutes")
+    try:
+        path = download_era5(site, first_year, last_year)
+    except ImportError as exc:
+        raise RuntimeError("le client du Climate Data Store n'est pas installé "
+                           "(pip install cdsapi)") from exc
+    except Exception as exc:                      # noqa: BLE001 - reported to the page
+        raise RuntimeError(
+            f"la réanalyse n'a pas pu être obtenue : {exc}. Vérifiez la connexion et le "
+            "fichier d'identifiants ~/.cdsapirc."
+        ) from exc
+    job.done = 1
+
+    job.stage = "enregistrement de la série"
+    save_site(replace(site, irradiance_file=path.name))
+    job.done = 2
+    return {"site": site.name, "file": path.name,
+            "years": [first_year, last_year],
+            "latitude": site.latitude, "longitude": site.longitude}
+
+
+def describe_archetypes(site_name: str) -> dict:
+    """The archetypes in force for a site, with the note on where they come from."""
+    from ..demand import archetypes as A
+
+    local, adjusted = A.for_site(site_name)
+    return {"archetypes": [a.to_dict() for a in local],
+            "shipped": [a.to_dict() for a in A.shipped()],
+            "adjusted": adjusted, "note": A.CALIBRATION_NOTE}

@@ -65,13 +65,13 @@ def _calibration_fingerprint() -> str:
 
 
 def _cache_key(site: str, year: int, trajectory: str, maturity_months: int,
-               seed: int, chemistry: str) -> str:
+               seed: int, chemistry: str, archetypes: str = "std") -> str:
     # The chemistry belongs in the key: it changes the storage ceiling and the
     # self-discharge the instance carries, so a cached instance from another chemistry
     # would silently describe a different battery. So does the calibration, for the same
     # reason: it decides the demand the instance carries.
     raw = (f"{site}|{year}|{trajectory}|{maturity_months}|{seed}|{chemistry}"
-           f"|{_calibration_fingerprint()}")
+           f"|{_calibration_fingerprint()}|{archetypes}")
     return hashlib.sha1(raw.encode()).hexdigest()[:16]
 
 
@@ -90,6 +90,7 @@ def build_site_year(
     leap year has 8 784 hours and both sides are built for the same calendar year, so a
     mismatch signals that one of them was built for another year.
     """
+    from .demand import archetypes as _archetypes
     from .demand.generator import simulate_demand_year
     from .resource import simulate_resource_year
 
@@ -98,7 +99,10 @@ def build_site_year(
     site = get_site(site) if isinstance(site, str) else site
     chemistry = _config.BATTERY_CHEMISTRY if chemistry is None else chemistry
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    key = _cache_key(site.name, year, trajectory, maturity_months, seed, chemistry)
+    # The archetypes a site runs on are part of what a cached year is: adjusted locally and
+    # not counted here, a stale file would answer with the behaviour of another community.
+    key = _cache_key(site.name, year, trajectory, maturity_months, seed, chemistry,
+                     _archetypes.fingerprint(site.name))
     path = CACHE_DIR / f"siteyear_{site.name.lower()}_{key}.npz"
 
     if use_cache and path.exists():
@@ -114,7 +118,8 @@ def build_site_year(
 
     demand = simulate_demand_year(site, year=year, seed=seed,
                                   maturity_months=maturity_months,
-                                  trajectory=trajectory)
+                                  trajectory=trajectory,
+                                  scaling=_archetypes.scaling_for(site.name))
     resource = simulate_resource_year(site, year, chemistry=chemistry)
     if demand.hourly_kw.size != resource.specific_yield.size:
         raise ValueError(

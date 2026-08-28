@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MicroGrids — dimensionnement certifié</title>
+<link rel="stylesheet" href="/vendor/leaflet.css">
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
@@ -14,20 +15,44 @@
       <p>Dimensionnement certifié</p>
     </div>
     <nav class="nav">
-      <button data-view="site"   aria-current="true"><span class="dot"></span>Le site</button>
+      <button data-view="lieu"   aria-current="true"><span class="dot"></span>La communauté</button>
+      <button data-view="usages"><span class="dot"></span>Usages et archétypes</button>
+      <button data-view="site"><span class="dot"></span>Hypothèses</button>
       <button data-view="result"><span class="dot"></span>Dimensionnement</button>
       <button data-view="plan"><span class="dot"></span>Plan d'extension</button>
     </nav>
   </aside>
 
   <main class="main">
-    <!-- ------------------------------------------------------------ site -->
-    <section class="page" data-page="site">
+    <!-- ---------------------------------------------------------- commune -->
+    <section class="page" data-page="lieu">
       <div class="page-head">
-        <h2>Le site</h2>
-        <p>Renseignez ce qui distingue ce projet. Tout le reste porte une valeur par défaut
-           dont la source est indiquée, et que vous pouvez modifier.</p>
+        <h2>La communauté</h2>
+        <p>Décrivez le village à dimensionner : où il se trouve, combien de foyers il compte,
+           combien d'activités productives on y attend. Aucun relevé de compteur n'est
+           nécessaire — la composition des usages se déduit de l'ancienneté du raccordement.</p>
       </div>
+      <div id="lieu"></div>
+    </section>
+
+    <!-- ----------------------------------------------------------- usages -->
+    <section class="page hidden" data-page="usages">
+      <div class="page-head">
+        <h2>Usages et archétypes</h2>
+        <p>Les comportements de consommation sur lesquels la demande est bâtie. Vérifiez-les
+           contre ce que vous connaissez de la communauté, et corrigez-les si besoin.</p>
+      </div>
+      <div id="usages"></div>
+    </section>
+
+    <!-- ------------------------------------------------------- hypothèses -->
+    <section class="page hidden" data-page="site">
+      <div class="page-head">
+        <h2>Hypothèses</h2>
+        <p>Prix, durées de vie et conduite. Tout porte une valeur par défaut dont la source
+           est indiquée, et que vous pouvez modifier.</p>
+      </div>
+      <div class="projectbar" id="projects"></div>
       <div id="form"></div>
     </section>
 
@@ -64,6 +89,7 @@
   <button class="btn primary" id="run-size">Dimensionner</button>
 </div>
 
+<script src="/vendor/leaflet.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

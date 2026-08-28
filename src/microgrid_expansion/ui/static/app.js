@@ -5,7 +5,8 @@ const $  = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
 const state = { groups: [], overrides: {}, defaults: {}, job: null, timer: null,
-                results: { size: null, plan: null } };
+                results: { size: null, plan: null }, projects: [], projectName: "",
+                sites: [], site: null, arch: null };
 
 /* ------------------------------------------------------------------ formatting */
 const nf = (v, d = 0) => v === null || v === undefined || Number.isNaN(v)
@@ -17,6 +18,102 @@ function figure(k, v, u, note) {
   return `<div class="figure"><div class="k">${k}</div>
     <div class="v">${v}${u ? `<span class="u">${u}</span>` : ""}</div>
     ${note ? `<div class="n">${note}</div>` : ""}</div>`;
+}
+
+
+/* ------------------------------------------------------------------ charts
+   Drawn by hand in SVG. A charting library would be one more thing to ship and to keep
+   current for two figures whose shape is fixed; these are stacked areas and a line. */
+
+const COULEURS = { pv_load: "#f0a02a", discharge: "#2f9e5e", generator: "#c0392b",
+                   curtailed: "#b9bcc4", unserved: "#8e44ad" };
+
+function aire(series, x, y) {
+  // Cumulative stack: each band sits on the one below, so the top edge is total supply.
+  let bas = new Array(series[0].values.length).fill(0);
+  return series.map(s => {
+    const haut = s.values.map((v, i) => bas[i] + v);
+    const avant = haut.map((v, i) => `${x(i)},${y(v)}`).join(" ");
+    const arriere = bas.map((v, i) => `${x(i)},${y(v)}`).reverse().join(" ");
+    bas = haut;
+    return `<polygon points="${avant} ${arriere}" fill="${s.color}" fill-opacity=".85"/>`;
+  }).join("");
+}
+
+function chartWeek(d) {
+  // The right-hand margin carries a second scale for the state of charge, which is energy
+  // and not power. Drawn on the same axis without saying so, a dashed line at two thirds of
+  // the height reads as two thirds of the peak kilowatts, which it is not.
+  const W = 900, H = 240, L = 46, R = 56, T = 12, B = 26;
+  const n = d.demand.length;
+  const series = [
+    { values: d.pv_load,   color: COULEURS.pv_load },
+    { values: d.discharge, color: COULEURS.discharge },
+    { values: d.generator, color: COULEURS.generator },
+  ];
+  const somme = d.demand.map((_, i) => series.reduce((a, s) => a + s.values[i], 0));
+  const ymax = Math.max(...somme, ...d.demand) * 1.12 || 1;
+  const x = i => L + (i / Math.max(n - 1, 1)) * (W - L - R);
+  const y = v => H - B - (v / ymax) * (H - T - B);
+  const socMax = d.soc_max_kwh || 1;
+  const ysoc = v => H - B - (v / socMax) * (H - T - B);
+
+  const jours = [];
+  for (let i = 0; i < n; i += 24)
+    jours.push(`<line class="axis" x1="${x(i)}" y1="${T}" x2="${x(i)}" y2="${H - B}"/>
+      <text x="${x(i) + 4}" y="${H - 9}">J${Math.floor(i / 24) + 1}</text>`);
+
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img"
+     aria-label="Puissance servie heure par heure sur la semaine la plus sollicitée">
+    ${jours.join("")}
+    <line class="axis" x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}"/>
+    ${aire(series, x, y)}
+    <polyline class="soc" points="${d.soc.map((v, i) => `${x(i)},${ysoc(v)}`).join(" ")}"/>
+    <polyline class="demand" points="${d.demand.map((v, i) => `${x(i)},${y(v)}`).join(" ")}"/>
+    <text x="4" y="${T + 9}">${nf(ymax, 0)} kW</text>
+    <text x="4" y="${H - B}">0</text>
+    <text x="${W - R + 8}" y="${T + 9}" fill="var(--ink-soft)">${nf(socMax, 0)} kWh</text>
+    <text x="${W - R + 8}" y="${H - B}" fill="var(--ink-soft)">0</text>
+  </svg>
+  <div class="legend">
+    <span><i style="background:${COULEURS.pv_load}"></i>Photovoltaïque vers la charge</span>
+    <span><i style="background:${COULEURS.discharge}"></i>Décharge du stockage</span>
+    <span><i style="background:${COULEURS.generator}"></i>Groupe électrogène</span>
+    <span><i class="line" style="background:var(--ink)"></i>Demande</span>
+    <span><i class="line" style="background:var(--ink-soft)"></i>État de charge (échelle de droite, kWh)</span>
+  </div>`;
+}
+
+function chartMonths(m) {
+  const W = 900, H = 210, L = 46, R = 12, T = 12, B = 26;
+  const mois = ["J","F","M","A","M","J","J","A","S","O","N","D"];
+  const series = [
+    { values: m.pv_load,   color: COULEURS.pv_load },
+    { values: m.discharge, color: COULEURS.discharge },
+    { values: m.generator, color: COULEURS.generator },
+  ];
+  const totaux = mois.map((_, i) => series.reduce((a, s) => a + s.values[i], 0));
+  const ymax = Math.max(...totaux) * 1.12 || 1;
+  const bw = (W - L - R) / 12 * .62;
+  let out = "";
+  mois.forEach((nom, i) => {
+    const cx = L + (i + .5) * (W - L - R) / 12;
+    let bas = H - B;
+    series.forEach(s => {
+      const h = (s.values[i] / ymax) * (H - T - B);
+      bas -= h;
+      out += `<rect x="${cx - bw / 2}" y="${bas}" width="${bw}" height="${Math.max(h, 0)}"
+                fill="${s.color}" fill-opacity=".85"/>`;
+    });
+    out += `<text x="${cx}" y="${H - 9}" text-anchor="middle">${nom}</text>`;
+  });
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img"
+     aria-label="Énergie servie par mois, par origine">
+    <line class="axis" x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}"/>
+    ${out}
+    <text x="4" y="${T + 9}">${nf(ymax / 1000, 1)} MWh</text>
+    <text x="4" y="${H - B}">0</text>
+  </svg>`;
 }
 
 /* ------------------------------------------------------------------ the form */
@@ -95,6 +192,20 @@ function renderSize(r) {
       </div>
     </div>
 
+    ${r.dispatch ? `
+    <div class="card">
+      <h3>La semaine la plus sollicitée</h3>
+      ${chartWeek(r.dispatch)}
+      <p class="hint" style="margin-top:14px">Sept jours pris là où le groupe tourne le plus,
+         une installation se jugeant sur sa pire période. L'aire empilée est ce qui sert la
+         charge heure par heure ; le trait plein est la demande, le pointillé l'état de
+         charge du parc.</p>
+    </div>
+    <div class="card">
+      <h3>Ce que la centrale produit sur l'année</h3>
+      ${chartMonths(r.dispatch.monthly)}
+    </div>` : ""}
+
     <div class="card">
       <h3>Comment le certificat a été obtenu</h3>
       <table>
@@ -108,6 +219,10 @@ function renderSize(r) {
       <p class="hint" style="margin-top:12px">Chaque dimensionnement de l'ensemble a été soit
          évalué, soit écarté par une borne dont la validité est démontrée. Aucun n'a été
          laissé de côté.</p>
+      <div style="margin-top:16px;display:flex;gap:10px">
+        <button class="btn quiet" onclick="exporter('size','csv')">Exporter en CSV</button>
+        <button class="btn quiet" onclick="exporter('size','json')">Exporter en JSON</button>
+      </div>
     </div>`;
 }
 
@@ -168,7 +283,303 @@ function renderPlan(r) {
       </div>
       <p class="hint" style="margin-top:12px">Cet écart est un majorant : sur l'arbre, le plan
          provient d'une descente et non d'une certification par épuisement.</p>
+      <div style="margin-top:16px;display:flex;gap:10px">
+        <button class="btn quiet" onclick="exporter('plan','csv')">Exporter en CSV</button>
+        <button class="btn quiet" onclick="exporter('plan','json')">Exporter en JSON</button>
+      </div>
     </div>`;
+}
+
+
+/* ------------------------------------------------------------------ community */
+let carte = null, marqueur = null;
+
+function renderLieu() {
+  const s = state.site || {};
+  const tpl = s.origin === "template";
+  $("#lieu").innerHTML = `
+    <div class="card">
+      <h3>Site</h3>
+      <div class="field">
+        <div><label for="site-pick">Site à dimensionner</label>
+          <div class="hint">Les deux premiers sont livrés comme exemples travaillés : ce sont
+            les villages sur lesquels les archétypes ont été calibrés.</div></div>
+        <div class="control">
+          <select id="site-pick">${state.sites.map(x =>
+            `<option value="${x.name}"${x.name === s.name ? " selected" : ""}>${x.name}${
+              x.origin === "template" ? " (exemple)" : ""}</option>`).join("")}
+            <option value="__new__">＋ Nouvelle communauté…</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <div><label for="site-name">Nom</label></div>
+        <div class="control"><input id="site-name" type="text" value="${s.name ?? ""}"
+             ${tpl ? "disabled" : ""}></div>
+      </div>
+      <div class="field">
+        <div><label for="hh">Foyers à raccorder</label>
+          <div class="hint">Le recensement de la communauté entière, pas d'un échantillon.</div></div>
+        <div class="control"><input id="hh" type="number" min="0" step="1"
+             value="${s.n_households ?? 0}" ${tpl ? "disabled" : ""}></div>
+      </div>
+      <div class="field">
+        <div><label for="pue">Activités productives attendues</label>
+          <div class="hint">Moulins, soudeurs, ateliers. Ce sont elles qui décident si la
+            centrale est diurne ou vespérale ; leur nombre est rarement connu d'avance.</div></div>
+        <div class="control"><input id="pue" type="number" min="0" step="1"
+             value="${s.productive_units ?? 0}" ${tpl ? "disabled" : ""}></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Où se trouve-t-il</h3>
+      <div id="carte"></div>
+      <div class="coords">
+        <div><label for="lat">Latitude</label>
+          <input id="lat" type="number" step="0.0001" value="${s.latitude ?? ""}"></div>
+        <div><label for="lon">Longitude</label>
+          <input id="lon" type="number" step="0.0001" value="${s.longitude ?? ""}"></div>
+      </div>
+      <p class="hint" style="margin-top:12px">Cliquez sur la carte pour poser le point, ou
+         saisissez les coordonnées et vérifiez qu'elles tombent bien sur votre site. Le fond
+         de carte demande une connexion ; les coordonnées se saisissent sans.</p>
+      <div style="margin-top:16px;display:flex;gap:10px;align-items:center">
+        ${tpl ? "" : `<button class="btn primary" id="site-save">Enregistrer la communauté</button>`}
+        <button class="btn quiet" id="get-resource"
+          ${s.latitude == null ? "disabled" : ""}>Obtenir la série météorologique</button>
+        ${s.has_resource ? `<span class="badge ok">Série disponible</span>`
+                         : `<span class="badge warn">Aucune série</span>`}
+        ${tpl ? "" : `<div class="spacer" style="flex:1"></div>
+          <button class="btn link" id="site-drop">Supprimer</button>`}
+      </div>
+      ${s.has_resource ? "" : `<p class="hint" style="margin-top:10px">Sans série
+         météorologique le dimensionnement ne peut pas démarrer. Elle se télécharge une fois
+         par site depuis une réanalyse publique et demande une connexion.</p>`}
+    </div>`;
+
+  $("#site-pick").onchange = e => {
+    if (e.target.value === "__new__") {
+      state.site = { name: "Nouvelle communauté", origin: "user", census: { HH1: 120 },
+                     n_households: 120, productive_units: 10, latitude: null, longitude: null };
+    } else {
+      state.site = state.sites.find(x => x.name === e.target.value);
+      state.overrides["site"] = state.site.name;
+      const champ = $("#f-site");
+      if (champ) champ.value = state.site.name;
+    }
+    renderLieu(); loadArchetypes();
+  };
+  const save = $("#site-save");
+  if (save) save.onclick = saveSite;
+  const drop = $("#site-drop");
+  if (drop) drop.onclick = async () => {
+    await fetch(`/api/sites/${encodeURIComponent(state.site.name)}`, { method: "DELETE" });
+    await refreshSites();
+  };
+  $("#get-resource").onclick = async () => {
+    if (!state.site.has_resource && state.site.origin === "user") await saveSite();
+    const r = await fetch(`/api/sites/${encodeURIComponent(state.site.name)}/resource`,
+                          { method: "POST" });
+    state.job = await r.json();
+    buttons(false); $("#cancel").classList.remove("hidden"); poll();
+  };
+  ["lat", "lon"].forEach(id => $("#" + id).addEventListener("change", () => {
+    const la = parseFloat($("#lat").value), lo = parseFloat($("#lon").value);
+    if (Number.isFinite(la) && Number.isFinite(lo)) placer(la, lo, true);
+  }));
+
+  monterCarte(s.latitude, s.longitude);
+}
+
+function monterCarte(lat, lon) {
+  const hote = $("#carte");
+  if (!hote || typeof L === "undefined") return;
+  carte = L.map(hote, { attributionControl: true })
+           .setView([lat ?? 9.5, lon ?? 2.3], lat == null ? 5 : 13);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+              { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(carte);
+  // A field office may have no network. The map then shows nothing, which must not stop the
+  // work: the coordinate boxes remain the authority and the map only ever mirrors them.
+  carte.on("click", e => placer(e.latlng.lat, e.latlng.lng, false));
+  if (lat != null && lon != null) placer(lat, lon, false);
+}
+
+function placer(lat, lon, recentrer) {
+  if (!state.site) return;
+  state.site.latitude = Math.round(lat * 1e6) / 1e6;
+  state.site.longitude = Math.round(lon * 1e6) / 1e6;
+  $("#lat").value = state.site.latitude;
+  $("#lon").value = state.site.longitude;
+  $("#get-resource").disabled = false;
+  if (!carte) return;
+  if (marqueur) marqueur.setLatLng([lat, lon]);
+  else marqueur = L.marker([lat, lon], { draggable: true }).addTo(carte)
+                   .on("dragend", ev => {
+                     const p = ev.target.getLatLng(); placer(p.lat, p.lng, false);
+                   });
+  if (recentrer) carte.setView([lat, lon], Math.max(carte.getZoom(), 13));
+}
+
+async function saveSite() {
+  const s = state.site;
+  const body = {
+    name: ($("#site-name")?.value || s.name).trim(),
+    latitude: parseFloat($("#lat").value), longitude: parseFloat($("#lon").value),
+    census: { HH1: parseInt($("#hh").value || 0, 10) },
+    productive_units: parseInt($("#pue").value || 0, 10),
+  };
+  const r = await fetch("/api/sites", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  if (!r.ok) { setState("Le site n'a pas pu être enregistré.", null); return; }
+  state.overrides["site"] = body.name;
+  await refreshSites(body.name);
+  setState(`Communauté « ${body.name} » enregistrée.`, null);
+}
+
+async function refreshSites(select) {
+  state.sites = await (await fetch("/api/sites")).json();
+  const nom = select || state.overrides["site"];
+  state.site = state.sites.find(x => x.name === nom) || state.sites[0];
+  const champ = $("#f-site");
+  if (champ) {
+    champ.innerHTML = state.sites.map(
+      x => `<option value="${x.name}"${x.name === state.site.name ? " selected" : ""}>${x.name}</option>`).join("");
+  }
+  state.overrides["site"] = state.site.name;
+  renderLieu(); await loadArchetypes();
+}
+
+/* ------------------------------------------------------------------ archetypes */
+async function loadArchetypes() {
+  if (!state.site) return;
+  state.arch = await (await fetch(
+    `/api/archetypes/${encodeURIComponent(state.site.name)}`)).json();
+  renderArchetypes();
+}
+
+function renderArchetypes() {
+  const a = state.arch;
+  if (!a) return;
+  $("#usages").innerHTML = `
+    <div class="notice">
+      <b>D'où viennent ces comportements.</b> ${a.note}
+      ${a.adjusted ? " <b>Ces valeurs ont été ajustées pour ce site.</b>" : ""}
+    </div>
+    <div class="card">
+      <h3>Les quatre archétypes de ménage</h3>
+      <div class="arch">
+        <div class="who"><b>Comportement</b></div>
+        <div class="head">Énergie kWh/jour</div>
+        <div class="head">Pointe W</div>
+        <div class="head">Facteur de charge</div>
+      </div>
+      ${a.archetypes.map(x => `
+        <div class="arch">
+          <div class="who"><b>${x.label}</b>
+            <span>${x.share_pct} % des ménages observés · ${x.n_observations} relevés
+              ${x.well_supported ? "" : " · <b>peu étayé</b>"}</span></div>
+          <div><input type="number" step="0.001" data-c="${x.cluster}" data-k="mean_daily_kwh"
+               value="${x.mean_daily_kwh}"></div>
+          <div><input type="number" step="1" data-c="${x.cluster}" data-k="mean_peak_w"
+               value="${x.mean_peak_w}"></div>
+          <div><input type="number" step="0.01" data-c="${x.cluster}" data-k="mean_load_factor"
+               value="${x.mean_load_factor}" disabled></div>
+        </div>`).join("")}
+      <p class="hint" style="margin-top:14px">Modifier l'énergie ou la pointe d'un archétype
+         déplace réellement la demande simulée : les deux facteurs qui accordent les parcs
+         d'appareils à ces cibles sont recalculés, et le dimensionnement en tient compte. Le
+         facteur de charge est rapporté pour information et ne se règle pas séparément.</p>
+      <div style="margin-top:16px;display:flex;gap:10px">
+        <button class="btn primary" id="arch-save">Appliquer à ce site</button>
+        <button class="btn quiet" id="arch-reset">Revenir aux valeurs calibrées</button>
+      </div>
+    </div>`;
+
+  $("#arch-save").onclick = async () => {
+    const payload = {};
+    $$("#usages input[data-c]").forEach(el => {
+      if (el.disabled) return;
+      (payload[el.dataset.c] ||= {})[el.dataset.k] = parseFloat(el.value);
+    });
+    state.arch = await (await fetch("/api/archetypes", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ site: state.site.name, archetypes: payload })
+    })).json();
+    renderArchetypes();
+    setState("Archétypes appliqués. Le prochain dimensionnement en tiendra compte.", null);
+  };
+  $("#arch-reset").onclick = async () => {
+    state.arch = await (await fetch(
+      `/api/archetypes/${encodeURIComponent(state.site.name)}`, { method: "DELETE" })).json();
+    renderArchetypes();
+  };
+}
+
+/* ------------------------------------------------------------------ projects */
+async function exporter(kind, format) {
+  const result = state.results[kind];
+  if (!result) return;
+  const r = await fetch(`/api/export.${format}`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind, result })
+  });
+  const blob = await r.blob();
+  const nom = (r.headers.get("Content-Disposition") || "").match(/filename="([^"]+)"/);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = nom ? nom[1] : `export.${format}`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function renderProjects() {
+  const options = state.projects.map(
+    p => `<option value="${p.slug}">${p.name}${p.site ? ` — ${p.site}` : ""}</option>`).join("");
+  $("#projects").innerHTML = `
+    <span class="name">Projet</span>
+    <input id="project-name" placeholder="Nom de l'étude" value="${state.projectName}">
+    <button class="btn quiet" id="save">Enregistrer</button>
+    <div class="spacer"></div>
+    ${state.projects.length ? `<select id="open"><option value="">Ouvrir…</option>${options}</select>
+       <button class="btn link" id="drop">Supprimer</button>` : ""}`;
+
+  $("#project-name").oninput = e => state.projectName = e.target.value;
+  $("#save").onclick = async () => {
+    const r = await fetch("/api/projects", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: state.projectName || "Sans nom",
+                             overrides: state.overrides, results: state.results })
+    });
+    if (r.ok) { await refreshProjects(); setState("Projet enregistré.", null); }
+  };
+  const open = $("#open");
+  if (open) open.onchange = async e => {
+    if (!e.target.value) return;
+    const p = await (await fetch(`/api/projects/${e.target.value}`)).json();
+    state.overrides = { ...state.overrides, ...p.overrides };
+    state.projectName = p.name;
+    state.results = p.results || { size: null, plan: null };
+    for (const g of state.groups) for (const f of g.fields)
+      if (p.overrides[f.path] !== undefined) f.value = p.overrides[f.path];
+    renderForm(); renderProjects();
+    renderSize(state.results.size); renderPlan(state.results.plan);
+    setState(`Projet « ${p.name} » ouvert.`, null);
+  };
+  const drop = $("#drop");
+  if (drop) drop.onclick = async () => {
+    const slug = $("#open").value;
+    if (!slug) return;
+    await fetch(`/api/projects/${slug}`, { method: "DELETE" });
+    await refreshProjects();
+  };
+}
+
+async function refreshProjects() {
+  state.projects = await (await fetch("/api/projects")).json();
+  renderProjects();
 }
 
 /* ------------------------------------------------------------------ running */
@@ -231,7 +642,11 @@ function show(view) {
     state.defaults[f.path] = f.value;
     state.overrides[f.path] = f.value;
   }
-  renderForm(); renderSize(null); renderPlan(null);
+  state.projects = b.projects || [];
+  state.sites = b.sites || [];
+  state.site = state.sites.find(x => x.name === state.overrides["site"]) || state.sites[0];
+  renderForm(); renderProjects(); renderSize(null); renderPlan(null);
+  renderLieu(); await loadArchetypes();
 
   $$(".nav button").forEach(b => b.onclick = () => show(b.dataset.view));
   $("#run-size").onclick = () => launch("size");

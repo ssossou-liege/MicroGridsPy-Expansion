@@ -20,6 +20,8 @@ COSTS_DIR = DATA_DIR / "costs"
 
 DOCS_DIR = ROOT / "docs"
 RESULTS_DIR = ROOT / "results"
+#: Sites the user describes, as opposed to the two bundled as templates.
+USER_SITES_DIR = ROOT / "sites"
 
 
 def require(path: Path) -> Path:

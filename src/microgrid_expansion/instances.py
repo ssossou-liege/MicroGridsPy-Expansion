@@ -64,14 +64,31 @@ def _calibration_fingerprint() -> str:
     return digest.hexdigest()[:12]
 
 
+def _site_fingerprint(site: Site) -> str:
+    """Everything about a site's description that decides the year it produces.
+
+    The name alone is not the site. When sites were written into the source a name could
+    only mean one description, and keying on it was safe; now that a site is something the
+    user edits, the same name means whatever they last saved. Keyed on the name alone, the
+    cache answered a community of three hundred households with the year computed for one
+    hundred and fifty -- no error, no warning, a plausible number for the wrong village.
+    """
+    census = ";".join(f"{k}={v}" for k, v in sorted(site.census.items()))
+    return "|".join(str(x) for x in (
+        census, site.latitude, site.longitude, site.irradiance_file,
+        site.productive_units, site.utc_offset_hours))
+
+
 def _cache_key(site: str, year: int, trajectory: str, maturity_months: int,
-               seed: int, chemistry: str, archetypes: str = "std") -> str:
+               seed: int, chemistry: str, archetypes: str = "std",
+               description: str = "") -> str:
     # The chemistry belongs in the key: it changes the storage ceiling and the
     # self-discharge the instance carries, so a cached instance from another chemistry
     # would silently describe a different battery. So does the calibration, for the same
-    # reason: it decides the demand the instance carries.
+    # reason: it decides the demand the instance carries. So does the site's own
+    # description, for the plainest reason of all: it *is* the community.
     raw = (f"{site}|{year}|{trajectory}|{maturity_months}|{seed}|{chemistry}"
-           f"|{_calibration_fingerprint()}|{archetypes}")
+           f"|{_calibration_fingerprint()}|{archetypes}|{description}")
     return hashlib.sha1(raw.encode()).hexdigest()[:16]
 
 
@@ -102,7 +119,7 @@ def build_site_year(
     # The archetypes a site runs on are part of what a cached year is: adjusted locally and
     # not counted here, a stale file would answer with the behaviour of another community.
     key = _cache_key(site.name, year, trajectory, maturity_months, seed, chemistry,
-                     _archetypes.fingerprint(site.name))
+                     _archetypes.fingerprint(site.name), _site_fingerprint(site))
     path = CACHE_DIR / f"siteyear_{site.name.lower()}_{key}.npz"
 
     if use_cache and path.exists():

@@ -92,7 +92,8 @@ class ProductiveCalibration:
 
 def sample_units(calibration: ProductiveCalibration, n_connected: int,
                  maturity_band: str, trajectory: str,
-                 rng: np.random.Generator) -> dict[str, int]:
+                 rng: np.random.Generator,
+                 expected_units: int | None = None) -> dict[str, int]:
     """Draw how many enterprises of each class are connected.
 
     ``n_connected`` counts the households already on the grid, not the community's census:
@@ -104,11 +105,19 @@ def sample_units(calibration: ProductiveCalibration, n_connected: int,
     for this maturity and trajectory; the realised number is a Poisson draw around it,
     business creation being a counting process rather than a fixed roster. Classes are
     then allocated multinomially from the observed mix.
+
+    ``expected_units`` overrides that expectation with what the developer expects on this
+    site, which is usually better information than a ratio transferred from two other
+    villages: the mill and the welder decide whether the plant is daytime-heavy or
+    evening-heavy, and someone who has surveyed the community knows how many are coming.
+    It replaces the mean, not the draw -- the count stays uncertain because business
+    creation is.
     """
     band = maturity_band if maturity_band in calibration.intensity.index \
         else calibration.intensity.index[-1]
     column = trajectory if trajectory in calibration.intensity.columns else "centrale"
-    expected = float(calibration.intensity.loc[band, column]) * n_connected
+    expected = (float(expected_units) if expected_units is not None
+                else float(calibration.intensity.loc[band, column]) * n_connected)
     total = int(rng.poisson(max(expected, 0.0)))
     if total == 0:
         return {c: 0 for c in calibration.mix.index}

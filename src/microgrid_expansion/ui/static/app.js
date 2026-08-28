@@ -326,9 +326,20 @@ function renderLieu() {
       <div class="field">
         <div><label for="pue">Activités productives attendues</label>
           <div class="hint">Moulins, soudeurs, ateliers. Ce sont elles qui décident si la
-            centrale est diurne ou vespérale ; leur nombre est rarement connu d'avance.</div></div>
+            centrale est diurne ou vespérale. Laissez vide si vous ne savez pas : le nombre
+            sera estimé d'après les villages de référence. Zéro veut dire aucune.</div></div>
         <div class="control"><input id="pue" type="number" min="0" step="1"
-             value="${s.productive_units ?? 0}" ${tpl ? "disabled" : ""}></div>
+             placeholder="estimé" value="${s.productive_units ?? ""}"
+             ${tpl ? "disabled" : ""}></div>
+      </div>
+      <div class="field">
+        <div><label for="utc">Décalage horaire</label>
+          <div class="hint">Heures d'écart avec le temps universel. Une heure d'erreur ici
+            déplace la production d'une heure par rapport à la consommation, ce à quoi un
+            dimensionnement de stockage est le plus sensible.</div></div>
+        <div class="control"><input id="utc" type="number" min="-12" max="14" step="1"
+             value="${s.utc_offset_hours ?? 1}" ${tpl ? "disabled" : ""}>
+          <span class="unit" id="utc-hint"></span></div>
       </div>
     </div>
 
@@ -388,6 +399,8 @@ function renderLieu() {
     const la = parseFloat($("#lat").value), lo = parseFloat($("#lon").value);
     if (Number.isFinite(la) && Number.isFinite(lo)) placer(la, lo, true);
   }));
+  proposerFuseau();
+  $("#lon").addEventListener("change", proposerFuseau);
 
   monterCarte(s.latitude, s.longitude);
 }
@@ -421,13 +434,28 @@ function placer(lat, lon, recentrer) {
   if (recentrer) carte.setView([lat, lon], Math.max(carte.getZoom(), 13));
 }
 
+function proposerFuseau() {
+  // The sun, not the state: solar noon follows longitude, and the zone a country keeps is
+  // often an hour or more away from it. The suggestion is a starting point the developer
+  // corrects, not an answer -- which is why it is shown beside the box and not written into it.
+  const lo = parseFloat($("#lon")?.value);
+  const champ = $("#utc-hint");
+  if (!champ) return;
+  if (!Number.isFinite(lo)) { champ.textContent = ""; return; }
+  const solaire = Math.round(lo / 15);
+  const saisi = parseInt($("#utc")?.value ?? "1", 10);
+  champ.textContent = saisi === solaire ? `h` : `h · midi solaire ≈ UTC${solaire >= 0 ? "+" : ""}${solaire}`;
+}
+
 async function saveSite() {
   const s = state.site;
+  const pue = $("#pue").value.trim();
   const body = {
     name: ($("#site-name")?.value || s.name).trim(),
     latitude: parseFloat($("#lat").value), longitude: parseFloat($("#lon").value),
     census: { HH1: parseInt($("#hh").value || 0, 10) },
-    productive_units: parseInt($("#pue").value || 0, 10),
+    productive_units: pue === "" ? null : parseInt(pue, 10),
+    utc_offset_hours: parseInt($("#utc").value || 1, 10),
   };
   const r = await fetch("/api/sites", {
     method: "POST", headers: { "Content-Type": "application/json" },

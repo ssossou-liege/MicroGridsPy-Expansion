@@ -450,7 +450,20 @@ def simulate_demand_year(
             # Enterprises are counted, not composed: how many have started trading is what
             # varies with the age of the connection, and it is drawn rather than fixed.
             connected = sum(v for k, v in counts.items() if k != INACTIVE)
-            units = sample_units(productive, connected, band, trajectory, rng)
+            # A site that states how many enterprises it expects is believed over a ratio
+            # carried across from the reference villages, scaled by how far its connection
+            # has actually advanced.
+            # ``None`` means the site has not been surveyed and the reference ratio stands;
+            # zero means it was surveyed and there are none. Reading zero as "unknown" would
+            # answer a village that stated it has no enterprises with a village that has
+            # thirty, which is the whole difference between a daytime and an evening plant.
+            declared = getattr(site, "productive_units", None)
+            expected_units = None
+            if declared is not None:
+                share = connected / max(site.n_households, 1)
+                expected_units = float(declared) * share
+            units = sample_units(productive, connected, band, trajectory, rng,
+                                 expected_units=expected_units)
             enterprises[month] = units
             profile = profile + monthly_profile_kw(units, productive,
                                                    profile.size // 24, rng)

@@ -446,6 +446,10 @@ class EconomicSettings:
     #: and a sizing that reports the shortfall after the fact cannot honour it: the level
     #: has to bound the search, not describe its outcome.
     min_service_fraction: float | None = None
+    #: Annual growth of the energy billed, used by the financial appraisal alone. The
+    #: sizing is done for the year and maturity stated, not for this curve; a plant that
+    #: must serve the growth is what the expansion plan is for.
+    demand_growth_rate: float = 0.0
     value_of_lost_load_usd_kwh: float = 1.00
     value_of_lost_load_range_usd_kwh: tuple[float, float] = (0.50, 3.00)
     discount_provenance: Provenance = field(default_factory=lambda: Provenance(
@@ -541,6 +545,64 @@ def best_available_solver() -> str:
 
 
 @dataclass
+class GridSpec:
+    """A connection to the national grid, when there is one.
+
+    Half the projects that need sizing sit where the grid is expected within a decade, and
+    the two questions a developer actually faces are whether to build for that arrival and
+    what to build in the meantime. Neither is answered by treating the grid as a perfect
+    source: in the countries this tool is for it is intermittent, and a connection available
+    six hours in ten is a different asset from one available all day.
+
+    Availability is stated as a share of hours and a typical outage length, because those are
+    the two things an operator knows about their feeder. They generate the outage pattern
+    rather than describing one, so that a sizing is not tuned to the particular outages of
+    one recorded year.
+    """
+
+    #: Whether a connection exists at all. Everything else is ignored when it does not.
+    connected: bool = False
+    #: Share of hours the feeder is energised.
+    availability: float = 0.6
+    #: Typical length of an outage [h]; with the availability it sets how often they start.
+    mean_outage_hours: float = 4.0
+    #: Largest power the connection can draw or inject [kW]. Zero means no physical limit
+    #: beyond the plant's own conversion.
+    capacity_kw: float = 0.0
+    #: What imported energy costs and what exported energy earns. Both are placeholders and
+    #: must be replaced: a utility tariff is a regulated, banded, country-specific figure
+    #: that no default can stand in for, and an injection price is often zero or absent
+    #: entirely. The value below is an order of magnitude for West Africa and nothing more.
+    import_usd_kwh: float = 0.11
+    export_usd_kwh: float = 0.0
+    #: Capital of the connection itself: line, metering, protection.
+    connection_usd: float = 0.0
+    #: Year of the horizon at which the grid arrives; zero when it is already there. Used by
+    #: the expansion plan, where the arrival is an uncertainty rather than a date.
+    arrival_year: int = 0
+    #: Whether the arrival of the line is treated as an uncertainty over the horizon rather
+    #: than as a fact known today. Off by default: a village where the grid is already there,
+    #: or plainly is not coming, is not helped by branching a tree over a question that has
+    #: an answer.
+    arrival_uncertain: bool = False
+    #: Chance the line arrives during each milestone, given it has not arrived before.
+    arrival_hazard_by_stage: tuple[float, ...] = (0.0, 0.15, 0.20, 0.20, 0.20)
+    tariff_provenance: Provenance = field(default_factory=lambda: Provenance(
+        source="", verified=False,
+        note="ordre de grandeur non sourcé ; relever le tarif du distributeur et le prix "
+             "d'injection auprès du concessionnaire avant tout dimensionnement"))
+    provenance: Provenance = field(default_factory=lambda: Provenance(
+        source="", verified=False,
+        note="disponibilité et régime de coupures : à relever sur le départ concerné"))
+
+    def __post_init__(self) -> None:
+        # YAML has no tuple, so a reloaded document brings the hazards back as a list and a
+        # saved project stops equalling itself. The same normalisation the maturity edges
+        # already carry.
+        self.arrival_hazard_by_stage = tuple(self.arrival_hazard_by_stage)
+
+
+@dataclass
 class SolverSettings:
     """How the mathematical programmes are solved."""
 
@@ -589,6 +651,7 @@ class ProjectSettings:
     economics: EconomicSettings = field(default_factory=EconomicSettings)
     controller: ControllerSettings = field(default_factory=ControllerSettings)
     calibration: CalibrationSettings = field(default_factory=CalibrationSettings)
+    grid: GridSpec = field(default_factory=GridSpec)
     solver: SolverSettings = field(default_factory=SolverSettings)
 
     # ---------------------------------------------------------------- validation
@@ -603,6 +666,11 @@ class ProjectSettings:
             raise ValueError("battery state-of-charge limits must satisfy 0 <= min < max <= 1")
         if not 0.0 < self.economics.discount_rate < 1.0:
             raise ValueError("the discount rate must lie strictly between 0 and 1")
+        if self.grid.connected:
+            if not 0.0 < self.grid.availability <= 1.0:
+                raise ValueError("grid.availability must lie in (0, 1]")
+            if self.grid.mean_outage_hours <= 0:
+                raise ValueError("grid.mean_outage_hours must be positive")
         if self.coupling.architecture not in ("dc", "ac", "mixte", "auto"):
             raise ValueError("coupling.architecture must be 'dc', 'ac', 'mixte' or "
                              f"'auto', not {self.coupling.architecture!r}")

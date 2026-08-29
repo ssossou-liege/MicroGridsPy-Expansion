@@ -25,6 +25,9 @@ class AxisDraw:
     costs: dict[str, float] = field(default_factory=dict)
     trajectory: str = "centrale"        # demand growth, held over the path
     cost_scenario: str = "central"      # cost future, held over the path
+    #: Whether the national grid has reached the village by this milestone. A state, not an
+    #: event: once the line is there it stays.
+    grid_connected: bool = False
 
 
 @dataclass
@@ -61,7 +64,8 @@ def sample_scenario_paths(
                                            scenario=stage["cost_scenario"])
             draws.append(AxisDraw(y, stage["resource"], stage["policy"], costs,
                                   trajectory=stage["trajectory"],
-                                  cost_scenario=stage["cost_scenario"]))
+                                  cost_scenario=stage["cost_scenario"],
+                                  grid_connected=bool(stage.get("grid_connected", False))))
             demand[y] = demand_paths.simulate_stage_demand(
                 space.demand, y, rng, site=site, trajectory=stage["trajectory"])
             pv_unit[y], t_amb[y] = pv_paths.simulate_stage_pv(

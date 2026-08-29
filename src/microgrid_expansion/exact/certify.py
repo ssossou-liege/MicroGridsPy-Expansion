@@ -46,7 +46,8 @@ _NARROWING_RELAXATIONS = 36
 _RELAXATION_SECONDS = 5.0
 #: Designs timed to establish what one costs before deciding whether to narrow.
 _CALIBRATION_DESIGNS = 4096
-from .simulator import BatteryModel, Capacities, Controller, GeneratorModel, simulate
+from .simulator import (BatteryModel, Capacities, Controller, GeneratorModel, GridLink,
+                        simulate)
 
 
 @dataclass(frozen=True)
@@ -286,8 +287,39 @@ def _generator_for(rating_kw: float, fallback: GeneratorModel) -> GeneratorModel
     return models[nearest]
 
 
+
+def _grid_link(instance, settings) -> "GridLink | None":
+    """The connection the plant is sized against, or nothing.
+
+    Built once per certification and handed to every simulation, so that all designs are
+    judged against the same year of outages. Drawing a fresh pattern per design would let the
+    search prefer whichever plant happened to meet the mildest one.
+    """
+    spec = getattr(settings, "grid", None)
+    if spec is None or not spec.connected:
+        return None
+    from ..resource.grid_availability import outage_pattern
+
+    return GridLink(
+        available=outage_pattern(instance.demand_kw.size, spec.availability,
+                                 spec.mean_outage_hours, seed=0),
+        capacity_kw=spec.capacity_kw,
+        import_usd_kwh=spec.import_usd_kwh,
+        export_usd_kwh=spec.export_usd_kwh,
+        exports=spec.export_usd_kwh > 0.0)
+
+
+def _grid_capital_usd_yr(settings) -> float:
+    """Annualised capital of the connection, over the inverter's own service life."""
+    spec = getattr(settings, "grid", None)
+    if spec is None or not spec.connected or not spec.connection_usd:
+        return 0.0
+    return spec.connection_usd * (config.crf(n=settings.economics.horizon_years)
+                                  + config.INV_OM_RATE)
+
+
 def _evaluate_rule(instance, capacities, economics, battery, generator, controller,
-                   annualised) -> float:
+                   annualised, grid=None) -> float:
     """Annualised total cost of one design under the deployed controller.
 
     A design whose array exceeds what its converter admits costs infinity, because it does
@@ -307,7 +339,7 @@ def _evaluate_rule(instance, capacities, economics, battery, generator, controll
     # of this catalogue — and so favoured them in the search that chose between them.
     generator = _generator_for(capacities.generator_kw, generator)
     dispatch = simulate(instance.demand_kw, instance.specific_yield, instance.t_amb_c,
-                        capacities, battery, generator, controller)
+                        capacities, battery, generator, controller, grid=grid)
     # Both parts of the field buy their modules; only the part on the load's bus buys the
     # string inverters that put it there. Charging the first coefficient to ``pv_kw`` alone
     # left the second part free, which understated every design that used it and let the
@@ -317,7 +349,8 @@ def _evaluate_rule(instance, capacities, economics, battery, generator, controll
                + annualised[0] * capacities.pv_ac_kw
                + annualised[1] * capacities.battery_kwh
                + annualised[2] * capacities.inverter_kw
-               + annualised[3] * capacities.generator_kw)
+               + annualised[3] * capacities.generator_kw
+               + economics.grid_connection_usd_yr)
     # A required service level bounds the search rather than describing its outcome. It
     # only ever removes designs, so the certificate stays a certificate -- over the smaller
     # set the requirement defines, which is the set the contract allows anyway.
@@ -335,15 +368,18 @@ def _evaluate_rule(instance, capacities, economics, battery, generator, controll
 _WORKER: dict = {}
 
 
-def _init_worker(instance, economics, battery, generator, controller, annualised) -> None:
+def _init_worker(instance, economics, battery, generator, controller, annualised,
+                 grid=None) -> None:
     _WORKER.update(instance=instance, economics=economics, battery=battery,
-                   generator=generator, controller=controller, annualised=annualised)
+                   generator=generator, controller=controller, annualised=annualised,
+                   grid=grid)
 
 
 def _evaluate_in_worker(capacities: Capacities) -> float:
     return _evaluate_rule(_WORKER["instance"], capacities, _WORKER["economics"],
                           _WORKER["battery"], _WORKER["generator"],
-                          _WORKER["controller"], _WORKER["annualised"])
+                          _WORKER["controller"], _WORKER["annualised"],
+                          _WORKER.get("grid"))
 
 
 class _Evaluator:
@@ -395,7 +431,7 @@ class _Evaluator:
         if not designs:
             return []
         if self._pool is None or len(designs) < self._MIN_BATCH:
-            return [_evaluate_rule(*self._args[:1], d, *self._args[1:])
+            return [_evaluate_rule(self._args[0], d, *self._args[1:])
                     for d in designs]
         chunk = max(16, len(designs) // (self._workers * 4) + 1)
         return list(self._pool.map(_evaluate_in_worker, designs, chunksize=chunk))
@@ -539,7 +575,7 @@ def _search_threshold(evaluate, left: int, right: int, width: int) -> int:
 
 def narrow_to_incumbent(instance, lattice, incumbent, economics, battery, generator,
                         solver: str | None = None, tolerance: float = 1e-6,
-                        width: int = 1,
+                        width: int = 1, grid=None,
                         verbose: bool = True) -> tuple["Lattice", int]:
     """Shrink each axis of the lattice to the interval no bound can exclude.
 
@@ -573,7 +609,8 @@ def narrow_to_incumbent(instance, lattice, incumbent, economics, battery, genera
         calls += 1
         box = _Box(-np.inf, current["pv"], current["batt"], current["inv"],
                    lattice.generator_ratings, current["pv_ac"])
-        return _bound(instance, lattice, box, economics, battery, generator, solver=solver)
+        return _bound(instance, lattice, box, economics, battery, generator, solver=solver,
+                      grid=grid)
 
     def excluded(current: dict) -> bool:
         return bound_over(current) > incumbent + tolerance
@@ -664,7 +701,7 @@ def _field_bounds(lattice, box) -> dict:
 
 def _bound(instance, lattice, box, economics, battery, generator,
            relax_commitment: bool = True, solver: str | None = None,
-           threads: int | None = None) -> float:
+           threads: int | None = None, grid=None) -> float:
     """Cost-optimal relaxation over a box: the lower bound of Proposition 1."""
     capacity_box = CapacityBox(
         battery_kwh=(box.batt[0] * lattice.batt_unit_kwh,
@@ -683,7 +720,8 @@ def _bound(instance, lattice, box, economics, battery, generator,
     result = cost_optimal_dispatch(instance, capacity_box, economics, battery, generator,
                                    relax_commitment=relax_commitment, weights=weights,
                                    terminal="free", solver=solver, threads=threads,
-                                   initial_soc_fraction=battery.initial_soc_fraction)
+                                   initial_soc_fraction=battery.initial_soc_fraction,
+                                   grid=grid)
     return result.value
 
 
@@ -731,6 +769,9 @@ def certify(
         fuel_usd_l=settings.economics.diesel_price_usd_l,
         voll_usd_kwh=settings.economics.value_of_lost_load_usd_kwh,
         min_service_fraction=settings.economics.min_service_fraction,
+        grid_connection_usd_yr=_grid_capital_usd_yr(settings),
+        grid_import_usd_kwh=settings.grid.import_usd_kwh if settings.grid.connected else 0.0,
+        grid_export_usd_kwh=settings.grid.export_usd_kwh if settings.grid.connected else 0.0,
         conversion_usd_kw=settings.coupling.cost_usd_kw(lattice.architecture))
     battery = BatteryModel.from_spec(settings.battery)
     biggest = max(settings.generators, key=lambda g: g.rating_kw)
@@ -741,17 +782,20 @@ def certify(
     annualised = economics.annualised()
 
     started = time.time()
+    grid = _grid_link(instance, settings)
     evaluator = _Evaluator((instance, economics, battery, generator, controller,
-                            annualised), workers=workers)
+                            annualised, grid), workers=workers)
     with evaluator:
         return _certify(instance, lattice, settings, tolerance, max_relaxations,
                         relaxation_cost_ratio, coarse_step, verbose, evaluator,
-                        economics, battery, generator, controller, annualised, started)
+                        economics, battery, generator, controller, annualised, started,
+                        grid)
 
 
 def _certify(instance, lattice, settings, tolerance, max_relaxations,
              relaxation_cost_ratio, coarse_step, verbose, evaluator,
-             economics, battery, generator, controller, annualised, started) -> Certificate:
+             economics, battery, generator, controller, annualised, started,
+             grid=None) -> Certificate:
     # --- phase 1: a strong incumbent, bought with the cheap oracle only
     incumbent, design, sims = coarse_incumbent(instance, lattice, economics, battery,
                                                generator, controller, annualised,
@@ -775,12 +819,12 @@ def _certify(instance, lattice, settings, tolerance, max_relaxations,
     full_size = lattice.size
     lattice, removed_by_narrowing, narrowing_calls = narrow_to_incumbent(
         instance, lattice, incumbent, economics, battery, generator,
-        solver=solver, verbose=verbose)
+        solver=solver, grid=grid, verbose=verbose)
 
     root = _Box(-np.inf, lattice.n_pv, lattice.n_batt, lattice.n_inv,
                 lattice.generator_ratings, lattice.n_pv_ac)
     root.bound = _bound(instance, lattice, root, economics, battery, generator,
-                        solver=solver)
+                        solver=solver, grid=grid)
     relaxations, boxes, pruned_points, enumerated, free_prunes = (
         1 + narrowing_calls, 0, 0, 0, 0)
     queue: list[_Box] = [root]
@@ -831,7 +875,7 @@ def _certify(instance, lattice, settings, tolerance, max_relaxations,
                 continue
             child.bound = max(floor,
                               _bound(instance, lattice, child, economics, battery,
-                                     generator, solver=solver))
+                                     generator, solver=solver, grid=grid))
             relaxations += 1
             if child.bound >= incumbent - margin:
                 # Nothing inside can beat the sizing already in hand — and a box holding no
@@ -853,7 +897,8 @@ def _certify(instance, lattice, settings, tolerance, max_relaxations,
     # --- the cost-optimal optimum, for the price of the heuristic
     z_opt_lower = root.bound
     design_opt, z_opt = _best_cost_optimal(instance, lattice, design, economics,
-                                           battery, generator, annualised, solver=solver)
+                                           battery, generator, annualised, solver=solver,
+                                           grid=grid)
     relaxations += 1
 
     return Certificate(
@@ -870,7 +915,8 @@ def _certify(instance, lattice, settings, tolerance, max_relaxations,
 
 
 def _best_cost_optimal(instance, lattice, near, economics, battery, generator,
-                       annualised, solver: str | None = None) -> tuple[Capacities, float]:
+                       annualised, solver: str | None = None,
+                       grid=None) -> tuple[Capacities, float]:
     """The best design under cost-optimal dispatch, over the lattice.
 
     This is an integer programme and it is given to the solver as one: the capacities are
@@ -904,7 +950,7 @@ def _best_cost_optimal(instance, lattice, near, economics, battery, generator,
         relax_commitment=True, weights=weights, terminal="free", solver=solver,
         initial_soc_fraction=battery.initial_soc_fraction,
         integer_units=(lattice.pv_unit_kw, lattice.batt_unit_kwh, lattice.inv_unit_kw),
-        generator_ratings=lattice.generator_ratings)
+        generator_ratings=lattice.generator_ratings, grid=grid)
     return solved.capacities, solved.value
 
 
@@ -1117,6 +1163,9 @@ def certify_exhaustive(
         fuel_usd_l=settings.economics.diesel_price_usd_l,
         voll_usd_kwh=settings.economics.value_of_lost_load_usd_kwh,
         min_service_fraction=settings.economics.min_service_fraction,
+        grid_connection_usd_yr=_grid_capital_usd_yr(settings),
+        grid_import_usd_kwh=settings.grid.import_usd_kwh if settings.grid.connected else 0.0,
+        grid_export_usd_kwh=settings.grid.export_usd_kwh if settings.grid.connected else 0.0,
         conversion_usd_kw=settings.coupling.cost_usd_kw(lattice.architecture))
     battery = BatteryModel.from_spec(settings.battery)
     biggest = max(settings.generators, key=lambda g: g.rating_kw)
@@ -1127,12 +1176,12 @@ def certify_exhaustive(
     annualised = economics.annualised()
 
     started = time.time()
-    with _Evaluator((instance, economics, battery, generator, controller, annualised),
+    grid = _grid_link(instance, settings)
+    with _Evaluator((instance, economics, battery, generator, controller, annualised, grid),
                     workers=workers) as evaluator:
         return _certify_exhaustive(instance, lattice, settings, coarse_step, verbose,
                                    evaluator, economics, battery, generator, controller,
-                                   annualised, started)
-
+                                   annualised, started, grid)
 
 def _measure_design_cost(lattice: "Lattice", evaluator: "_Evaluator") -> float:
     """Seconds one design costs, timed on a batch the size the enumeration will use.
@@ -1183,7 +1232,7 @@ def _worth_narrowing(survivors: int, per_design_s: float, verbose: bool) -> bool
 
 def _certify_exhaustive(instance, lattice, settings, coarse_step, verbose, evaluator,
                         economics, battery, generator, controller, annualised,
-                        started) -> Certificate:
+                        started, grid=None) -> Certificate:
     incumbent, design, sims = coarse_incumbent(instance, lattice, economics, battery,
                                                generator, controller, annualised,
                                                step=coarse_step, evaluator=evaluator)
@@ -1214,7 +1263,7 @@ def _certify_exhaustive(instance, lattice, settings, coarse_step, verbose, evalu
     if _worth_narrowing(survivors, _measure_design_cost(lattice, evaluator), verbose):
         lattice, removed_by_narrowing, narrowing_calls = narrow_to_incumbent(
             instance, lattice, incumbent, economics, battery, generator,
-            solver=settings.solver.name, verbose=verbose)
+            solver=settings.solver.name, grid=grid, verbose=verbose)
     else:
         removed_by_narrowing, narrowing_calls = 0, 0
 
@@ -1258,7 +1307,7 @@ def _certify_exhaustive(instance, lattice, settings, coarse_step, verbose, evalu
 
     design_opt, z_opt = _best_cost_optimal(instance, lattice, design, economics, battery,
                                            generator, annualised,
-                                           solver=settings.solver.name)
+                                           solver=settings.solver.name, grid=grid)
     return Certificate(
         design=design, z_rule=incumbent, lower_bound=z_opt,
         gap_abs=incumbent - z_opt, gap_rel=100.0 * (incumbent - z_opt) / max(incumbent, 1.0),

@@ -139,6 +139,12 @@ function renderForm() {
       const path = el.dataset.path;
       const raw = el.type === "number" ? parseFloat(el.value) : el.value;
       state.overrides[path] = raw;
+      if (path.startsWith("currency.")) { majDevise(); return; }
+      const loc = $("#" + el.id + "-loc");
+      if (loc && Number.isFinite(raw))
+        loc.textContent = `≈ ${nf(raw * devise.per_usd, devise.per_usd > 50 ? 0 : 2)} `
+          + `${(state.groups.flatMap(g => g.fields).find(x => x.path === path)?.unit ?? "")
+               .replace("$", devise.code)}`;
       el.closest(".field").classList.toggle(
         "changed", String(raw) !== String(state.defaults[path]));
     });
@@ -153,13 +159,24 @@ function fieldRow(f) {
        ).join("")}</select>`
     : `<input id="${id}" data-path="${f.path}" type="number"
          step="${f.step ?? (f.kind === "integer" ? 1 : "any")}" value="${f.value}">`;
+  // A price typed in dollars and read back in francs, with a factor of six hundred between
+  // them and nothing on the form to say so, is a mistake waiting to be made. The equivalent
+  // is shown beside the box rather than converting the box, which would round the sourced
+  // figure on every round trip.
+  const local = f.unit.includes("$") && devise.per_usd !== 1 && Number.isFinite(f.value)
+    ? `<div class="hint" id="${id}-loc">≈ ${nf(f.value * devise.per_usd,
+        devise.per_usd > 50 ? 0 : 2)} ${f.unit.replace("$", devise.code)}</div>` : "";
   return `<div class="field">
       <div>
         <label for="${id}">${f.label}</label>
         ${f.hint ? `<div class="hint">${f.hint}</div>` : ""}
         ${f.source ? `<div class="source"><b>Source</b><span>${f.source}</span></div>` : ""}
       </div>
-      <div class="control">${control}${f.unit ? `<span class="unit">${f.unit}</span>` : ""}</div>
+      <div class="control" style="flex-direction:column;align-items:stretch">
+        <div style="display:flex;align-items:center;gap:8px">
+          ${control}${f.unit ? `<span class="unit">${f.unit}</span>` : ""}
+        </div>${local}
+      </div>
     </div>`;
 }
 
@@ -749,6 +766,15 @@ function show(view) {
 }
 
 /* ------------------------------------------------------------------ start */
+function majDevise() {
+  const code = state.overrides["currency.local_code"];
+  const parEuro = parseFloat(state.overrides["currency.xof_per_eur"]);
+  const dollarsParEuro = parseFloat(state.overrides["currency.usd_per_eur"]);
+  if (code && Number.isFinite(parEuro) && Number.isFinite(dollarsParEuro) && dollarsParEuro)
+    devise = { code, per_usd: parEuro / dollarsParEuro };
+  renderForm();
+}
+
 (async function boot() {
   const b = await (await fetch("/api/bootstrap")).json();
   state.groups = b.groups;
@@ -759,7 +785,8 @@ function show(view) {
   state.projects = b.projects || [];
   state.sites = b.sites || [];
   state.site = state.sites.find(x => x.name === state.overrides["site"]) || state.sites[0];
-  renderForm(); renderProjects(); renderSize(null); renderPlan(null);
+  majDevise();
+  renderProjects(); renderSize(null); renderPlan(null);
   renderLieu(); await loadArchetypes();
 
   $$(".nav button").forEach(b => b.onclick = () => show(b.dataset.view));

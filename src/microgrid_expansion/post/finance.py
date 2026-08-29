@@ -37,6 +37,8 @@ class Financials:
     initial_capital: float = 0.0
     annual_revenue: float = 0.0
     annual_operating: float = 0.0
+    salvage: float = 0.0
+    demand_growth_rate: float = 0.0
     irr: float | None = None
     payback_years: float | None = None
     discounted_payback_years: float | None = None
@@ -52,6 +54,8 @@ class Financials:
             "discounted_payback_years": self.discounted_payback_years,
             "net_present_value_usd": self.net_present_value,
             "subsidy_usd": self.subsidy_usd,
+            "salvage_usd": self.salvage,
+            "demand_growth_rate": self.demand_growth_rate,
             "cash_flows": [{"year": c.year, "capital": c.capital,
                             "operating": c.operating, "revenue": c.revenue,
                             "net": c.net} for c in self.years],
@@ -98,6 +102,7 @@ def appraise(
     discount_rate: float = config.DISCOUNT_RATE,
     assets: dict[str, Asset] | None = None,
     subsidy_usd: float = 0.0,
+    demand_growth_rate: float = 0.0,
 ) -> Financials:
     """Build the project's cash flows and read the usual measures off them.
 
@@ -115,15 +120,32 @@ def appraise(
                       for name, capital in capital_by_asset.items())
     revenue = tariff_usd_kwh * energy_served_kwh
 
+    # An asset replaced late still has life in it when the horizon ends, and the levelised
+    # cost already credits that. Leaving it out here put two figures on one page computed on
+    # different conventions -- a sixteen-year battery replaced once on a twenty-five-year
+    # horizon leaves nine years of value the one counted and the other did not.
+    salvage = 0.0
+    for name, capital in capital_by_asset.items():
+        life = assets[name].lifetime_years
+        used = horizon_years % life
+        if used:
+            salvage += capital * (life - used) / life
+
     flows = [CashFlow(year=0, capital=initial - subsidy_usd)]
     for year in range(1, horizon_years + 1):
         replacement = sum(
             capital for name, capital in capital_by_asset.items()
             if year in assets[name].replacement_years(horizon_years)
         )
+        # Revenue follows the demand the developer expects, not the demand of the sizing
+        # year held for a quarter of a century. The rate is stated rather than derived: the
+        # growth law is a mixture over behaviours by connection age, and turning it into an
+        # energy multiplier would mean simulating every year of the horizon.
+        grown = revenue * (1.0 + demand_growth_rate) ** (year - 1)
         flows.append(CashFlow(year=year, capital=replacement,
                               operating=annual_operating_cost + maintenance,
-                              revenue=revenue))
+                              revenue=grown))
+    flows[-1].revenue += salvage
 
     net = [c.net for c in flows]
     cumulative, running = [], 0.0
@@ -141,4 +163,5 @@ def appraise(
         irr=_irr(net), payback_years=_crossing(cumulative),
         discounted_payback_years=_crossing(discounted),
         net_present_value=discounted[-1], subsidy_usd=subsidy_usd,
+        salvage=salvage, demand_growth_rate=demand_growth_rate,
     )

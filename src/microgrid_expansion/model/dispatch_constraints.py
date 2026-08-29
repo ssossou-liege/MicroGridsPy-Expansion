@@ -29,7 +29,7 @@ from .investment_constraints import capacity
 def add_dispatch_constraints(m: linopy.Model, v: dict, c: Coords, cfg: ModelConfig,
                              data: dict, battery, generator,
                              architecture: str = "dc",
-                             opening_condition: str = "fixed") -> None:
+                             opening_condition: str = "fixed", settings=None) -> None:
     """Balance, conversion limits and storage dynamics on the whole tree.
 
     ``data`` carries, per node, the arrays of the reduced operating year: ``demand``,
@@ -37,6 +37,12 @@ def add_dispatch_constraints(m: linopy.Model, v: dict, c: Coords, cfg: ModelConf
     """
     ac_coupled = architecture == "ac"
     divided = architecture == "mixte"
+    grid_spec = getattr(settings, "grid", None) if settings is not None else None
+    grid_room = 0.0
+    if grid_spec is not None and grid_spec.connected:
+        grid_room = (float(grid_spec.capacity_kw) if grid_spec.capacity_kw > 0
+                     else float(max(np.asarray(block["demand"]).max()
+                                    for block in data.values())) * 2.0)
     eta_pv = (battery.charge_efficiency * config.AC_DOUBLE_CONVERSION_EFF
               if ac_coupled else battery.charge_efficiency)
     # Array energy crossing the load's bus on its way to storage is converted twice, up by
@@ -64,6 +70,8 @@ def add_dispatch_constraints(m: linopy.Model, v: dict, c: Coords, cfg: ModelConf
         ac_load = v["ac_load"].sel(node=node)
         ac_batt = v["ac_batt"].sel(node=node)
         ac_curtail = v["ac_curtail"].sel(node=node)
+        grid_load = v["grid_load"].sel(node=node)
+        grid_export = v["grid_export"].sel(node=node)
         unserved = v["unserved"].sel(node=node)
         p_gen = v["p_gen"].sel(node=node)
         commit = v["commit"].sel(node=node)
@@ -76,8 +84,26 @@ def add_dispatch_constraints(m: linopy.Model, v: dict, c: Coords, cfg: ModelConf
                           name=f"gen_split_{node}")
         m.add_constraints(ac_load + ac_batt + ac_curtail - yield_ * cap_pv_ac == 0,
                           name=f"pv_ac_split_{node}")
-        m.add_constraints(pv_load + ac_load + gen_load + p_dis + unserved == demand,
-                          name=f"balance_{node}")
+
+        # The national grid, where the scenario says it has reached the village. It must be
+        # in the programme as well as in the simulation: the controller can import cheaply,
+        # so a relaxation that cannot would price the plant above what the controller
+        # achieves and cease to be a lower bound -- which is exactly what happened on the
+        # reference year before this was added, the reported gap going to minus forty per
+        # cent.
+        live = _grid_live(block, c)
+        if live is None:
+            m.add_constraints(grid_load == 0, name=f"no_grid_{node}")
+            m.add_constraints(grid_export == 0, name=f"no_export_{node}")
+        else:
+            m.add_constraints(grid_load - live * grid_room <= 0, name=f"grid_cap_{node}")
+            m.add_constraints(grid_export - live * grid_room <= 0,
+                              name=f"grid_export_cap_{node}")
+            m.add_constraints(grid_export - curtail - ac_curtail <= 0,
+                              name=f"export_from_spill_{node}")
+
+        m.add_constraints(pv_load + ac_load + gen_load + p_dis + grid_load + unserved
+                          == demand, name=f"balance_{node}")
         m.add_constraints(unserved - demand <= 0, name=f"unserved_cap_{node}")
 
         m.add_constraints(p_gen - cap_gen <= 0, name=f"gen_rating_{node}")
@@ -138,6 +164,23 @@ def add_dispatch_constraints(m: linopy.Model, v: dict, c: Coords, cfg: ModelConf
         m.add_constraints(soc - battery.soc_max * ceiling * cap_batt <= 0,
                           name=f"soc_upper_{node}")
         m.add_constraints(soc - battery.soc_min * cap_batt >= 0, name=f"soc_lower_{node}")
+
+
+def _grid_live(block: dict, c: Coords) -> "xr.DataArray | None":
+    """The hours this node's feeder is energised, or nothing when it has none.
+
+    The outage pattern is generated per node from the site's regime rather than carried in
+    the reduced year, because the reduction summarises what the plant must serve and not
+    what the utility happens to do; the same regime applies wherever the line has arrived.
+    """
+    if not block.get("grid_connected"):
+        return None
+    from ..resource.grid_availability import outage_pattern
+
+    hours = int(np.asarray(block["demand"]).size)
+    live = outage_pattern(hours, block.get("grid_availability", 0.6),
+                          block.get("grid_mean_outage_hours", 4.0), seed=0)
+    return xr.DataArray(live.astype(float), coords={"step": c.step}, dims="step")
 
 
 def _grid(values: np.ndarray, c: Coords) -> xr.DataArray:

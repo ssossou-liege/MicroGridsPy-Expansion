@@ -33,7 +33,8 @@ def add_variables(m: linopy.Model, c: Coords, relax_commitment: bool = True) -> 
 
     # --- operating: every flow named by where it goes
     for name in ("pv_load", "pv_batt", "gen_load", "gen_batt", "gen_spill",
-                 "p_dis", "curtail", "ac_load", "ac_batt", "ac_curtail"):
+                 "p_dis", "curtail", "ac_load", "ac_batt", "ac_curtail",
+                 "grid_load", "grid_export"):
         v[name] = m.add_variables(lower=0.0, coords=grid, name=name)
     v["unserved"] = m.add_variables(lower=0.0, coords=grid, name="unserved")
     v["p_gen"] = m.add_variables(lower=0.0, coords=grid, name="p_gen")

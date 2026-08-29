@@ -56,13 +56,29 @@ def simulate_node(plan, year: dict, costs: dict, settings: ProjectSettings,
     if not admissible:
         return NodeTrace(float("inf"), 0.0, 0.0, 0.0, 0.0, False)
 
+    # The connection this node has, if the line has reached it by this milestone. Built from
+    # the site's own outage regime, and only where the scenario says the grid is there.
+    link = None
+    if getattr(year, "get", None) and year.get("grid_connected") and settings.grid.connected:
+        from ..resource.grid_availability import outage_pattern
+        from .simulator import GridLink
+        link = GridLink(
+            available=outage_pattern(year["demand"].size, settings.grid.availability,
+                                     settings.grid.mean_outage_hours, seed=0),
+            capacity_kw=settings.grid.capacity_kw,
+            import_usd_kwh=settings.grid.import_usd_kwh,
+            export_usd_kwh=settings.grid.export_usd_kwh,
+            exports=settings.grid.export_usd_kwh > 0.0)
+
     degradation = settings.battery.degradation_usd_kwh()
     voll = settings.economics.value_of_lost_load_usd_kwh
     trace = _simulate_year(year["demand"], year["yield"], year["t_amb"],
-                           capacities, battery, generator, controller)
+                           capacities, battery, generator, controller, grid=link)
     operating = (trace["fuel"] * costs["fuel_price"]
                  + trace["discharge"] * degradation
-                 + trace["unserved"] * voll)
+                 + trace["unserved"] * voll
+                 + trace.get("grid_import", 0.0) * settings.grid.import_usd_kwh
+                 - trace.get("grid_export", 0.0) * settings.grid.export_usd_kwh)
     fuel = trace["fuel"]
     served = trace["demand"] - trace["unserved"]
     unserved = trace["unserved"]
@@ -97,11 +113,15 @@ def simulate_node(plan, year: dict, costs: dict, settings: ProjectSettings,
 
 
 def _simulate_year(demand, yield_, temperature, capacities, battery, generator,
-                   controller) -> dict:
+                   controller, grid=None) -> dict:
     """Run the controller over a node's whole operating year."""
     dispatch = simulate(demand, yield_, temperature, capacities, battery, generator,
-                        controller)
+                        controller, grid=grid)
     return {
+        "grid_import": (0.0 if dispatch.grid_import_kw is None
+                        else float(dispatch.grid_import_kw.sum())),
+        "grid_export": (0.0 if dispatch.grid_export_kw is None
+                        else float(dispatch.grid_export_kw.sum())),
         "fuel": float(dispatch.fuel_litres.sum()),
         "discharge": float(dispatch.discharge_kw.sum()),
         "unserved": float(dispatch.unserved_kw.sum()),
@@ -127,7 +147,8 @@ def evaluate_plan(plans: dict, tree: ScenarioTree, rep: dict[int, RepDays] | Non
     traces: dict[int, dict] = {}
     for node in tree.nodes:
         data = tree.node_data[node]
-        year = {"demand": data.demand, "yield": data.pv_unit, "t_amb": data.t_amb}
+        year = {"demand": data.demand, "yield": data.pv_unit, "t_amb": data.t_amb,
+                "grid_connected": getattr(data, "grid_connected", False)}
         trace = simulate_node(plans[node], year, data.costs,
                               settings, architecture, controller)
         if not trace.feasible:

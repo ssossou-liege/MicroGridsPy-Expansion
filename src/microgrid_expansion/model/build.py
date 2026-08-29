@@ -55,7 +55,8 @@ def catalogue_minorant(settings: ProjectSettings, cfg: ModelConfig) -> tuple[flo
     return min(intercepts), min(slopes)
 
 
-def node_data(tree: ScenarioTree, rep: dict[int, RepDays]) -> dict[int, dict]:
+def node_data(tree: ScenarioTree, rep: dict[int, RepDays],
+              settings=None) -> dict[int, dict]:
     """Reduced operating arrays per node, on the ``(rday, htod)`` grid."""
     blocks = {}
     for node in tree.nodes:
@@ -67,6 +68,10 @@ def node_data(tree: ScenarioTree, rep: dict[int, RepDays]) -> dict[int, dict]:
             "retention": 1.0 - np.clip(days.self_discharge, 0.0, 1.0),
             "weights": days.weight,
             "costs": tree.node_data[node].costs,
+            "grid_connected": getattr(tree.node_data[node], "grid_connected", False),
+            "grid_availability": (settings.grid.availability if settings else 0.6),
+            "grid_mean_outage_hours": (settings.grid.mean_outage_hours
+                                       if settings else 4.0),
         }
     return blocks
 
@@ -87,10 +92,10 @@ def build_model(tree: ScenarioTree, rep: dict[int, RepDays], cfg: ModelConfig,
     model = linopy.Model()
     variables = add_variables(model, coords, relax_commitment=relax_commitment)
     add_investment_constraints(model, variables, coords, cfg, architecture=architecture)
-    data = node_data(tree, rep)
+    data = node_data(tree, rep, settings)
     add_dispatch_constraints(model, variables, coords, cfg, data, battery, generator,
                              architecture=architecture,
-                             opening_condition=opening_condition)
+                             opening_condition=opening_condition, settings=settings)
     add_objective(model, variables, coords, cfg, data, generator,
                   catalogue_minorant(settings, cfg),
                   architecture=architecture, settings=settings)

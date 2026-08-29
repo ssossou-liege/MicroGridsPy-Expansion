@@ -43,11 +43,23 @@ def draw_path(space: UncertaintySpace, stage_years, rng: np.random.Generator) ->
 
     trajectory = draw_trajectory(rng)
     cost_scenario = draw_cost_scenario(rng)
+
+    # The line arrives once and stays. Drawn per stage and forgotten between them, a village
+    # would be connected at year five, off again at ten and back at fifteen, which is not
+    # what a distribution network does; the arrival is a state, so it is drawn as one.
+    hazards = getattr(space.grid, "hazard_by_stage", ())
+    connected_from = None
+    for index, _ in enumerate(stage_years):
+        hazard = float(hazards[index]) if index < len(hazards) else 0.0
+        if connected_from is None and hazard > 0.0 and rng.random() < hazard:
+            connected_from = index
+
     stages = []
-    for year in stage_years:
+    for index, year in enumerate(stage_years):
         stage = draw_axis_values(space, year, rng)
         stage["trajectory"] = trajectory
         stage["cost_scenario"] = cost_scenario
+        stage["grid_connected"] = (connected_from is not None and index >= connected_from)
         stages.append(stage)
     return stages
 

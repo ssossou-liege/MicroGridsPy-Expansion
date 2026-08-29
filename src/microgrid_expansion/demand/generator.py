@@ -291,7 +291,17 @@ def _simulate_month(
     scaling: "ArchetypeScaling | None" = None,
 ) -> np.ndarray:
     """Minute-resolution community load [W] over one calendar month."""
+    import random as _stdlib_random
+
     from ramp import UseCase
+
+    # The appliance library draws its usage windows and its power variation from Python's
+    # global random module, and seeds it only inside ``UseCase`` -- after the users have been
+    # built, and only when the seed is truthy, which a seed of zero is not. Both together
+    # left the load unseeded: three runs of one sizing differed by a tenth of a per cent,
+    # which is larger than several of the differences this work reports. Seeding here covers
+    # everything the month draws, before anything is drawn.
+    _stdlib_random.seed(int(seed) + 1)
 
     n_days = calendar.monthrange(year, month)[1]
     users: list = []
@@ -306,7 +316,13 @@ def _simulate_month(
 
     start = f"{year}-{month:02d}-01"
     end = f"{year}-{month:02d}-{n_days:02d}"
-    use_case = UseCase(users=users, date_start=start, date_end=end, random_seed=seed)
+    # RAMP seeds Python's global random module, and only ``if self.random_seed:`` -- so a
+    # seed of zero, which is this project's default, leaves it unseeded and drawing from
+    # whatever state the process happens to be in. Three runs of one sizing then differed by
+    # a tenth of a per cent, which is more than the differences this work reports. Offset so
+    # the value is never falsy, and never zero for any month.
+    use_case = UseCase(users=users, date_start=start, date_end=end,
+                       random_seed=int(seed) + 1)
     profile = np.asarray(use_case.generate_daily_load_profiles(), dtype=float).ravel()
 
     expected = n_days * MINUTES_PER_DAY

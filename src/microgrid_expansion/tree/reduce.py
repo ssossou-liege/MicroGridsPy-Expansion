@@ -40,7 +40,8 @@ def stage_features(paths: list[ScenarioPath], stage_year: int) -> np.ndarray:
     for path in paths:
         demand = path.demand[stage_year]
         yield_ = path.pv_unit[stage_year]
-        costs = next(d.costs for d in path.draws if d.stage_year == stage_year)
+        draw = next(d for d in path.draws if d.stage_year == stage_year)
+        costs = draw.costs
         daytime = demand.reshape(-1, 24)[:, 7:19].sum() / max(demand.sum(), 1e-9)
         rows.append([
             demand.sum(),                       # energy to serve
@@ -51,6 +52,10 @@ def stage_features(paths: list[ScenarioPath], stage_year: int) -> np.ndarray:
             costs["fuel_price"],
             costs["capex_pv"],
             costs["capex_batt"],
+            # Connected and unconnected futures must not be averaged into one representative:
+            # they call for different plants, which is the whole reason for branching on the
+            # arrival. Weighted well above the other channels so the medoids separate on it.
+            10.0 * float(getattr(draw, "grid_connected", False)),
         ])
     features = np.array(rows, dtype=float)
     spread = features.std(axis=0)

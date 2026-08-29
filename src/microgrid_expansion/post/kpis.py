@@ -33,6 +33,9 @@ def node_kpis(plans: dict, node: int, tree: ScenarioTree, simulated: dict) -> di
         "probability": tree.prob[node],
         "pv_kw": plan.pv_kw,
         "pv_ac_kw": getattr(plan, "pv_ac_kw", 0.0),
+        # Which branches are the connected ones. Without it the reader of an expansion plan
+        # sees two futures that call for different plants and cannot tell them apart.
+        "grid_connected": bool(getattr(tree.node_data[node], "grid_connected", False)),
         "battery_kwh": plan.battery_kwh,
         "inverter_kw": plan.inverter_kw,
         "generator_kw": plan.generator_kw,

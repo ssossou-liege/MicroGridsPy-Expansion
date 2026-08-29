@@ -48,6 +48,10 @@ ESSENTIAL: tuple[Field, ...] = (
     Field("economics.tariff_usd_kwh", "Tarif visé", "$/kWh", step=0.001,
           source_path="economics.tariff",
           hint="Cible de coût actualisé ; l'outil rapporte la subvention qui l'atteint."),
+    Field("economics.demand_growth_rate", "Croissance annuelle de la demande", "", step=0.01,
+          hint="Employée par l'analyse financière seule, pour projeter les recettes. Le "
+               "dimensionnement porte sur l'année et l'ancienneté déclarées ; servir cette "
+               "croissance est l'objet du plan d'extension."),
 )
 
 #: How amounts are shown. The model computes in dollars because that is the currency its
@@ -61,6 +65,39 @@ CURRENCY: tuple[Field, ...] = (
     Field("currency.xof_per_eur", "Unités locales par euro", "", step=0.01,
           hint="Parité fixe pour le franc CFA ; taux de marché pour les autres."),
     Field("currency.usd_per_eur", "Dollars par euro", "", step=0.01),
+)
+
+#: The national grid, where there is one or where one is expected. Half the projects that
+#: need sizing sit where the grid is due within a decade, and the question is not whether it
+#: arrives but what to build in the meantime.
+GRID: tuple[Field, ...] = (
+    Field("grid.connected", "Raccordement au réseau", kind="choice",
+          choices=("non", "oui"),
+          hint="Un réseau intermittent déplace le gazole, pas le stockage : c'est le groupe "
+               "électrogène qu'il remplace, la batterie restant nécessaire pour les "
+               "coupures."),
+    Field("grid.availability", "Disponibilité du réseau", "", step=0.01,
+          hint="Part des heures où le départ est sous tension."),
+    Field("grid.mean_outage_hours", "Durée typique d'une coupure", "h", step=0.5,
+          hint="Ce que la centrale doit porter seule, et donc ce qui dimensionne le "
+               "stockage. Une moyenne de disponibilité ne le dit pas."),
+    Field("grid.import_usd_kwh", "Prix de l'énergie importée", "$/kWh", step=0.01,
+          source_path="grid.tariff",
+          hint="À relever auprès du distributeur : un tarif réglementé est propre au pays "
+               "et souvent par tranches. La valeur proposée n'est qu'un ordre de grandeur."),
+    Field("grid.export_usd_kwh", "Prix de l'énergie exportée", "$/kWh", step=0.01,
+          source_path="grid.tariff",
+          hint="Zéro si l'injection n'est pas rémunérée ; le surplus est alors écrêté."),
+    Field("grid.capacity_kw", "Puissance de raccordement", "kW", step=1.0,
+          hint="Zéro pour n'imposer aucune limite au-delà de celle de la conversion."),
+    Field("grid.connection_usd", "Coût du raccordement", "$", step=100.0,
+          hint="Ligne, comptage, protections."),
+    Field("grid.arrival_uncertain", "Traiter l'arrivée comme incertaine", kind="choice",
+          choices=("non", "oui"),
+          hint="Pour un village où la ligne est annoncée sans date. Le plan d'extension "
+               "branche alors sur son arrivée : ce qu'on engage aujourd'hui doit tenir "
+               "qu'elle vienne ou non. Sans objet quand le réseau est déjà là, ou "
+               "manifestement pas prévu."),
 )
 
 #: Prices and equipment, which move from one market to another.
@@ -104,6 +141,7 @@ ADVANCED: tuple[Field, ...] = (
 GROUPS: tuple[tuple[str, str, tuple[Field, ...]], ...] = (
     ("essentiel", "Le projet", ESSENTIAL),
     ("monnaie", "Monnaie d'affichage", CURRENCY),
+    ("reseau", "Réseau national", GRID),
     ("materiel", "Prix et matériel", EQUIPMENT),
     ("avance", "Architecture et conduite", ADVANCED),
 )
@@ -145,6 +183,13 @@ def provenance_of(settings: ProjectSettings, source_path: str) -> str | None:
         source = getattr(record, "source", None)
         if source:
             return str(source)
+        # No source is itself worth showing, and the note is where a record says so. A field
+        # whose value nobody has checked should say nothing rather than look sourced -- but
+        # a field that says "unsourced, go and ask the concession" is telling the reader the
+        # single most useful thing about it.
+        note = getattr(record, "note", None)
+        if note and not getattr(record, "verified", False):
+            return f"non sourcé — {note}"
     return None
 
 
@@ -158,7 +203,9 @@ def describe(settings: ProjectSettings | None = None) -> list[dict]:
             entries.append({
                 "path": f.path, "label": f.label, "unit": f.unit, "kind": f.kind,
                 "choices": list(f.choices), "step": f.step, "hint": f.hint,
-                "value": read(settings, f.path),
+                "value": ({True: "oui", False: "non"}[read(settings, f.path)]
+                          if f.kind == "choice" and isinstance(read(settings, f.path), bool)
+                          else read(settings, f.path)),
                 "source": provenance_of(settings, f.source_path),
             })
         out.append({"key": key, "title": title, "fields": entries})
@@ -185,7 +232,8 @@ def apply(settings: ProjectSettings, overrides: dict[str, Any]) -> ProjectSettin
             setattr(owner, name, None)
             continue
         if isinstance(current, bool):
-            value = bool(value)
+            value = value in (True, "oui", "true", 1, "1") if isinstance(value, (str, bool, int)) \
+                else bool(value)
         elif isinstance(current, int) and not isinstance(current, bool):
             value = int(round(float(value)))
         elif isinstance(current, float) or current is None:

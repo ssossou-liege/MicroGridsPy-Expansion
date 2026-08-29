@@ -82,10 +82,45 @@ class PolicyAxis:
 
 
 @dataclass
+class GridArrivalAxis:
+    """When, and whether, the national grid reaches the village.
+
+    This is the uncertainty a developer in these countries actually loses sleep over. A line
+    is announced for the fifth year, or the tenth, or it never comes; and the plant that is
+    right if it arrives is not the plant that is right if it does not. Sizing for the
+    announcement strands capital when the line is late, and sizing against it strands the
+    plant when the line arrives — which is the case a two-stage decision under uncertainty
+    exists to answer, and which no tool in this class answers today.
+
+    The arrival is a hazard rather than a date: each milestone carries a probability that the
+    line arrives during it, given that it has not arrived yet. Stated that way the developer
+    supplies what they can actually know — "it is announced, so perhaps one chance in three
+    within five years" — instead of a date nobody has.
+    """
+
+    #: Chance the line arrives during each milestone, given it has not arrived before.
+    #: The default is a village with no announcement: unlikely soon, less unlikely later.
+    hazard_by_stage: tuple[float, ...] = (0.0, 0.15, 0.20, 0.20, 0.20)
+    #: Share of hours the feeder is energised once it exists.
+    availability: float = 0.6
+    #: Typical outage length once it exists [h].
+    mean_outage_hours: float = 4.0
+
+    def survival(self) -> tuple[float, ...]:
+        """Probability the line has *not* arrived by the end of each milestone."""
+        out, alive = [], 1.0
+        for hazard in self.hazard_by_stage:
+            alive *= (1.0 - float(hazard))
+            out.append(alive)
+        return tuple(out)
+
+
+@dataclass
 class UncertaintySpace:
-    """Container bundling the four families."""
+    """Container bundling the five families."""
 
     demand: DemandAxis = field(default_factory=DemandAxis)
     resource: ResourceAxis = field(default_factory=ResourceAxis)
     economic: EconomicAxis = field(default_factory=EconomicAxis)
     policy: PolicyAxis = field(default_factory=PolicyAxis)
+    grid: GridArrivalAxis = field(default_factory=GridArrivalAxis)

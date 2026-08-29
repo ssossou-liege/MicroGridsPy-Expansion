@@ -114,6 +114,26 @@ class GeneratorModel:
 
 
 @dataclass(frozen=True)
+class GridLink:
+    """A connection to the national grid, as the controller sees it hour by hour.
+
+    ``available`` carries the outage pattern rather than an availability figure: what a plant
+    must carry alone is the length of the stretches, not their average, and averaging them
+    away would size the storage against a grid that dims instead of one that goes out.
+    """
+
+    available: np.ndarray | None = None
+    capacity_kw: float = 0.0
+    import_usd_kwh: float = 0.0
+    export_usd_kwh: float = 0.0
+    exports: bool = False
+
+    @property
+    def present(self) -> bool:
+        return self.available is not None
+
+
+@dataclass(frozen=True)
 class Controller:
     """Parameters of the generation-balance rule.
 
@@ -259,15 +279,25 @@ class Dispatch:
         """Annual operating cost: fuel, storage degradation and unserved energy."""
         degradation = (config.battery_degradation_cost()
                        if degradation_usd_kwh is None else degradation_usd_kwh)
+        imported = (0.0 if self.grid_import_kw is None
+                    else float(self.grid_import_kw.sum()) * self.grid_import_usd_kwh)
+        exported = (0.0 if self.grid_export_kw is None
+                    else float(self.grid_export_kw.sum()) * self.grid_export_usd_kwh)
         return float(self.fuel_litres.sum() * generator.fuel_price_usd_l
                      + self.discharge_kw.sum() * degradation
-                     + self.unserved_kw.sum() * voll_usd_kwh)
+                     + self.unserved_kw.sum() * voll_usd_kwh
+                     + imported - exported)
 
     @property
     def served_kwh(self) -> float:
         return float(self.demand_kwh - self.unserved_kw.sum())
 
     demand_kwh: float = 0.0
+    #: Energy drawn from and injected into the national grid [kW per step], and their prices.
+    grid_import_kw: np.ndarray | None = None
+    grid_export_kw: np.ndarray | None = None
+    grid_import_usd_kwh: float = 0.0
+    grid_export_usd_kwh: float = 0.0
     #: Array power reaching the load directly, before any storage.
     pv_to_load_kw: np.ndarray | None = None
 
@@ -318,7 +348,9 @@ def _controller_loop(n, demand, pv, soc, losses, ceilings, next_ceiling, reserve
                      gen, charge, discharge, curtailed, unserved, pv_to_load,
                      inverter_flow, floor, share_dc, eta_ac, power_limit, timestep_h,
                      cap_pv_kw, cap_pv_ac_kw, cap_inverter_kw, cap_generator_kw,
-                     eta_charge, eta_discharge, gen_setpoint, gen_min_load):
+                     eta_charge, eta_discharge, gen_setpoint, gen_min_load,
+                     grid_available, grid_import, grid_export, grid_capacity_kw,
+                     grid_exports):
     """The controller's hour-by-hour recursion, over scalars and arrays alone.
 
     Lifted out of :func:`simulate` so that it can be compiled. The body is a scalar
@@ -377,11 +409,28 @@ def _controller_loop(n, demand, pv, soc, losses, ceilings, next_ceiling, reserve
         inverter_flow[h] += charge_ac
 
         charge_kw = charge_dc + charge_ac
-        curtailed[h] = (surplus_dc - charge_dc) + (surplus_ac - charge_ac) + clipped
+        reste = (surplus_dc - charge_dc) + (surplus_ac - charge_ac)
+        # What the battery could not take goes to the grid before it is thrown away, up to
+        # what the connection can inject and what the converter can still carry. Only the
+        # part on the battery's bus needs the inverter to get there; the part already on the
+        # load's bus is on the right side of it.
+        if grid_available[h] and grid_exports and reste > 1e-9:
+            room = grid_capacity_kw if grid_capacity_kw > 0.0 else reste
+            grid_export[h] = min(reste, room)
+            reste -= grid_export[h]
+        curtailed[h] = reste + clipped
         charge[h] = charge_kw
 
         if deficit > 0:
             # 2. the battery may serve the load only above the look-ahead reserve
+            #
+            # The grid comes *after* storage and *before* the generating set. Stored energy
+            # was bought with sunlight and costs only the wear of the cycle; imported energy
+            # costs the utility's tariff, which is nonetheless a third of what a litre of
+            # diesel costs to deliver at the same kilowatt-hour. So a connection displaces
+            # the generator, not the battery -- which is what operators report when a feeder
+            # reaches a village, and why the plant it justifies has less diesel and no less
+            # storage.
             reserve_floor = min(max(floor, reserve[h]), ceiling)
             available = max(energy - reserve_floor, 0.0) * eta_discharge
             from_battery = min(deficit, inverter_left, power_limit, available / timestep_h)
@@ -393,8 +442,27 @@ def _controller_loop(n, demand, pv, soc, losses, ceilings, next_ceiling, reserve
                 inverter_left -= from_battery
                 inverter_flow[h] += from_battery
             else:
-                # 3. the generator starts, at least at its minimum stable loading
-                remaining = deficit
+                # 3. the grid carries what storage could not, while it is energised
+                remaining = deficit - from_battery
+                if from_battery > 0.0:
+                    discharge[h] = from_battery
+                    energy -= from_battery / eta_discharge * timestep_h
+                    inverter_left -= from_battery
+                    inverter_flow[h] += from_battery
+                if grid_available[h] and remaining > 1e-9:
+                    room = grid_capacity_kw if grid_capacity_kw > 0.0 else remaining
+                    taken = min(remaining, room)
+                    grid_import[h] = taken
+                    remaining -= taken
+                if remaining <= 1e-9:
+                    unserved[h] = 0.0
+                    closing = min(max(energy, floor), ceiling)
+                    derated = min(closing, next_ceiling[h])
+                    spill += closing - derated
+                    soc[h + 1] = derated
+                    continue
+
+                # 4. the generating set starts, at least at its minimum stable loading
                 target = max(remaining,
                              gen_setpoint * cap_generator_kw,
                              gen_min_load * cap_generator_kw)
@@ -450,6 +518,7 @@ def simulate(
     generator: GeneratorModel = GeneratorModel(),
     controller: Controller = Controller(),
     timestep_h: float = 1.0,
+    grid: "GridLink | None" = None,
 ) -> Dispatch:
     """Run the controller over a series and return its trajectory."""
     demand = np.asarray(demand_kw, dtype=float)
@@ -491,13 +560,26 @@ def simulate(
     # string inverter and down again by the hybrid inverter. That second conversion is what
     # a field placed on the load's bus pays for the one it saves on the way to the load.
     eta_ac = battery.charge_efficiency * config.AC_DOUBLE_CONVERSION_EFF
+    grid = GridLink() if grid is None else grid
+    if grid.available is None:
+        grid_available = np.zeros(n, dtype=np.bool_)
+    else:
+        grid_available = np.asarray(grid.available, dtype=np.bool_)[:n]
+        if grid_available.size != n:
+            raise ValueError(
+                f"the outage pattern covers {grid_available.size} hours and the year {n}")
+    grid_import = np.zeros(n)
+    grid_export = np.zeros(n)
+
     spill, clipped_total = _controller_loop(
         n, demand, pv, soc, losses, ceilings, next_ceiling, reserve,
         gen, charge, discharge, curtailed, unserved, pv_to_load, inverter_flow,
         floor, share_dc, eta_ac, power_limit, timestep_h,
         capacities.pv_kw, capacities.pv_ac_kw, capacities.inverter_kw,
         capacities.generator_kw, battery.charge_efficiency, battery.discharge_efficiency,
-        controller.generator_setpoint, generator.min_load_fraction)
+        controller.generator_setpoint, generator.min_load_fraction,
+        grid_available, grid_import, grid_export, float(grid.capacity_kw),
+        bool(grid.exports))
 
     return Dispatch(
         generator_kw=gen, charge_kw=charge, discharge_kw=discharge, soc_kwh=soc,
@@ -507,4 +589,7 @@ def simulate(
         derating_spill_kwh=float(spill),
         pv_to_load_kw=pv_to_load, inverter_flow_kw=inverter_flow,
         clipped_kwh=float(clipped_total),
+        grid_import_kw=grid_import, grid_export_kw=grid_export,
+        grid_import_usd_kwh=float(grid.import_usd_kwh),
+        grid_export_usd_kwh=float(grid.export_usd_kwh),
     )

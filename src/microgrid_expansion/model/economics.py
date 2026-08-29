@@ -68,11 +68,20 @@ def add_objective(m: linopy.Model, v: dict, c: Coords, cfg: ModelConfig, data: d
         # operating cost is annualised inside the objective rather than scaled after it.
         day_weight = _hour_weights(c)
         fuel = block["costs"]["fuel_price"]
+        # Imported energy is paid for and injected energy is earned, at the tariffs the
+        # connection carries. Both belong here rather than only in the simulation: the
+        # programme is the lower bound, and a bound that cannot import prices the plant above
+        # what a controller that can import achieves.
+        grid = getattr(settings, "grid", None)
+        import_price = grid.import_usd_kwh if grid is not None and grid.connected else 0.0
+        export_price = grid.export_usd_kwh if grid is not None and grid.connected else 0.0
         operating = (
             (day_weight * fuel * fuel_1 * v["p_gen"].sel(node=node)).sum()
             + (day_weight * fuel * fuel_0 * v["commit"].sel(node=node)).sum()
             + (day_weight * degradation * v["p_dis"].sel(node=node)).sum()
             + (day_weight * voll * v["unserved"].sel(node=node)).sum()
+            + (day_weight * import_price * v["grid_load"].sel(node=node)).sum()
+            - (day_weight * export_price * v["grid_export"].sel(node=node)).sum()
         )
         total = total + weight * years * (capital + operating)
 

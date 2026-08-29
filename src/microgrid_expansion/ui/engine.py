@@ -40,45 +40,59 @@ def size_site(job: Job, overrides: dict[str, Any]) -> dict:
 
     # The certificate settles which plant is cheapest; what it costs a customer is a second
     # question, answered by running the certified design once more and pricing its life.
+    from ..exact.certify import _grid_capital_usd_yr, _grid_link
+    from ..exact.simulator import BatteryModel, GeneratorModel, simulate
     from ..post.economics import assets_from_settings, life_cycle_cost
     from ..post.finance import appraise
-    from ..exact.simulator import BatteryModel, GeneratorModel, simulate
 
     design = result.design
     battery = BatteryModel.from_spec(settings.battery)
     unit = min(settings.generators,
                key=lambda g: abs(g.rating_kw - design.generator_kw))
     generator = GeneratorModel.from_spec(unit, settings.economics.diesel_price_usd_l)
+    # The same connection the search was run against. Priced without it, a plant the search
+    # chose *because* it has a grid is charged as though it had none: at sixty per cent
+    # availability that turned a levelised cost of 0.21 into 0.35, on the same design.
+    link = _grid_link(instance, settings)
     dispatch = simulate(instance.demand_kw, instance.specific_yield, instance.t_amb_c,
-                        design, battery, generator)
+                        design, battery, generator, grid=link)
     operating = dispatch.operating_cost(
         generator, degradation_usd_kwh=settings.battery.degradation_usd_kwh(),
         voll_usd_kwh=settings.economics.value_of_lost_load_usd_kwh)
     served = instance.demand_kwh - float(dispatch.unserved_kw.sum())
     target = (settings.economics.tariff_usd_kwh
               if settings.economics.tariff_is_target else None)
+    # The connection is capital the plant carries, so it belongs in the life-cycle cost as
+    # it already does in the annualised one the search minimises.
+    grid_capital_usd_yr = _grid_capital_usd_yr(settings)
+    horizon = settings.economics.horizon_years
+    rate = settings.economics.discount_rate
+    annuity = sum(1.0 / (1.0 + rate) ** y for y in range(1, horizon + 1))
     cost = life_cycle_cost(
         {"pv": design.pv_total_kw, "battery": design.battery_kwh,
          "inverter": design.inverter_kw, "generator": design.generator_kw,
          "conversion": design.pv_ac_kw},
-        operating, served, horizon_years=settings.economics.horizon_years,
-        discount_rate=settings.economics.discount_rate, tariff_target_usd_kwh=target,
+        operating + grid_capital_usd_yr, served, horizon_years=horizon,
+        discount_rate=rate, tariff_target_usd_kwh=target,
         assets=assets_from_settings(settings, architecture="ac"))
 
     assets = assets_from_settings(settings, architecture="ac")
     plant = {"pv": design.pv_total_kw, "battery": design.battery_kwh,
              "inverter": design.inverter_kw, "generator": design.generator_kw,
              "conversion": design.pv_ac_kw}
+    growth = settings.economics.demand_growth_rate
     finance = appraise(plant, operating, served,
                        tariff_usd_kwh=settings.economics.tariff_usd_kwh,
                        horizon_years=settings.economics.horizon_years,
                        discount_rate=settings.economics.discount_rate,
-                       assets=assets, subsidy_usd=cost.subsidy_usd or 0.0)
+                       assets=assets, subsidy_usd=cost.subsidy_usd or 0.0,
+                       demand_growth_rate=growth)
     unsubsidised = appraise(plant, operating, served,
                             tariff_usd_kwh=settings.economics.tariff_usd_kwh,
                             horizon_years=settings.economics.horizon_years,
                             discount_rate=settings.economics.discount_rate,
-                            assets=assets, subsidy_usd=0.0)
+                            assets=assets, subsidy_usd=0.0,
+                            demand_growth_rate=growth)
 
     return {
         "site": settings.site,

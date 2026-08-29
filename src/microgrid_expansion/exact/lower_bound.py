@@ -92,6 +92,12 @@ class Economics:
     #: Least share of demand a design must serve; ``None`` when reliability is only priced.
     #: Carried here so the rule oracle can reject what the contract forbids.
     min_service_fraction: float | None = None
+    #: Annualised capital of the connection to the national grid, when there is one. A cost
+    #: the plant carries whatever it dispatches, so it belongs beside the other capitals.
+    grid_connection_usd_yr: float = 0.0
+    #: What imported energy costs and what exported energy earns, per kilowatt-hour.
+    grid_import_usd_kwh: float = 0.0
+    grid_export_usd_kwh: float = 0.0
 
     def __post_init__(self) -> None:
         if self.crf is None:
@@ -193,6 +199,7 @@ def cost_optimal_dispatch(
     integer_units: tuple[float, float, float] | None = None,
     generator_ratings: tuple[float, ...] | None = None,
     threads: int | None = None,
+    grid=None,
 ) -> LowerBound:
     """Minimise annualised total cost over the box and return the bound.
 
@@ -302,8 +309,39 @@ def cost_optimal_dispatch(
     # The battery is charged from one or the other.
     m.add_constraints(p_ch - pv_batt - ac_batt - gen_batt == 0, name="charge_split")
     # What reaches the load.
-    m.add_constraints(pv_load + ac_load + gen_load + p_dis + unserved
-                      == as_series(demand), name="balance")
+    # The national grid, when the plant has one. It must be here and not only in the
+    # simulation: the controller can import cheaply, so a relaxation that cannot would price
+    # the plant above what the controller achieves and stop being a lower bound at all. It
+    # did, once -- the anticipative optimum came out four thousand dollars a year above the
+    # rule it is meant to minorise, and the reported price of the heuristic went negative.
+    if grid is not None and grid.available is not None:
+        live = np.asarray(grid.available, dtype=float)[:steps.size]
+        room = (float(grid.capacity_kw) if grid.capacity_kw > 0
+                else float(np.max(np.asarray(demand, dtype=float))) * 2.0)
+        grid_load = m.add_variables(lower=0.0, upper=live * room, coords=coords,
+                                    name="grid_load")
+        grid_export = m.add_variables(lower=0.0, upper=live * room, coords=coords,
+                                      name="grid_export")
+        m.add_constraints(grid_export - curtail - ac_curtail <= 0, name="export_from_spill")
+    else:
+        grid_load = None
+        grid_export = None
+
+    load_sources = pv_load + ac_load + gen_load + p_dis + unserved
+    if grid_load is not None:
+        load_sources = load_sources + grid_load
+    m.add_constraints(load_sources == as_series(demand), name="balance")
+
+    # A required service level binds both oracles or neither. Imposed on the controller
+    # alone -- which is where it first went -- it raised the cost of the rule without
+    # raising the cost of perfect anticipation, and the difference between them, which this
+    # work reports as the price of the heuristic, silently absorbed the price of a
+    # contractual requirement instead. On the reference instance that was one point in three
+    # of a gap of eight.
+    if economics.min_service_fraction is not None:
+        total_demand = float(np.asarray(demand, dtype=float).sum())
+        allowance = (1.0 - economics.min_service_fraction) * total_demand
+        m.add_constraints(unserved.sum() <= allowance, name="service_floor")
 
     # generator
     m.add_constraints(p_gen - cap_gen <= 0, name="gen_rating")
@@ -368,6 +406,9 @@ def cost_optimal_dispatch(
         + (w * (economics.fuel_usd_l * fuel_0) * commit).sum()
         + (w * economics.degradation_usd_kwh * p_dis).sum()
         + (w * economics.voll_usd_kwh * unserved).sum()
+        + ((w * economics.grid_import_usd_kwh * grid_load).sum()
+           - (w * economics.grid_export_usd_kwh * grid_export).sum()
+           if grid_load is not None else 0.0)
     )
     # A field on the battery's bus buys only its modules, the conversion coming with the
     # hybrid inverter; a field on the load's bus buys its string inverters as well.

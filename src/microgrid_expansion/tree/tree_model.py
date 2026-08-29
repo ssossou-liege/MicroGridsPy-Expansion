@@ -21,6 +21,7 @@ class NodeData:
     costs: dict[str, float]     # fuel_price, capex_* for this node's stage
     resource: str               # SSP pathway
     policy: float               # penetration target
+    grid_connected: bool = False   # has the national grid reached the village by now
 
 
 @dataclass

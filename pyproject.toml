@@ -26,7 +26,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-ui = ["fastapi", "uvicorn[standard]", "pywebview"]
+ui = ["fastapi", "uvicorn[standard]", "pywebview",
+      # A window of its own needs a native web view. Windows and macOS ship one;
+      # on Linux Qt supplies it from pip, which spares the user a system install.
+      "PyQt5; sys_platform == 'linux'",
+      "PyQtWebEngine; sys_platform == 'linux'",
+      "qtpy; sys_platform == 'linux'"]
 solver = ["gurobipy"]
 demand = ["rampdemand"]
 docs = ["python-docx"]

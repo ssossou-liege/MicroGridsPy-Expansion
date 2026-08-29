@@ -13,7 +13,7 @@ dependencies:
   - pytest
   - pip
   - pip:
-      - -e .
+      - -e .[ui]        # graphical interface: FastAPI, uvicorn, pywebview, and a web view
       - linopy
       - highspy            # open-source MILP solver backend for linopy
       - rampdemand         # RAMP stochastic load-profile generator

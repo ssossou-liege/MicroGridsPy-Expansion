@@ -15,6 +15,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .i18n import DEFAULT as DEFAULT_LANG
+from .i18n import t
 from ..paths import RESULTS_DIR
 
 PROJECTS_DIR = RESULTS_DIR.parent / "projets"
@@ -89,56 +91,61 @@ def listing() -> list[dict]:
 
 
 # ------------------------------------------------------------------------- export
-def as_csv(result: dict, kind: str) -> str:
-    """One flat table a spreadsheet opens without asking questions."""
+def as_csv(result: dict, kind: str, lang: str = DEFAULT_LANG) -> str:
+    """One flat table a spreadsheet opens without asking questions.
+
+    The headers follow the language the interface is being read in: an export is a document
+    someone hands to a colleague, and it should speak the language they were reading.
+    """
     rows: list[tuple[str, Any]] = []
     if kind == "size":
         d = result.get("design", {})
-        rows += [("Localité", result.get("site")),
-                 ("Croissance de la demande", result.get("trajectory")),
-                 ("Couplage", result.get("architecture")),
-                 ("Photovoltaïque bus batterie (kW)", d.get("pv_kw")),
-                 ("Photovoltaïque bus charge (kW)", d.get("pv_ac_kw")),
-                 ("Stockage (kWh)", d.get("battery_kwh")),
-                 ("Conversion (kW)", d.get("inverter_kw")),
-                 ("Groupe (kW)", d.get("generator_kw")),
-                 ("Coût annualisé sous automate ($/an)", result.get("z_rule_usd_yr")),
-                 ("Coût annualisé sous dispatch anticipatif ($/an)",
+        rows += [(t("csv.site", lang), result.get("site")),
+                 (t("csv.trajectory", lang), result.get("trajectory")),
+                 (t("csv.coupling", lang), result.get("architecture")),
+                 (t("csv.pv_dc", lang), d.get("pv_kw")),
+                 (t("csv.pv_ac", lang), d.get("pv_ac_kw")),
+                 (t("csv.storage", lang), d.get("battery_kwh")),
+                 (t("csv.inverter", lang), d.get("inverter_kw")),
+                 (t("csv.generator", lang), d.get("generator_kw")),
+                 (t("csv.z_rule", lang), result.get("z_rule_usd_yr")),
+                 (t("csv.z_opt", lang),
                   result.get("z_opt_usd_yr")),
-                 ("Écart de dispatch (%)", result.get("price_rel_pct")),
-                 ("Coût actualisé ($/kWh)", result.get("lcoe_usd_kwh")),
-                 ("Valeur actuelle nette ($)", result.get("npc_usd")),
-                 ("Subvention (fraction)", result.get("subsidy_fraction")),
-                 ("Énergie servie (kWh/an)", result.get("energy_served_kwh")),
-                 ("Énergie non distribuée (kWh/an)", result.get("unserved_kwh")),
-                 ("Optimalité prouvée", result.get("proven")),
-                 ("Dimensionnements de l'ensemble", result.get("lattice_size")),
-                 ("Écartés par une borne", result.get("pruned_points")),
-                 ("Évalués par simulation", result.get("enumerated_points")),
-                 ("Durée (s)", result.get("seconds"))]
+                 (t("csv.gap", lang), result.get("price_rel_pct")),
+                 (t("csv.lcoe", lang), result.get("lcoe_usd_kwh")),
+                 (t("csv.npc", lang), result.get("npc_usd")),
+                 (t("csv.subsidy", lang), result.get("subsidy_fraction")),
+                 (t("csv.served", lang), result.get("energy_served_kwh")),
+                 (t("csv.unserved", lang), result.get("unserved_kwh")),
+                 (t("csv.proven", lang), result.get("proven")),
+                 (t("csv.lattice", lang), result.get("lattice_size")),
+                 (t("csv.pruned", lang), result.get("pruned_points")),
+                 (t("csv.evaluated", lang), result.get("enumerated_points")),
+                 (t("csv.seconds", lang), result.get("seconds"))]
     else:
         p = result.get("root_plan", {})
         e = result.get("expected", {})
-        rows += [("Localité", result.get("site")),
-                 ("Couplage", result.get("architecture")),
-                 ("Nœuds", result.get("nodes")), ("Feuilles", result.get("leaves")),
-                 ("Photovoltaïque bus batterie (kW)", p.get("pv_kw")),
-                 ("Photovoltaïque bus charge (kW)", p.get("pv_ac_kw")),
-                 ("Stockage (kWh)", p.get("battery_kwh")),
-                 ("Conversion (kW)", p.get("inverter_kw")),
-                 ("Groupe (kW)", p.get("generator_kw")),
-                 ("Coût actualisé attendu ($/kWh)", e.get("expected_lcoe_usd_kwh")),
-                 ("Coût attendu ($)", e.get("expected_rule_cost_usd")),
-                 ("Écart de dispatch (%)", e.get("price_of_heuristic_pct"))]
+        rows += [(t("csv.site", lang), result.get("site")),
+                 (t("csv.coupling", lang), result.get("architecture")),
+                 (t("csv.nodes", lang), result.get("nodes")),
+                 (t("csv.leaves", lang), result.get("leaves")),
+                 (t("csv.pv_dc", lang), p.get("pv_kw")),
+                 (t("csv.pv_ac", lang), p.get("pv_ac_kw")),
+                 (t("csv.storage", lang), p.get("battery_kwh")),
+                 (t("csv.inverter", lang), p.get("inverter_kw")),
+                 (t("csv.generator", lang), p.get("generator_kw")),
+                 (t("csv.exp_lcoe", lang), e.get("expected_lcoe_usd_kwh")),
+                 (t("csv.exp_cost", lang), e.get("expected_rule_cost_usd")),
+                 (t("csv.gap", lang), e.get("price_of_heuristic_pct"))]
 
-    lines = ["Grandeur;Valeur"]
+    lines = [f'{t("csv.quantity", lang)};{t("csv.value", lang)}']
     lines += [f"{k};{'' if v is None else v}" for k, v in rows]
 
     per_node = result.get("per_node")
     if per_node:
-        lines += ["", "Nœud;Étape;Probabilité;PV bus batterie (kW);PV bus charge (kW);"
-                      "Stockage (kWh);Conversion (kW);Énergie servie (kWh);"
-                      "Non distribuée (kWh)"]
+        lines += ["", ";".join(t(f"csv.node.{c}", lang) for c in
+                               ("node", "stage", "probability", "pv_dc", "pv_ac",
+                                "storage", "inverter", "served", "unserved"))]
         for n in per_node:
             lines.append(";".join(str(n.get(k, "")) for k in
                                   ("node", "stage", "probability", "pv_kw", "pv_ac_kw",

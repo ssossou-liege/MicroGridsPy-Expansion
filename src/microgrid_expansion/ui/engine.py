@@ -24,17 +24,17 @@ def size_site(job: Job, overrides: dict[str, Any]) -> dict:
     settings = settings_from(overrides)
     job.total = 3
 
-    job.stage = "construction de la demande et de la ressource"
+    job.announce("job.build")
     instance = build_site_year(settings.site, settings.year,
                                trajectory=settings.demand_trajectory,
                                maturity_months=settings.maturity_months)
     job.done = 1
 
-    job.stage = "délimitation de l'ensemble admissible"
+    job.announce("job.lattice")
     lattice = Lattice.around(instance, settings)
     job.done = 2
 
-    job.stage = f"certification sur {lattice.size:,} dimensionnements".replace(",", " ")
+    job.announce("job.certify", n=f"{lattice.size:,}".replace(",", "\u202f"))
     result = certify_exhaustive(instance, lattice, settings, verbose=False)
     job.done = 3
 
@@ -149,25 +149,25 @@ def plan_expansion(job: Job, overrides: dict[str, Any]) -> dict:
     cfg = ModelConfig(solver=settings.solver.name)
     job.total = 4
 
-    job.stage = "tirage et réduction des scénarios"
+    job.announce("job.sample")
     tree = build_tree(sample_scenario_paths(cfg), cfg)
     job.done = 1
 
-    job.stage = f"compression du domaine temporel sur {len(tree.nodes)} nœuds"
+    job.announce("job.reduce", n=len(tree.nodes))
     rep = {n: reduce_to_rep_days(_NodeInstance(tree.node_data[n], settings), cfg.n_rep_days)
            for n in tree.nodes}
     job.done = 2
 
     architecture = settings.coupling.architectures()[0]
-    job.stage = "résolution du programme équivalent-déterministe"
+    job.announce("job.solve")
     programme = build_model(tree, rep, cfg, architecture=architecture, settings=settings)
     solved = solve(programme, settings, solver=cfg.solver)
     if solved.objective == float("inf"):
-        raise RuntimeError("aucun plan admissible sous ces réglages")
+        raise RuntimeError("no feasible plan under these settings")
     plans = extract_solution(programme, cfg)
     job.done = 3
 
-    job.stage = "descente vers le plan que l'automate préfère"
+    job.announce("job.descend")
     certificate = certify_tree(plans, tree, rep, solved.objective,
                                architecture=architecture, settings=settings, verbose=False)
     traces = certificate.traces
@@ -269,24 +269,23 @@ def fetch_resource(job: Job, site_name: str, first_year: int = 2016,
 
     site = get_site(site_name)
     if site.latitude is None or site.longitude is None:
-        raise ValueError("le site n'a pas de coordonnées ; placez-le sur la carte d'abord")
+        raise ValueError("the site has no coordinates; place it on the map first")
 
     job.total = 2
-    job.stage = (f"demande de la réanalyse pour {site.latitude:.4f}, "
-                 f"{site.longitude:.4f} — plusieurs minutes")
+    job.announce("job.reanalysis", lat=f"{site.latitude:.4f}", lon=f"{site.longitude:.4f}")
     try:
         path = download_era5(site, first_year, last_year)
     except ImportError as exc:
-        raise RuntimeError("le client du Climate Data Store n'est pas installé "
+        raise RuntimeError("the Climate Data Store client is not installed "
                            "(pip install cdsapi)") from exc
     except Exception as exc:                      # noqa: BLE001 - reported to the page
         raise RuntimeError(
-            f"la réanalyse n'a pas pu être obtenue : {exc}. Vérifiez la connexion et le "
-            "fichier d'identifiants ~/.cdsapirc."
+            f"the reanalysis could not be fetched: {exc}. Check the connection and the "
+            "~/.cdsapirc credentials file."
         ) from exc
     job.done = 1
 
-    job.stage = "enregistrement de la série"
+    job.announce("job.store")
     save_site(replace(site, irradiance_file=path.name))
     job.done = 2
     return {"site": site.name, "file": path.name,
@@ -294,14 +293,24 @@ def fetch_resource(job: Job, site_name: str, first_year: int = 2016,
             "latitude": site.latitude, "longitude": site.longitude}
 
 
-def describe_archetypes(site_name: str) -> dict:
+def describe_archetypes(site_name: str, lang: str = "en") -> dict:
     """The archetypes in force for a site, with the note on where they come from."""
     from ..demand import archetypes as A
+    from .i18n import t
 
     local, adjusted = A.for_site(site_name)
-    return {"archetypes": [a.to_dict() for a in local],
-            "shipped": [a.to_dict() for a in A.shipped()],
-            "adjusted": adjusted, "note": A.CALIBRATION_NOTE}
+    labels = {"0": "arch.0", "1": "arch.1", "2": "arch.2", "3": "arch.3"}
+
+    def rendered(a):
+        record = a.to_dict()
+        key = labels.get(a.cluster)
+        if key:
+            record["label"] = t(key, lang)
+        return record
+
+    return {"archetypes": [rendered(a) for a in local],
+            "shipped": [rendered(a) for a in A.shipped()],
+            "adjusted": adjusted, "note": t("arch.note", lang)}
 
 
 def _currency(settings) -> dict:

@@ -12,6 +12,8 @@ from dataclasses import dataclass, fields, is_dataclass
 from typing import Any
 
 from ..settings import ProjectSettings, default_settings
+from .i18n import DEFAULT as DEFAULT_LANG
+from .i18n import has, t
 
 
 @dataclass(frozen=True)
@@ -25,6 +27,9 @@ class Field:
     choices: tuple[str, ...] = ()
     step: float | None = None
     hint: str = ""
+    #: Catalogue key for the label and the hint. When set, the two above are ignored and the
+    #: strings come from the catalogue in the reader's language.
+    key: str = ""
     #: Whose provenance record describes *this* value. Left empty when none does, which is
     #: the honest answer for most: walking up to the group's record instead made a lifetime
     #: display the source of a price, and a string-inverter price display the whole
@@ -37,21 +42,21 @@ class Field:
 ESSENTIAL: tuple[Field, ...] = (
     Field("demand_trajectory", "Croissance de la demande", kind="choice",
           choices=("lente", "centrale", "rapide"),
-          hint="Rythme auquel la consommation croît avec l'ancienneté du raccordement."),
+          hint="Rythme auquel la consommation croît avec l'ancienneté du raccordement.", key="f.trajectory"),
     Field("maturity_months", "Ancienneté du raccordement", "mois", kind="integer",
-          hint="Zéro pour un site neuf ; douze pour un réseau en service depuis un an."),
-    Field("economics.horizon_years", "Horizon du projet", "ans", kind="integer"),
+          hint="Zéro pour un site neuf ; douze pour un réseau en service depuis un an.", key="f.maturity"),
+    Field("economics.horizon_years", "Horizon du projet", "ans", kind="integer", key="f.horizon"),
     Field("economics.discount_rate", "Taux d'actualisation", "", step=0.005,
-          source_path="economics.discount"),
+          source_path="economics.discount", key="f.discount"),
     Field("economics.diesel_price_usd_l", "Prix du gazole", "$/L", step=0.01,
-          source_path="economics.diesel"),
+          source_path="economics.diesel", key="f.diesel"),
     Field("economics.tariff_usd_kwh", "Tarif visé", "$/kWh", step=0.001,
           source_path="economics.tariff",
-          hint="Cible de coût actualisé ; l'outil rapporte la subvention qui l'atteint."),
+          hint="Cible de coût actualisé ; l'outil rapporte la subvention qui l'atteint.", key="f.tariff"),
     Field("economics.demand_growth_rate", "Croissance annuelle de la demande", "", step=0.01,
           hint="Employée par l'analyse financière seule, pour projeter les recettes. Le "
                "dimensionnement porte sur l'année et l'ancienneté déclarées ; servir cette "
-               "croissance est l'objet du plan d'extension."),
+               "croissance est l'objet du plan d'extension.", key="f.growth"),
 )
 
 #: How amounts are shown. The model computes in dollars because that is the currency its
@@ -61,10 +66,10 @@ ESSENTIAL: tuple[Field, ...] = (
 CURRENCY: tuple[Field, ...] = (
     Field("currency.local_code", "Monnaie locale", kind="choice",
           choices=("XOF", "USD", "EUR", "NGN", "GHS", "KES", "TZS", "ZMW", "MWK"),
-          hint="Les montants sont affichés dans cette monnaie ; le calcul reste en dollars."),
+          hint="Les montants sont affichés dans cette monnaie ; le calcul reste en dollars.", key="f.currency"),
     Field("currency.xof_per_eur", "Unités locales par euro", "", step=0.01,
-          hint="Parité fixe pour le franc CFA ; taux de marché pour les autres."),
-    Field("currency.usd_per_eur", "Dollars par euro", "", step=0.01),
+          hint="Parité fixe pour le franc CFA ; taux de marché pour les autres.", key="f.per_eur"),
+    Field("currency.usd_per_eur", "Dollars par euro", "", step=0.01, key="f.usd_eur"),
 )
 
 #: The national grid, where there is one or where one is expected. Half the projects that
@@ -75,67 +80,67 @@ GRID: tuple[Field, ...] = (
           choices=("non", "oui"),
           hint="Un réseau intermittent déplace le gazole, pas le stockage : c'est le groupe "
                "électrogène qu'il remplace, la batterie restant nécessaire pour les "
-               "coupures."),
+               "coupures.", key="f.grid.connected"),
     Field("grid.availability", "Disponibilité du réseau", "", step=0.01,
-          hint="Part des heures où le départ est sous tension."),
+          hint="Part des heures où le départ est sous tension.", key="f.grid.availability"),
     Field("grid.mean_outage_hours", "Durée typique d'une coupure", "h", step=0.5,
           hint="Ce que la centrale doit porter seule, et donc ce qui dimensionne le "
-               "stockage. Une moyenne de disponibilité ne le dit pas."),
+               "stockage. Une moyenne de disponibilité ne le dit pas.", key="f.grid.outage"),
     Field("grid.import_usd_kwh", "Prix de l'énergie importée", "$/kWh", step=0.01,
           source_path="grid.tariff",
           hint="À relever auprès du distributeur : un tarif réglementé est propre au pays "
-               "et souvent par tranches. La valeur proposée n'est qu'un ordre de grandeur."),
+               "et souvent par tranches. La valeur proposée n'est qu'un ordre de grandeur.", key="f.grid.import"),
     Field("grid.export_usd_kwh", "Prix de l'énergie exportée", "$/kWh", step=0.01,
           source_path="grid.tariff",
-          hint="Zéro si l'injection n'est pas rémunérée ; le surplus est alors écrêté."),
+          hint="Zéro si l'injection n'est pas rémunérée ; le surplus est alors écrêté.", key="f.grid.export"),
     Field("grid.capacity_kw", "Puissance de raccordement", "kW", step=1.0,
-          hint="Zéro pour n'imposer aucune limite au-delà de celle de la conversion."),
+          hint="Zéro pour n'imposer aucune limite au-delà de celle de la conversion.", key="f.grid.capacity"),
     Field("grid.connection_usd", "Coût du raccordement", "$", step=100.0,
-          hint="Ligne, comptage, protections."),
+          hint="Ligne, comptage, protections.", key="f.grid.cost"),
     Field("grid.arrival_uncertain", "Traiter l'arrivée comme incertaine", kind="choice",
           choices=("non", "oui"),
           hint="Pour un village où la ligne est annoncée sans date. Le plan d'extension "
                "branche alors sur son arrivée : ce qu'on engage aujourd'hui doit tenir "
                "qu'elle vienne ou non. Sans objet quand le réseau est déjà là, ou "
-               "manifestement pas prévu."),
+               "manifestement pas prévu.", key="f.grid.uncertain"),
 )
 
 #: Prices and equipment, which move from one market to another.
 EQUIPMENT: tuple[Field, ...] = (
     Field("photovoltaic.cost_usd_kw", "Photovoltaïque", "$/kW", step=1.0,
-          source_path="photovoltaic"),
-    Field("battery.cost_usd_kwh", "Stockage", "$/kWh", step=1.0, source_path="battery"),
+          source_path="photovoltaic", key="f.pv_cost"),
+    Field("battery.cost_usd_kwh", "Stockage", "$/kWh", step=1.0, source_path="battery", key="f.batt_cost"),
     Field("inverter.cost_usd_kw", "Électronique de puissance", "$/kW", step=1.0,
-          source_path="inverter"),
+          source_path="inverter", key="f.inv_cost"),
     Field("coupling.string_inverter_cost_usd_kw", "Onduleurs de chaîne", "$/kW", step=1.0,
-          source_path="coupling"),
+          source_path="coupling", key="f.string_cost"),
     Field("photovoltaic.lifetime_years", "Durée de vie du photovoltaïque", "ans",
-          kind="integer"),
-    Field("battery.lifetime_years", "Durée de vie du stockage", "ans", kind="integer"),
-    Field("inverter.lifetime_years", "Durée de vie de la conversion", "ans", kind="integer"),
+          kind="integer", key="f.pv_life"),
+    Field("battery.lifetime_years", "Durée de vie du stockage", "ans", kind="integer", key="f.batt_life"),
+    Field("inverter.lifetime_years", "Durée de vie de la conversion", "ans", kind="integer", key="f.inv_life"),
 )
 
 #: How the plant is wired and run. Changing these changes what the certificate means.
 ADVANCED: tuple[Field, ...] = (
     Field("coupling.architecture", "Couplage", kind="choice",
           choices=("mixte", "dc", "ac", "auto"),
-          hint="Le champ divisé contient les deux dispositions pures comme cas extrêmes."),
+          hint="Le champ divisé contient les deux dispositions pures comme cas extrêmes.", key="f.coupling"),
     Field("coupling.dc_ac_ratio_max", "Champ admis par kW, bus batterie", "kW/kW", step=0.1,
-          source_path="coupling"),
+          source_path="coupling", key="f.ratio_dc"),
     Field("coupling.ac_ratio_max", "Champ admis par kW, bus charge", "kW/kW", step=0.1,
-          source_path="coupling"),
+          source_path="coupling", key="f.ratio_ac"),
     Field("controller.reserve_multiplier", "Réserve d'anticipation", "", step=0.1,
-          hint="Multiplie l'énergie que l'automate garde pour la nuit à venir."),
-    Field("controller.lookahead_hours", "Fenêtre d'anticipation", "h", kind="integer"),
-    Field("controller.generator_setpoint", "Consigne du groupe", "", step=0.05),
+          hint="Multiplie l'énergie que l'automate garde pour la nuit à venir.", key="f.reserve"),
+    Field("controller.lookahead_hours", "Fenêtre d'anticipation", "h", kind="integer", key="f.lookahead"),
+    Field("controller.generator_setpoint", "Consigne du groupe", "", step=0.05, key="f.setpoint"),
     Field("economics.value_of_lost_load_usd_kwh", "Énergie non distribuée", "$/kWh",
-          step=0.1, source_path="economics.voll"),
+          step=0.1, source_path="economics.voll", key="f.voll"),
     Field("economics.min_service_fraction", "Taux de service exigé", "", step=0.005,
           hint="Part minimale de la demande qu'un dimensionnement doit servir pour être "
                "retenu. Laissez à zéro pour ne rien exiger et laisser le coût de l'énergie "
                "non distribuée arbitrer seul ; portez-le à 0,98 quand une concession "
-               "l'impose."),
-    Field("solver.name", "Solveur", kind="choice", choices=("gurobi", "highs")),
+               "l'impose.", key="f.service"),
+    Field("solver.name", "Solveur", kind="choice", choices=("gurobi", "highs"), key="f.solver"),
 )
 
 GROUPS: tuple[tuple[str, str, tuple[Field, ...]], ...] = (
@@ -161,7 +166,8 @@ def read(settings: ProjectSettings, path: str) -> Any:
     return getattr(owner, name)
 
 
-def provenance_of(settings: ProjectSettings, source_path: str) -> str | None:
+def provenance_of(settings: ProjectSettings, source_path: str,
+                  lang: str = DEFAULT_LANG) -> str | None:
     """The recorded source at ``source_path``, or nothing.
 
     Shown beside a field so a developer overriding a price can see what they are overriding,
@@ -189,26 +195,32 @@ def provenance_of(settings: ProjectSettings, source_path: str) -> str | None:
         # single most useful thing about it.
         note = getattr(record, "note", None)
         if note and not getattr(record, "verified", False):
-            return f"non sourcé — {note}"
+            return f'{t("source.unsourced", lang)} — {note}'
     return None
 
 
-def describe(settings: ProjectSettings | None = None) -> list[dict]:
+def describe(settings: ProjectSettings | None = None,
+             lang: str = DEFAULT_LANG) -> list[dict]:
     """Every offered field, with its value and its source, ready for the page."""
     settings = default_settings() if settings is None else settings
     out = []
     for key, title, group in GROUPS:
         entries = []
         for f in group:
+            label = t(f"{f.key}", lang) if f.key else f.label
+            # A field without a hint carries no ".hint" entry, and t() would hand back the
+            # key itself. An absent hint is an absent hint, not a label.
+            hint = t(f"{f.key}.hint", lang) if f.key and has(f"{f.key}.hint") else f.hint
             entries.append({
-                "path": f.path, "label": f.label, "unit": f.unit, "kind": f.kind,
-                "choices": list(f.choices), "step": f.step, "hint": f.hint,
+                "path": f.path, "label": label, "unit": f.unit, "kind": f.kind,
+                "choices": list(f.choices), "step": f.step, "hint": hint,
                 "value": ({True: "oui", False: "non"}[read(settings, f.path)]
                           if f.kind == "choice" and isinstance(read(settings, f.path), bool)
                           else read(settings, f.path)),
-                "source": provenance_of(settings, f.source_path),
+                "source": provenance_of(settings, f.source_path, lang),
             })
-        out.append({"key": key, "title": title, "fields": entries})
+        out.append({"key": key, "title": t(f"group.{key}", lang) or title,
+                    "fields": entries})
     return out
 
 

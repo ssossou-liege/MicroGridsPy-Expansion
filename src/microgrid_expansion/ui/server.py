@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import engine, projects, schema
+from . import engine, i18n, projects, schema
 from .jobs import JobRegistry
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -33,6 +33,7 @@ class SaveRequest(BaseModel):
 class ExportRequest(BaseModel):
     kind: str
     result: dict[str, Any] = Field(default_factory=dict)
+    lang: str = i18n.DEFAULT
 
 
 class SiteRequest(BaseModel):
@@ -55,8 +56,9 @@ def create_app() -> FastAPI:
     registry = JobRegistry()
 
     @app.get("/api/bootstrap")
-    def bootstrap() -> dict:
-        """Everything the page needs on first paint."""
+    def bootstrap(lang: str = i18n.DEFAULT) -> dict:
+        """Everything the page needs on first paint, in the language it asked for."""
+        lang = lang if lang in i18n.LANGUAGES else i18n.DEFAULT
         from ..sites import known_sites, to_record
         sites = []
         for site in known_sites().values():
@@ -64,30 +66,32 @@ def create_app() -> FastAPI:
             record["n_households"] = site.n_households
             record["has_resource"] = bool(site.irradiance_file)
             sites.append(record)
-        return {"groups": schema.describe(), "jobs": registry.recent(),
-                "projects": projects.listing(), "sites": sites}
+        return {"groups": schema.describe(lang=lang), "jobs": registry.recent(),
+                "projects": projects.listing(), "sites": sites,
+                "lang": lang, "languages": i18n.LANGUAGES,
+                "strings": i18n.catalogue(lang)}
 
     @app.post("/api/size")
     def size(request: RunRequest) -> dict:
         overrides = request.overrides
         site = overrides.get("site", "?")
-        job = registry.start("size", f"Dimensionnement — {site}",
-                             lambda j: engine.size_site(j, overrides))
+        job = registry.start("size", "job.size",
+                             lambda j: engine.size_site(j, overrides), site=site)
         return job.to_dict()
 
     @app.post("/api/plan")
     def plan(request: RunRequest) -> dict:
         overrides = request.overrides
         site = overrides.get("site", "?")
-        job = registry.start("plan", f"Plan d'extension — {site}",
-                             lambda j: engine.plan_expansion(j, overrides))
+        job = registry.start("plan", "job.plan",
+                             lambda j: engine.plan_expansion(j, overrides), site=site)
         return job.to_dict()
 
     @app.get("/api/job/{job_id}")
     def job_state(job_id: str) -> dict:
         job = registry.get(job_id)
         if job is None:
-            raise HTTPException(status_code=404, detail="tâche inconnue")
+            raise HTTPException(status_code=404, detail="unknown job")
         return job.to_dict()
 
     @app.post("/api/job/{job_id}/cancel")
@@ -119,7 +123,7 @@ def create_app() -> FastAPI:
                     productive_units=request.productive_units,
                     utc_offset_hours=request.utc_offset_hours, origin="user")
         if not site.name:
-            raise HTTPException(status_code=400, detail="le site doit porter un nom")
+            raise HTTPException(status_code=400, detail="the site needs a name")
         save_site(site)
         return to_record(site)
 
@@ -128,19 +132,19 @@ def create_app() -> FastAPI:
         from ..sites import TEMPLATES, delete_site
         if name in TEMPLATES:
             raise HTTPException(status_code=400,
-                                detail="les sites d'exemple ne se suppriment pas")
+                                detail="the worked examples cannot be deleted")
         return {"deleted": delete_site(name)}
 
     @app.post("/api/sites/{name}/resource")
     def site_resource(name: str) -> dict:
-        job = registry.start("resource", f"Série météorologique — {name}",
-                             lambda j: engine.fetch_resource(j, name))
+        job = registry.start("resource", "job.resource",
+                             lambda j: engine.fetch_resource(j, name), site=name)
         return job.to_dict()
 
     # ---------------------------------------------------------------- archetypes
     @app.get("/api/archetypes/{site}")
-    def archetypes_get(site: str) -> dict:
-        return engine.describe_archetypes(site)
+    def archetypes_get(site: str, lang: str = i18n.DEFAULT) -> dict:
+        return engine.describe_archetypes(site, lang)
 
     @app.post("/api/archetypes")
     def archetypes_set(request: ArchetypeRequest) -> dict:
@@ -177,8 +181,8 @@ def create_app() -> FastAPI:
     # ------------------------------------------------------------------- export
     @app.post("/api/export.csv")
     def export_csv(request: ExportRequest) -> Response:
-        body = projects.as_csv(request.result, request.kind)
-        stem = "dimensionnement" if request.kind == "size" else "plan-extension"
+        body = projects.as_csv(request.result, request.kind, request.lang)
+        stem = "sizing" if request.kind == "size" else "expansion-plan"
         site = str(request.result.get("site", "")).lower() or "site"
         # A byte-order mark so a spreadsheet opens the accents right without being asked.
         return Response("\ufeff" + body, media_type="text/csv; charset=utf-8",
@@ -188,7 +192,7 @@ def create_app() -> FastAPI:
     @app.post("/api/export.json")
     def export_json(request: ExportRequest) -> Response:
         import json as _json
-        stem = "dimensionnement" if request.kind == "size" else "plan-extension"
+        stem = "sizing" if request.kind == "size" else "expansion-plan"
         site = str(request.result.get("site", "")).lower() or "site"
         return Response(_json.dumps(request.result, indent=2, ensure_ascii=False,
                                     default=float),

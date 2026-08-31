@@ -132,10 +132,10 @@ def main(argv: list[str] | None = None) -> int:
     window = truncate(instance, 24 * args.days)
     designs = sample_designs(window, args.designs)
 
-    print(f"{args.site} {args.year} — {args.days} jours, {len(designs)} dimensionnements")
+    print(f"{args.site} {args.year} -- {args.days} days, {len(designs)} designs")
     print(f"{'PV':>7s}{'batt':>8s}{'group':>7s}"
-          f"{'relaxation':>13s}{'mixte':>12s}{'règle':>12s}"
-          f"{'ordre':>8s}{'admis.':>8s}")
+          f"{'relaxation':>13s}{'mixed':>12s}{'rule':>12s}"
+          f"{'order':>8s}{'feasible':>10s}")
     rows = verify(window, designs, with_milp=not args.no_milp)
     ordered = True
     # Relative tolerance: the quantities are annualised costs of several thousand dollars,
@@ -151,15 +151,15 @@ def main(argv: list[str] | None = None) -> int:
         ordered &= bool(chain) and row["feasible"]
         print(f"{d.pv_kw:7.1f}{d.battery_kwh:8.1f}{d.generator_kw:7.1f}"
               f"{row['relaxation']:13,.0f}{milp:12,.0f}{row['rule']:12,.0f}"
-              f"{'ok' if chain else 'ÉCHEC':>8s}{'ok' if row['feasible'] else 'ÉCHEC':>8s}")
+              f"{'ok' if chain else 'FAIL':>8s}{'ok' if row['feasible'] else 'FAIL':>10s}")
         if not row["feasible"]:
             print("      ", {k: v for k, v in row["checks"].items() if not v})
 
-    print(f"\nProposition 1 vérifiée en tout point : {ordered}")
+    print(f"\nProposition 1 holds at every point: {ordered}")
     gaps = [100 * (r["rule"] - r["mixed_integer"]) / r["mixed_integer"]
             for r in rows if r["mixed_integer"] == r["mixed_integer"]]
     if gaps:
-        print(f"écart règle / optimum : {min(gaps):.1f} à {max(gaps):.1f} %")
+        print(f"rule / optimum gap: {min(gaps):.1f} to {max(gaps):.1f} %")
     return 0 if ordered else 1
 
 

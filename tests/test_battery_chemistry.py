@@ -116,6 +116,6 @@ def test_the_instance_cache_distinguishes_chemistries():
     """A cached instance from another chemistry would describe a different battery."""
     from microgrid_expansion.instances import _cache_key
 
-    lfp = _cache_key("Samionta", 2025, "centrale", 12, 0, "lfp")
-    lead = _cache_key("Samionta", 2025, "centrale", 12, 0, "lead_acid")
+    lfp = _cache_key("Samionta", 2025, "central", 12, 0, "lfp")
+    lead = _cache_key("Samionta", 2025, "central", 12, 0, "lead_acid")
     assert lfp != lead

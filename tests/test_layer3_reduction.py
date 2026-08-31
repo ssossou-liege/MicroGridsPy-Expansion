@@ -37,7 +37,7 @@ def synthetic_year(days: int = 120):
     return SiteYear(site="test", year=2025, demand_kw=demand, specific_yield=yield_,
                     t_amb_c=temperature, usable_fraction=usable_fraction(temperature),
                     self_discharge=self_discharge_fraction(temperature),
-                    trajectory="centrale", maturity_months=12, seed=0)
+                    trajectory="central", maturity_months=12, seed=0)
 
 
 # ------------------------------------------------------------------ k-medoids
@@ -200,10 +200,10 @@ def test_lattice_points_map_to_physical_capacities():
     assert lattice.size == buildable * 4 * 2
 
     # With an inverter too small for the field, part of the product is excluded outright.
-    serré = Lattice(pv_unit_kw=0.5, batt_unit_kwh=5.0, inv_unit_kw=0.5,
+    tight = Lattice(pv_unit_kw=0.5, batt_unit_kwh=5.0, inv_unit_kw=0.5,
                     generator_ratings=(5.0,), n_pv=(0, 6), n_batt=(0, 1),
                     n_inv=(1, 2), n_pv_ac=(0, 6))
-    assert serré.size < 7 * 2 * 2 * 7
+    assert tight.size < 7 * 2 * 2 * 7
 
 
 def test_splitting_partitions_a_box_without_loss():

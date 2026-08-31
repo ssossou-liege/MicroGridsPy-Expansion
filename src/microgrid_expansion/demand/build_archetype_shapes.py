@@ -75,12 +75,12 @@ def main(argv: list[str] | None = None) -> int:
     shapes = measured_shapes()
     shapes.round(6).to_csv(args.out)
     bars = " ▁▂▃▄▅▆▇█"
-    print(f"formes mesurées écrites dans {args.out}")
+    print(f"measured shapes written to {args.out}")
     for archetype, row in shapes.iterrows():
         values = row.to_numpy()
         daytime = 100 * values[7:19].sum() / values.sum()
         drawing = "".join(bars[min(int(v / values.max() * 8), 8)] for v in values)
-        print(f"  archétype {archetype}  {drawing}  diurne {daytime:.0f} %")
+        print(f"  archetype {archetype}  {drawing}  daytime {daytime:.0f} %")
     return 0
 
 

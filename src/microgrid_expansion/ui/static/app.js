@@ -38,13 +38,13 @@ const money = v => v === null || v === undefined ? "—" : nf(Math.round(v));
 
 /* Amounts arrive in dollars and are shown in the currency of the country. The conversion
    happens here and nowhere else, so nothing stored or exported depends on today's rate. */
-let devise = { code: "USD", per_usd: 1 };
-const enLocal = v => v === null || v === undefined ? null : v * devise.per_usd;
-const somme = (v, d = 0) => v === null || v === undefined ? "—"
-  : nf(enLocal(v), devise.per_usd > 50 ? 0 : d);
-const parKwh = v => v === null || v === undefined ? "—"
-  : nf(enLocal(v), devise.per_usd > 50 ? 0 : 4);
-const unite = suffixe => `${devise.code}${suffixe}`;
+let currency = { code: "USD", per_usd: 1 };
+const toLocal = v => v === null || v === undefined ? null : v * currency.per_usd;
+const amount = (v, d = 0) => v === null || v === undefined ? "—"
+  : nf(toLocal(v), currency.per_usd > 50 ? 0 : d);
+const perKwh = v => v === null || v === undefined ? "—"
+  : nf(toLocal(v), currency.per_usd > 50 ? 0 : 4);
+const unit = suffixe => `${currency.code}${suffixe}`;
 
 function figure(k, v, u, note) {
   return `<div class="figure"><div class="k">${k}</div>
@@ -57,18 +57,18 @@ function figure(k, v, u, note) {
    Drawn by hand in SVG. A charting library would be one more thing to ship and to keep
    current for two figures whose shape is fixed; these are stacked areas and a line. */
 
-const COULEURS = { pv_load: "#f0a02a", discharge: "#2f9e5e", generator: "#c0392b",
+const COLOURS = { pv_load: "#f0a02a", discharge: "#2f9e5e", generator: "#c0392b",
                    curtailed: "#b9bcc4", unserved: "#8e44ad" };
 
-function aire(series, x, y) {
+function area(series, x, y) {
   // Cumulative stack: each band sits on the one below, so the top edge is total supply.
-  let bas = new Array(series[0].values.length).fill(0);
+  let bottom = new Array(series[0].values.length).fill(0);
   return series.map(s => {
-    const haut = s.values.map((v, i) => bas[i] + v);
-    const avant = haut.map((v, i) => `${x(i)},${y(v)}`).join(" ");
-    const arriere = bas.map((v, i) => `${x(i)},${y(v)}`).reverse().join(" ");
-    bas = haut;
-    return `<polygon points="${avant} ${arriere}" fill="${s.color}" fill-opacity=".85"/>`;
+    const top = s.values.map((v, i) => bottom[i] + v);
+    const front = top.map((v, i) => `${x(i)},${y(v)}`).join(" ");
+    const back = bottom.map((v, i) => `${x(i)},${y(v)}`).reverse().join(" ");
+    bottom = top;
+    return `<polygon points="${front} ${back}" fill="${s.color}" fill-opacity=".85"/>`;
   }).join("");
 }
 
@@ -79,27 +79,27 @@ function chartWeek(d) {
   const W = 900, H = 240, L = 46, R = 56, TOP = 12, B = 26;
   const n = d.demand.length;
   const series = [
-    { values: d.pv_load,   color: COULEURS.pv_load },
-    { values: d.discharge, color: COULEURS.discharge },
-    { values: d.generator, color: COULEURS.generator },
+    { values: d.pv_load,   color: COLOURS.pv_load },
+    { values: d.discharge, color: COLOURS.discharge },
+    { values: d.generator, color: COLOURS.generator },
   ];
-  const somme = d.demand.map((_, i) => series.reduce((a, s) => a + s.values[i], 0));
+  const amount = d.demand.map((_, i) => series.reduce((a, s) => a + s.values[i], 0));
   const ymax = Math.max(...somme, ...d.demand) * 1.12 || 1;
   const x = i => L + (i / Math.max(n - 1, 1)) * (W - L - R);
   const y = v => H - B - (v / ymax) * (H - TOP - B);
   const socMax = d.soc_max_kwh || 1;
   const ysoc = v => H - B - (v / socMax) * (H - TOP - B);
 
-  const jours = [];
+  const days = [];
   for (let i = 0; i < n; i += 24)
-    jours.push(`<line class="axis" x1="${x(i)}" y1="${TOP}" x2="${x(i)}" y2="${H - B}"/>
+    days.push(`<line class="axis" x1="${x(i)}" y1="${TOP}" x2="${x(i)}" y2="${H - B}"/>
       <text x="${x(i) + 4}" y="${H - 9}">J${Math.floor(i / 24) + 1}</text>`);
 
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img"
      aria-label="${T("chart.week.alt")}">
-    ${jours.join("")}
+    ${days.join("")}
     <line class="axis" x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}"/>
-    ${aire(series, x, y)}
+    ${area(series, x, y)}
     <polyline class="soc" points="${d.soc.map((v, i) => `${x(i)},${ysoc(v)}`).join(" ")}"/>
     <polyline class="demand" points="${d.demand.map((v, i) => `${x(i)},${y(v)}`).join(" ")}"/>
     <text x="4" y="${TOP + 9}">${nf(ymax, 0)} kW</text>
@@ -108,9 +108,9 @@ function chartWeek(d) {
     <text x="${W - R + 8}" y="${H - B}" fill="var(--ink-soft)">0</text>
   </svg>
   <div class="legend">
-    <span><i style="background:${COULEURS.pv_load}"></i>${T("chart.pv_load")}</span>
-    <span><i style="background:${COULEURS.discharge}"></i>${T("chart.discharge")}</span>
-    <span><i style="background:${COULEURS.generator}"></i>${T("chart.generator")}</span>
+    <span><i style="background:${COLOURS.pv_load}"></i>${T("chart.pv_load")}</span>
+    <span><i style="background:${COLOURS.discharge}"></i>${T("chart.discharge")}</span>
+    <span><i style="background:${COLOURS.generator}"></i>${T("chart.generator")}</span>
     <span><i class="line" style="background:var(--ink)"></i>${T("chart.demand")}</span>
     <span><i class="line" style="background:var(--ink-soft)"></i>${T("chart.soc")}</span>
   </div>`;
@@ -118,26 +118,26 @@ function chartWeek(d) {
 
 function chartMonths(m) {
   const W = 900, H = 210, L = 46, R = 12, TOP = 12, B = 26;
-  const mois = ["J","F","M","A","M","J","J","A","S","O","N","D"];
+  const months = ["J","F","M","A","M","J","J","A","S","O","N","D"];
   const series = [
-    { values: m.pv_load,   color: COULEURS.pv_load },
-    { values: m.discharge, color: COULEURS.discharge },
-    { values: m.generator, color: COULEURS.generator },
+    { values: m.pv_load,   color: COLOURS.pv_load },
+    { values: m.discharge, color: COLOURS.discharge },
+    { values: m.generator, color: COLOURS.generator },
   ];
-  const totaux = mois.map((_, i) => series.reduce((a, s) => a + s.values[i], 0));
+  const totals = months.map((_, i) => series.reduce((a, s) => a + s.values[i], 0));
   const ymax = Math.max(...totaux) * 1.12 || 1;
   const bw = (W - L - R) / 12 * .62;
   let out = "";
-  mois.forEach((nom, i) => {
+  months.forEach((name, i) => {
     const cx = L + (i + .5) * (W - L - R) / 12;
-    let bas = H - B;
+    let bottom = H - B;
     series.forEach(s => {
       const h = (s.values[i] / ymax) * (H - TOP - B);
-      bas -= h;
-      out += `<rect x="${cx - bw / 2}" y="${bas}" width="${bw}" height="${Math.max(h, 0)}"
+      bottom -= h;
+      out += `<rect x="${cx - bw / 2}" y="${bottom}" width="${bw}" height="${Math.max(h, 0)}"
                 fill="${s.color}" fill-opacity=".85"/>`;
     });
-    out += `<text x="${cx}" y="${H - 9}" text-anchor="middle">${nom}</text>`;
+    out += `<text x="${cx}" y="${H - 9}" text-anchor="middle">${name}</text>`;
   });
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img"
      aria-label="${T("chart.months.alt")}">
@@ -168,12 +168,12 @@ function renderForm() {
       const path = el.dataset.path;
       const raw = el.type === "number" ? parseFloat(el.value) : el.value;
       state.overrides[path] = raw;
-      if (path.startsWith("currency.")) { majDevise(); return; }
+      if (path.startsWith("currency.")) { refreshCurrency(); return; }
       const loc = $("#" + el.id + "-loc");
       if (loc && Number.isFinite(raw))
-        loc.textContent = `≈ ${nf(raw * devise.per_usd, devise.per_usd > 50 ? 0 : 2)} `
+        loc.textContent = `≈ ${nf(raw * currency.per_usd, currency.per_usd > 50 ? 0 : 2)} `
           + `${(state.groups.flatMap(g => g.fields).find(x => x.path === path)?.unit ?? "")
-               .replace("$", devise.code)}`;
+               .replace("$", currency.code)}`;
       el.closest(".field").classList.toggle(
         "changed", String(raw) !== String(state.defaults[path]));
     });
@@ -183,8 +183,13 @@ function renderForm() {
 function fieldRow(f) {
   const id = "f-" + f.path.replace(/\./g, "-");
   const control = f.kind === "choice"
+    // The values are the model's own -- "slow", "mixed", "yes" -- and stay as they are:
+    // they name settings, results files and cache keys. Only what the reader sees is
+    // translated, and a value with no entry shows itself, which is right for a currency
+    // code or a solver name.
     ? `<select id="${id}" data-path="${f.path}">${f.choices.map(
-         c => `<option value="${c}"${c === f.value ? " selected" : ""}>${c}</option>`
+         c => `<option value="${c}"${c === f.value ? " selected" : ""}>${
+                 STR[`choice.${c}`] ?? c}</option>`
        ).join("")}</select>`
     // A setting that is deliberately absent -- no required service level, for one -- renders
     // as an empty box and not as the string "null", which a number input rejects and the
@@ -196,9 +201,9 @@ function fieldRow(f) {
   // them and nothing on the form to say so, is a mistake waiting to be made. The equivalent
   // is shown beside the box rather than converting the box, which would round the sourced
   // figure on every round trip.
-  const local = f.unit.includes("$") && devise.per_usd !== 1 && Number.isFinite(f.value)
-    ? `<div class="hint" id="${id}-loc">≈ ${nf(f.value * devise.per_usd,
-        devise.per_usd > 50 ? 0 : 2)} ${f.unit.replace("$", devise.code)}</div>` : "";
+  const local = f.unit.includes("$") && currency.per_usd !== 1 && Number.isFinite(f.value)
+    ? `<div class="hint" id="${id}-loc">≈ ${nf(f.value * currency.per_usd,
+        currency.per_usd > 50 ? 0 : 2)} ${f.unit.replace("$", currency.code)}</div>` : "";
   // A field the reader has moved away from its sourced value is marked, and stays marked
   // through any re-render -- a language change among them. Reading the mark off the state
   // rather than setting it once on the keystroke is what makes it survive.
@@ -219,7 +224,7 @@ function fieldRow(f) {
 
 /* ------------------------------------------------------------------ results */
 function renderSize(r) {
-  if (r && r.currency) devise = r.currency;
+  if (r && r.currency) currency = r.currency;
   if (!r) {
     $("#result").innerHTML = `<div class="card empty"><h4>${T("res.none.title")}</h4>
       <p>${T("res.none.body")}</p></div>`;
@@ -246,14 +251,14 @@ function renderSize(r) {
     <div class="card">
       <h3>${T("res.cost_title")}</h3>
       <div class="figures">
-        ${figure(T("res.lcoe"), parKwh(r.lcoe_usd_kwh), unite("/kWh"),
-                 `${T("res.target")} ${parKwh(r.tariff_target_usd_kwh)}`)}
-        ${figure(T("res.annual"), somme(r.z_rule_usd_yr), unite("/an"))}
+        ${figure(T("res.lcoe"), perKwh(r.lcoe_usd_kwh), unit("/kWh"),
+                 `${T("res.target")} ${perKwh(r.tariff_target_usd_kwh)}`)}
+        ${figure(T("res.annual"), amount(r.z_rule_usd_yr), unit("/an"))}
         ${figure(T("res.subsidy"), sub ? pct(sub * 100) : T("res.subsidy.none"), "",
-                 sub ? T("res.subsidy", { n: `${somme(r.subsidy_usd)} ${devise.code}` })
+                 sub ? T("res.subsidy", { n: `${amount(r.subsidy_usd)} ${currency.code}` })
                      : T("res.subsidy.met"))}
         ${figure(T("res.gap"), pct(r.price_rel_pct), "",
-                 `${somme(r.price_abs_usd_yr)} ${unite("/an")}`)}
+                 `${amount(r.price_abs_usd_yr)} ${unit("/an")}`)}
       </div>
     </div>
 
@@ -275,24 +280,24 @@ function renderSize(r) {
         ${figure(T("fin.irr"), r.finance.irr === null ? T("fin.irr.none")
                  : pct(r.finance.irr * 100), "",
                  r.finance.irr === null ? T("fin.irr.never")
-                 : T("fin.at_tariff", { tariff: `${parKwh(r.tariff_target_usd_kwh)} ${unite("/kWh")}` }))}
+                 : T("fin.at_tariff", { tariff: `${perKwh(r.tariff_target_usd_kwh)} ${unit("/kWh")}` }))}
         ${figure(T("fin.payback"),
                  r.finance.payback_years === null ? T("fin.payback.never")
                  : nf(r.finance.payback_years, 1), r.finance.payback_years === null ? "" : T("fin.years"),
                  r.finance.discounted_payback_years === null ? T("fin.disc_never")
                  : T("fin.disc", { n: nf(r.finance.discounted_payback_years, 1) }))}
-        ${figure(T("fin.npv"), somme(r.finance.net_present_value_usd), devise.code)}
-        ${figure(T("fin.capital"), somme(r.finance.initial_capital_usd), devise.code,
-                 r.finance.subsidy_usd ? T("fin.of_which", { n: somme(r.finance.subsidy_usd) }) : null)}
+        ${figure(T("fin.npv"), amount(r.finance.net_present_value_usd), currency.code)}
+        ${figure(T("fin.capital"), amount(r.finance.initial_capital_usd), currency.code,
+                 r.finance.subsidy_usd ? T("fin.of_which", { n: amount(r.finance.subsidy_usd) }) : null)}
       </div>
       <table style="margin-top:18px">
         <tr><th>${T("fin.year")}</th><th>${T("fin.investment")}</th><th>${T("fin.operating")}</th><th>${T("fin.revenue")}</th><th>${T("fin.net")}</th></tr>
         ${r.finance.cash_flows.filter(c => c.year <= 3 || c.capital > 0 ||
             c.year === r.finance.cash_flows.length - 1).slice(0, 9).map(c => `<tr>
-          <td>${c.year}</td><td>${c.capital ? somme(c.capital) : "—"}</td>
-          <td>${c.operating ? somme(c.operating) : "—"}</td>
-          <td>${c.revenue ? somme(c.revenue) : "—"}</td>
-          <td><b>${somme(c.net)}</b></td></tr>`).join("")}
+          <td>${c.year}</td><td>${c.capital ? amount(c.capital) : "—"}</td>
+          <td>${c.operating ? amount(c.operating) : "—"}</td>
+          <td>${c.revenue ? amount(c.revenue) : "—"}</td>
+          <td><b>${amount(c.net)}</b></td></tr>`).join("")}
       </table>
       <p class="hint" style="margin-top:12px">${T("fin.hint")}
          ${r.finance_unsubsidised && r.finance.subsidy_usd
@@ -313,15 +318,15 @@ function renderSize(r) {
       </table>
       <p class="hint" style="margin-top:12px">${T("res.coverage")}</p>
       <div style="margin-top:16px;display:flex;gap:10px">
-        <button class="btn quiet" onclick="exporter('size','csv')">${T("action.export_csv")}</button>
-        <button class="btn quiet" onclick="exporter('size','json')">${T("action.export_json")}</button>
-        <button class="btn quiet" onclick="imprimer()">${T("action.print")}</button>
+        <button class="btn quiet" onclick="exportResult('size','csv')">${T("action.export_csv")}</button>
+        <button class="btn quiet" onclick="exportResult('size','json')">${T("action.export_json")}</button>
+        <button class="btn quiet" onclick="printReport()">${T("action.print")}</button>
       </div>
     </div>`;
 }
 
 function renderPlan(r) {
-  if (r && r.currency) devise = r.currency;
+  if (r && r.currency) currency = r.currency;
   if (!r) {
     $("#plan").innerHTML = `<div class="card empty"><h4>${T("plan.none.title")}</h4>
       <p>${T("plan.none.body")}</p></div>`;
@@ -329,9 +334,9 @@ function renderPlan(r) {
   }
   const p = r.root_plan, e = r.expected, total = p.pv_kw + (p.pv_ac_kw || 0);
   // Milestone years live in the reduction record, keyed by year; r.stages holds indices,
-  // and reading a year out of it labelled the first branch "année 1" instead of "année 5".
-  const jalons = Object.keys(r.reduction_error || {}).map(Number).sort((a, b) => a - b);
-  const anneeBranche = jalons[1] ?? "suivante";
+  // and reading a year out of it labelled the first branch "year 1" instead of "year 5".
+  const milestones = Object.keys(r.reduction_error || {}).map(Number).sort((a, b) => a - b);
+  const branchYear = milestones[1] ?? "suivante";
   const stage1 = (r.per_node || []).filter(n => n.stage === 1)
     .sort((a, b) => b.probability - a.probability);
   $("#plan").innerHTML = `
@@ -349,17 +354,17 @@ function renderPlan(r) {
     <div class="card">
       <h3>${T("plan.future")}</h3>
       <table>
-        <tr><th>${T("plan.branch")} ${anneeBranche}</th><th>${T("plan.probability")}</th>
+        <tr><th>${T("plan.branch")} ${branchYear}</th><th>${T("plan.probability")}</th>
             <th>${T("plan.energy")}</th><th>${T("res.pv")}</th><th>${T("res.storage")}</th></tr>
         ${stage1.map((n, i) => {
-          const champ = n.pv_kw + (n.pv_ac_kw || 0);
-          const suite = champ > total + 1e-6 || n.battery_kwh > p.battery_kwh + 1e-6;
+          const array = n.pv_kw + (n.pv_ac_kw || 0);
+          const grows = array > total + 1e-6 || n.battery_kwh > p.battery_kwh + 1e-6;
           return `<tr>
-            <td>${i + 1}<span style="color:var(--ink-soft)"> — ${suite ? T("plan.enlarge") : T("plan.hold")}${
+            <td>${i + 1}<span style="color:var(--ink-soft)"> — ${grows ? T("plan.enlarge") : T("plan.hold")}${
               n.grid_connected ? `, ${T("plan.grid_here")}` : ""}</span></td>
             <td>${pct(n.probability * 100, 0)}</td>
             <td>${nf(n.energy_served_kwh / 1000, 1)} MWh</td>
-            <td>${nf(champ, 1)} kW</td>
+            <td>${nf(array, 1)} kW</td>
             <td>${nf(n.battery_kwh)} kWh</td></tr>`;
         }).join("")}
       </table>
@@ -369,25 +374,25 @@ function renderPlan(r) {
     <div class="card">
       <h3>${T("plan.cost")}</h3>
       <div class="figures">
-        ${figure(T("plan.expected_lcoe"), parKwh(e.expected_lcoe_usd_kwh), unite("/kWh"))}
-        ${figure(T("plan.expected_cost"), somme(e.expected_rule_cost_usd), devise.code)}
+        ${figure(T("plan.expected_lcoe"), perKwh(e.expected_lcoe_usd_kwh), unit("/kWh"))}
+        ${figure(T("plan.expected_cost"), amount(e.expected_rule_cost_usd), currency.code)}
         ${figure(T("plan.gap"), pct(e.price_of_heuristic_pct), "")}
         ${figure(T("plan.evaluations"), nf(e.search_evaluations), "")}
       </div>
       <p class="hint" style="margin-top:12px">${T("plan.upper")}</p>
       <div style="margin-top:16px;display:flex;gap:10px">
-        <button class="btn quiet" onclick="exporter('plan','csv')">${T("action.export_csv")}</button>
-        <button class="btn quiet" onclick="exporter('plan','json')">${T("action.export_json")}</button>
-        <button class="btn quiet" onclick="imprimer()">${T("action.print")}</button>
+        <button class="btn quiet" onclick="exportResult('plan','csv')">${T("action.export_csv")}</button>
+        <button class="btn quiet" onclick="exportResult('plan','json')">${T("action.export_json")}</button>
+        <button class="btn quiet" onclick="printReport()">${T("action.print")}</button>
       </div>
     </div>`;
 }
 
 
 /* ------------------------------------------------------------------ community */
-let carte = null, marqueur = null;
+let map = null, marqueur = null;
 
-function renderLieu() {
+function renderCommunity() {
   const s = state.site || {};
   const tpl = s.origin === "template";
   $("#lieu").innerHTML = `
@@ -437,7 +442,7 @@ function renderLieu() {
 
     <div class="card">
       <h3>${T("site.where")}</h3>
-      <div id="carte"></div>
+      <div id="map"></div>
       <div class="coords">
         <div><label for="lat">${T("site.latitude")}</label>
           <input id="lat" type="number" step="0.0001" value="${s.latitude ?? ""}"></div>
@@ -466,10 +471,10 @@ function renderLieu() {
     } else {
       state.site = state.sites.find(x => x.name === e.target.value);
       state.overrides["site"] = state.site.name;
-      const champ = $("#f-site");
-      if (champ) champ.value = state.site.name;
+      const array = $("#f-site");
+      if (array) array.value = state.site.name;
     }
-    renderLieu(); loadArchetypes();
+    renderCommunity(); loadArchetypes();
   };
   const save = $("#site-save");
   if (save) save.onclick = saveSite;
@@ -486,55 +491,55 @@ function renderLieu() {
     buttons(false); $("#cancel").classList.remove("hidden"); poll();
   };
   ["lat", "lon"].forEach(id => $("#" + id).addEventListener("change", () => {
-    const la = parseFloat($("#lat").value), lo = parseFloat($("#lon").value);
-    if (Number.isFinite(la) && Number.isFinite(lo)) placer(la, lo, true);
+    const latitude = parseFloat($("#lat").value), longitude = parseFloat($("#lon").value);
+    if (Number.isFinite(latitude) && Number.isFinite(longitude)) place(latitude, longitude, true);
   }));
-  proposerFuseau();
-  $("#lon").addEventListener("change", proposerFuseau);
+  suggestTimezone();
+  $("#lon").addEventListener("change", suggestTimezone);
 
-  monterCarte(s.latitude, s.longitude);
+  mountMap(s.latitude, s.longitude);
 }
 
-function monterCarte(lat, lon) {
-  const hote = $("#carte");
-  if (!hote || typeof L === "undefined") return;
-  carte = L.map(hote, { attributionControl: true })
+function mountMap(lat, lon) {
+  const host = $("#map");
+  if (!host || typeof L === "undefined") return;
+  map = L.map(host, { attributionControl: true })
            .setView([lat ?? 9.5, lon ?? 2.3], lat == null ? 5 : 13);
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-              { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(carte);
+              { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(map);
   // A field office may have no network. The map then shows nothing, which must not stop the
   // work: the coordinate boxes remain the authority and the map only ever mirrors them.
-  carte.on("click", e => placer(e.latlng.lat, e.latlng.lng, false));
-  if (lat != null && lon != null) placer(lat, lon, false);
+  map.on("click", e => place(e.latlng.lat, e.latlng.lng, false));
+  if (lat != null && lon != null) place(lat, lon, false);
 }
 
-function placer(lat, lon, recentrer) {
+function place(lat, lon, recentrer) {
   if (!state.site) return;
   state.site.latitude = Math.round(lat * 1e6) / 1e6;
   state.site.longitude = Math.round(lon * 1e6) / 1e6;
   $("#lat").value = state.site.latitude;
   $("#lon").value = state.site.longitude;
   $("#get-resource").disabled = false;
-  if (!carte) return;
+  if (!map) return;
   if (marqueur) marqueur.setLatLng([lat, lon]);
-  else marqueur = L.marker([lat, lon], { draggable: true }).addTo(carte)
+  else marqueur = L.marker([lat, lon], { draggable: true }).addTo(map)
                    .on("dragend", ev => {
-                     const p = ev.target.getLatLng(); placer(p.lat, p.lng, false);
+                     const p = ev.target.getLatLng(); place(p.lat, p.lng, false);
                    });
-  if (recentrer) carte.setView([lat, lon], Math.max(carte.getZoom(), 13));
+  if (recentrer) map.setView([lat, lon], Math.max(map.getZoom(), 13));
 }
 
-function proposerFuseau() {
+function suggestTimezone() {
   // The sun, not the state: solar noon follows longitude, and the zone a country keeps is
   // often an hour or more away from it. The suggestion is a starting point the developer
   // corrects, not an answer -- which is why it is shown beside the box and not written into it.
-  const lo = parseFloat($("#lon")?.value);
-  const champ = $("#utc-hint");
-  if (!champ) return;
-  if (!Number.isFinite(lo)) { champ.textContent = ""; return; }
-  const solaire = Math.round(lo / 15);
-  const saisi = parseInt($("#utc")?.value ?? "1", 10);
-  champ.textContent = saisi === solaire ? `h` : `h · ${T("site.solar_noon")}${solaire >= 0 ? "+" : ""}${solaire}`;
+  const longitude = parseFloat($("#lon")?.value);
+  const array = $("#utc-hint");
+  if (!array) return;
+  if (!Number.isFinite(longitude)) { array.textContent = ""; return; }
+  const solar = Math.round(longitude / 15);
+  const typed = parseInt($("#utc")?.value ?? "1", 10);
+  array.textContent = typed === solar ? `h` : `h · ${T("site.solar_noon")}${solar >= 0 ? "+" : ""}${solar}`;
 }
 
 async function saveSite() {
@@ -560,15 +565,15 @@ async function saveSite() {
 
 async function refreshSites(select) {
   state.sites = await (await fetch("/api/sites")).json();
-  const nom = select || state.overrides["site"];
-  state.site = state.sites.find(x => x.name === nom) || state.sites[0];
-  const champ = $("#f-site");
-  if (champ) {
-    champ.innerHTML = state.sites.map(
+  const name = select || state.overrides["site"];
+  state.site = state.sites.find(x => x.name === name) || state.sites[0];
+  const array = $("#f-site");
+  if (array) {
+    array.innerHTML = state.sites.map(
       x => `<option value="${x.name}"${x.name === state.site.name ? " selected" : ""}>${x.name}</option>`).join("");
   }
   state.overrides["site"] = state.site.name;
-  renderLieu(); await loadArchetypes();
+  renderCommunity(); await loadArchetypes();
 }
 
 /* ------------------------------------------------------------------ archetypes */
@@ -635,32 +640,32 @@ function renderArchetypes() {
 }
 
 /* ------------------------------------------------------------------ projects */
-function imprimer() {
+function printReport() {
   // Print, rather than a PDF written by hand: the browser already lays this page out and
   // already knows how to make a file of it, and a second renderer would be a second thing
   // to keep in step with the first. The print stylesheet decides what reaches the sheet.
-  const tete = document.createElement("div");
-  tete.className = "print-only";
-  tete.innerHTML = `<div style="margin-bottom:18px">
+  const header = document.createElement("div");
+  header.className = "print-only";
+  header.innerHTML = `<div style="margin-bottom:18px">
       <h1 style="font-size:22px;margin:0">${T("print.title")} — ${state.site?.name ?? ""}</h1>
       <p style="color:#444;margin:6px 0 0;font-size:11px">
         ${state.projectName ? state.projectName + " · " : ""}
         ${T("print.issued", { date: new Date().toLocaleDateString(
             state.lang === "fr" ? "fr-FR" : "en-GB", { dateStyle: "long" }) })} ·
-        ${T("print.amounts", { code: devise.code })}${devise.per_usd !== 1
-          ? ` (1 USD = ${nf(devise.per_usd, 2)} ${devise.code})` : ""}</p>
+        ${T("print.amounts", { code: currency.code })}${currency.per_usd !== 1
+          ? ` (1 USD = ${nf(currency.per_usd, 2)} ${currency.code})` : ""}</p>
       <p style="color:#444;margin:8px 0 0;font-size:10.5px">
         ${T("print.behaviour")} ${state.arch?.adjusted
           ? T("print.arch.adjusted") : T("print.arch.shipped")}
         ${state.arch?.note ?? ""}</p>
     </div>`;
   const main = $(".main");
-  main.prepend(tete);
+  main.prepend(header);
   window.print();
-  setTimeout(() => tete.remove(), 500);
+  setTimeout(() => header.remove(), 500);
 }
 
-async function exporter(kind, format) {
+async function exportResult(kind, format) {
   const result = state.results[kind];
   if (!result) return;
   const r = await fetch(`/api/export.${format}`, {
@@ -668,10 +673,10 @@ async function exporter(kind, format) {
     body: JSON.stringify({ kind, result, lang: state.lang })
   });
   const blob = await r.blob();
-  const nom = (r.headers.get("Content-Disposition") || "").match(/filename="([^"]+)"/);
+  const name = (r.headers.get("Content-Disposition") || "").match(/filename="([^"]+)"/);
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = nom ? nom[1] : `export.${format}`;
+  a.download = name ? name[1] : `export.${format}`;
   a.click();
   URL.revokeObjectURL(a.href);
 }
@@ -691,7 +696,7 @@ function renderProjects() {
   $("#save").onclick = async () => {
     const r = await fetch("/api/projects", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: state.projectName || "Sans nom",
+      body: JSON.stringify({ name: state.projectName || "Sans name",
                              overrides: state.overrides, results: state.results })
     });
     if (r.ok) { await refreshProjects(); setState(T("state.saved"), null); }
@@ -776,12 +781,12 @@ function show(view) {
 }
 
 /* ------------------------------------------------------------------ start */
-function majDevise() {
+function refreshCurrency() {
   const code = state.overrides["currency.local_code"];
-  const parEuro = parseFloat(state.overrides["currency.xof_per_eur"]);
-  const dollarsParEuro = parseFloat(state.overrides["currency.usd_per_eur"]);
-  if (code && Number.isFinite(parEuro) && Number.isFinite(dollarsParEuro) && dollarsParEuro)
-    devise = { code, per_usd: parEuro / dollarsParEuro };
+  const perEuro = parseFloat(state.overrides["currency.xof_per_eur"]);
+  const dollarsPerEuro = parseFloat(state.overrides["currency.usd_per_eur"]);
+  if (code && Number.isFinite(perEuro) && Number.isFinite(dollarsPerEuro) && dollarsPerEuro)
+    currency = { code, per_usd: perEuro / dollarsPerEuro };
   renderForm();
 }
 
@@ -811,20 +816,20 @@ async function boot(lang) {
   picker.onchange = e => setLanguage(e.target.value);
   // On the first boot the server's values are the study; on a language change they are only
   // labels arriving in another language, and the reader's own values must survive them.
-  const premier = state.groups.length === 0;
+  const first = state.groups.length === 0;
   state.groups = b.groups;
   for (const g of b.groups) for (const f of g.fields) {
     state.defaults[f.path] = f.value;
-    if (premier) state.overrides[f.path] = f.value;
+    if (first) state.overrides[f.path] = f.value;
     else f.value = state.overrides[f.path];
   }
   state.projects = b.projects || [];
   state.sites = b.sites || [];
   state.site = state.sites.find(x => x.name === state.overrides["site"]) || state.sites[0];
-  majDevise();
+  refreshCurrency();
   renderProjects();
   renderSize(state.results.size); renderPlan(state.results.plan);
-  renderLieu(); await loadArchetypes();
+  renderCommunity(); await loadArchetypes();
 
   $$(".nav button").forEach(b => b.onclick = () => show(b.dataset.view));
   $("#run-size").onclick = () => launch("size");

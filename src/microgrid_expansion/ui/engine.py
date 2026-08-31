@@ -237,7 +237,7 @@ def _dispatch_traces(instance, dispatch) -> dict:
     r = lambda a: [round(float(x), 3) for x in a[sl]]        # noqa: E731
 
     months = np.minimum((np.arange(n) // 730), 11)           # 730 h ≈ one twelfth of a year
-    def par_mois(values):
+    def by_month(values):
         return [round(float(values[months == m].sum()), 1) for m in range(12)]
 
     return {
@@ -246,9 +246,9 @@ def _dispatch_traces(instance, dispatch) -> dict:
         "demand": r(demand), "pv_load": r(pv_load), "discharge": r(discharge),
         "generator": r(gen), "charge": r(charge), "soc": r(soc),
         "unserved": r(unserved),
-        "monthly": {"pv_load": par_mois(pv_load), "discharge": par_mois(discharge),
-                    "generator": par_mois(gen), "curtailed": par_mois(curtailed),
-                    "unserved": par_mois(unserved)},
+        "monthly": {"pv_load": by_month(pv_load), "discharge": by_month(discharge),
+                    "generator": by_month(gen), "curtailed": by_month(curtailed),
+                    "unserved": by_month(unserved)},
         "soc_max_kwh": round(float(soc.max()), 1),
     }
 

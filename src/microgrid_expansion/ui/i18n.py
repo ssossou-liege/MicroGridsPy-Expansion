@@ -380,11 +380,25 @@ STRINGS: dict[str, dict[str, str]] = {
     "source.unsourced": {"en": "unsourced", "fr": "non sourcé"},
 
     # ---------------------------------------------------------------- form groups
-    "group.essentiel": {"en": "The project", "fr": "Le projet"},
-    "group.monnaie": {"en": "Display currency", "fr": "Monnaie d'affichage"},
-    "group.reseau": {"en": "National grid", "fr": "Réseau national"},
-    "group.materiel": {"en": "Prices and equipment", "fr": "Prix et matériel"},
-    "group.avance": {"en": "Architecture and control", "fr": "Architecture et conduite"},
+    # ------------------------------------------------------------ choice values
+    # The values themselves are the model's vocabulary and never change; these are only
+    # how they read on the page. A value absent here is shown as it stands, which is what
+    # a currency code or a solver name wants.
+    "choice.slow": {"en": "slow", "fr": "lente"},
+    "choice.central": {"en": "central", "fr": "centrale"},
+    "choice.fast": {"en": "fast", "fr": "rapide"},
+    "choice.yes": {"en": "yes", "fr": "oui"},
+    "choice.no": {"en": "no", "fr": "non"},
+    "choice.mixed": {"en": "divided array", "fr": "champ divisé"},
+    "choice.dc": {"en": "battery bus only", "fr": "bus batterie seul"},
+    "choice.ac": {"en": "load bus only", "fr": "bus charge seul"},
+    "choice.auto": {"en": "let the tool choose", "fr": "laisser l'outil choisir"},
+
+    "group.project": {"en": "The project", "fr": "Le projet"},
+    "group.currency": {"en": "Display currency", "fr": "Monnaie d'affichage"},
+    "group.grid": {"en": "National grid", "fr": "Réseau national"},
+    "group.equipment": {"en": "Prices and equipment", "fr": "Prix et matériel"},
+    "group.advanced": {"en": "Architecture and control", "fr": "Architecture et conduite"},
 
     # ---------------------------------------------------------------- form fields
     "f.trajectory": {"en": "Demand growth", "fr": "Croissance de la demande"},

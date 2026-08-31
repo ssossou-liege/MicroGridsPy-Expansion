@@ -164,20 +164,20 @@ def main() -> int:
     mixture = estimate_maturity_mixture(frame)
     write_mixture(mixture)
 
-    print("Loi de mélange conditionnée à l'ancienneté de raccordement (HH1)")
+    print("Mixture law conditioned on the age of the connection (HH1)")
     matrix = mixture_matrix(mixture)
     hh1 = matrix.xs("HH1", level="customer_type")
     print((100 * hh1).round(1).to_string())
 
-    print("\nSaisonnalité résiduelle, une fois l'ancienneté prise en compte :")
+    print("\nResidual seasonality, once the connection age is accounted for:")
     seasonal = residual_seasonality(frame)
     print(seasonal[["n_observations", "median_maturity_months",
                     "share_newly_connected", "seasonal_index"]].round(3).to_string())
     amplitude = seasonal["seasonal_index"].max() / seasonal["seasonal_index"].min()
     correlation = seasonal["seasonal_index"].corr(seasonal["share_newly_connected"])
-    print(f"\namplitude saisonnière résiduelle : {amplitude:.2f}x")
-    print(f"corrélation avec la part de nouveaux raccordés : {correlation:+.3f}")
-    print(f"\nécrit {MIXTURE_PATH}")
+    print(f"\nresidual seasonal amplitude: {amplitude:.2f}x")
+    print(f"correlation with the share of newly connected: {correlation:+.3f}")
+    print(f"\nwritten {MIXTURE_PATH}")
     return 0
 
 

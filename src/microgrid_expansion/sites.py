@@ -64,10 +64,10 @@ class Site:
         """Path to the site's irradiance series, checked for existence."""
         if self.irradiance_file is None:
             raise FileNotFoundError(
-                f"aucune série météorologique n'est enregistrée pour {self.name}. "
-                "Obtenez-la depuis la carte, bouton « Obtenir la série météorologique », "
-                "ou en ligne de commande avec data/irradiance/download.py. Elle se "
-                "télécharge une fois par site et demande une connexion."
+                f"no meteorological series is stored for {self.name}. "
+                "Fetch it from the map, with the \"Fetch the meteorological series\" button, "
+                "or from the command line with data/irradiance/download.py, which "
+                "downloads once per site and needs a connection."
             )
         return require(IRRADIANCE_DIR / self.irradiance_file)
 

@@ -37,13 +37,13 @@ import pandas as pd
 from ..paths import REFERENCE_DIR
 
 #: Activity classes, in the order they are reported.
-CLASSES = ("froid", "mouture", "couvaison", "couture", "scierie", "petite_activite")
+CLASSES = ("refrigeration", "milling", "incubation", "tailoring", "sawmill", "small_trade")
 
 #: Enterprises the survey did not reach. They are not unclassified in the sense of being
 #: unknown: they are the small trading activities the survey deliberately passed over in
 #: favour of the large consumers, and their measured profile is reported as its own class
 #: rather than folded into an average that would misdescribe both ends.
-UNSURVEYED = "petite_activite"
+UNSURVEYED = "small_trade"
 
 HOURS = tuple(range(24))
 
@@ -54,15 +54,15 @@ def classify(activity: str) -> str:
     text = "".join(c for c in text if not unicodedata.combining(c))
     if any(k in text for k in ("GLACE", "BOISSON", "JUS", "POISSONNERIE",
                                "CONGEL", "FRAICH")):
-        return "froid"
+        return "refrigeration"
     if any(k in text for k in ("MOULIN", "MOUTURE")):
-        return "mouture"
+        return "milling"
     if any(k in text for k in ("COUVEUSE", "COUVAISON", "ECLOSION", "OEUF")):
-        return "couvaison"
+        return "incubation"
     if any(k in text for k in ("COUTURE", "TAILLEUR")):
-        return "couture"
+        return "tailoring"
     if "SCIERIE" in text:
-        return "scierie"
+        return "sawmill"
     return UNSURVEYED
 
 
@@ -77,11 +77,11 @@ class ProductiveCalibration:
     @classmethod
     def load(cls) -> "ProductiveCalibration":
         d = REFERENCE_DIR
-        profiles = pd.read_csv(d / "pue_class_profiles.csv", index_col="classe")
+        profiles = pd.read_csv(d / "pue_class_profiles.csv", index_col="activity_class")
         # Hour columns arrive as strings; anything else — the day-to-day spread — keeps
         # its name.
         profiles.columns = [int(c) if str(c).isdigit() else c for c in profiles.columns]
-        mix = pd.read_csv(d / "pue_class_mix.csv", index_col="classe")
+        mix = pd.read_csv(d / "pue_class_mix.csv", index_col="activity_class")
         # The table is stored rounded; a multinomial draw needs probabilities that sum to
         # one exactly, and one part in a million the wrong way makes it refuse.
         mix = mix / mix.sum(axis=0)
@@ -115,13 +115,13 @@ def sample_units(calibration: ProductiveCalibration, n_connected: int,
     """
     band = maturity_band if maturity_band in calibration.intensity.index \
         else calibration.intensity.index[-1]
-    column = trajectory if trajectory in calibration.intensity.columns else "centrale"
+    column = trajectory if trajectory in calibration.intensity.columns else "central"
     expected = (float(expected_units) if expected_units is not None
                 else float(calibration.intensity.loc[band, column]) * n_connected)
     total = int(rng.poisson(max(expected, 0.0)))
     if total == 0:
         return {c: 0 for c in calibration.mix.index}
-    shares = calibration.mix[column if column in calibration.mix.columns else "centrale"]
+    shares = calibration.mix[column if column in calibration.mix.columns else "central"]
     draw = rng.multinomial(total, shares.to_numpy())
     return dict(zip(calibration.mix.index, (int(n) for n in draw)))
 
@@ -141,7 +141,7 @@ def monthly_profile_kw(counts: dict[str, int], calibration: ProductiveCalibratio
         if not n or klass not in calibration.profiles.index:
             continue
         shape = calibration.profiles.loc[klass, hours].to_numpy(dtype=float)
-        spread = float(calibration.profiles.loc[klass].get("cv_jour", 0.0) or 0.0)
+        spread = float(calibration.profiles.loc[klass].get("daily_cv", 0.0) or 0.0)
         # Log-normal about a unit mean, so the drawn days average to the measured day.
         sigma = float(np.sqrt(np.log1p(spread ** 2)))
         factors = rng.lognormal(-0.5 * sigma ** 2, sigma, size=(n, days))

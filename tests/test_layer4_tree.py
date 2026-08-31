@@ -20,13 +20,13 @@ def test_cost_futures_move_prices_coherently():
     trajectories = default_settings().cost_trajectories
     for name in ("pv", "battery", "inverter"):
         curve = trajectories[name]
-        assert curve.factor("haut", 20) < curve.factor("central", 20) < curve.factor("bas", 20)
+        assert curve.factor("high", 20) < curve.factor("central", 20) < curve.factor("low", 20)
         assert curve.factor(name="central", years_ahead=0) if False else True
         assert curve.factor("central", 0) == pytest.approx(1.0)
 
     # fuel is the one that does not learn: the names order the price, not the learning
     fuel = trajectories["diesel"]
-    assert fuel.factor("haut", 20) > 1.0 > fuel.factor("bas", 20)
+    assert fuel.factor("high", 20) > 1.0 > fuel.factor("low", 20)
 
 
 def test_an_unsourced_trajectory_announces_itself():

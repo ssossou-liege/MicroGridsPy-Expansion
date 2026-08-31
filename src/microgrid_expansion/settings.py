@@ -258,10 +258,10 @@ class CouplingSpec:
     certifying the corners separately, which is how the divided array was first measured.
     """
 
-    #: ``"dc"``, ``"ac"``, ``"mixte"``, or ``"auto"``. The divided array is the default:
+    #: ``"dc"``, ``"ac"``, ``"mixed"``, or ``"auto"``. The divided array is the default:
     #: it holds the two pure arrangements as its corners, so nothing is given up by
     #: searching over it, and it removes the need to solve one programme per arrangement.
-    architecture: str = "mixte"
+    architecture: str = "mixed"
     #: Array admitted per kilowatt of hybrid inverter by its integrated trackers. 1.3 is
     #: what current three-phase units publish (30 kW of inverter, 39 kW of array).
     dc_ac_ratio_max: float = 1.3
@@ -285,13 +285,13 @@ class CouplingSpec:
 
     def cost_usd_kw(self, architecture: str) -> float:
         """Conversion bought per kilowatt of array, beyond the hybrid inverter itself."""
-        if architecture in ("dc", "mixte"):
+        if architecture in ("dc", "mixed"):
             # Under the divided array each part carries its own price, the one on the load's
             # bus buying string inverters where this coefficient applies to the whole field.
             return 0.0                     # the trackers come inside the inverter
         if architecture == "ac":
             return self.string_inverter_cost_usd_kw
-        raise ValueError("architecture must be 'dc', 'ac' or 'mixte', "
+        raise ValueError("architecture must be 'dc', 'ac' or 'mixed', "
                          f"not {architecture!r}")
 
     def array_ratio_max(self, architecture: str) -> float:
@@ -370,9 +370,9 @@ def default_cost_trajectories() -> dict[str, CostTrajectory]:
     therefore built around a flat real price rather than around a forecast, which is an
     admission of ignorance rather than a projection.
 
-    Scenario names are shared across technologies so that a draw is coherent: ``bas``
-    reduces prices slowly, ``central`` at the published median, ``haut`` quickly. For fuel,
-    the same names order the *price*, not the rate of learning — ``haut`` is the expensive
+    Scenario names are shared across technologies so that a draw is coherent: ``low``
+    reduces prices slowly, ``central`` at the published median, ``high`` quickly. For fuel,
+    the same names order the *price*, not the rate of learning — ``high`` is the expensive
     fuel future, which is the one that favours a larger array.
     """
     learning = Provenance(
@@ -399,26 +399,26 @@ def default_cost_trajectories() -> dict[str, CostTrajectory]:
              "is an uncertainty axis rather than a parameter")
 
     return {
-        "pv": CostTrajectory(early={"bas": -0.015, "central": -0.030, "haut": -0.050},
-                             late={"bas": -0.005, "central": -0.015, "haut": -0.025},
+        "pv": CostTrajectory(early={"low": -0.015, "central": -0.030, "high": -0.050},
+                             late={"low": -0.005, "central": -0.015, "high": -0.025},
                              provenance=learning),
-        "battery": CostTrajectory(early={"bas": -0.014, "central": -0.023, "haut": -0.040},
-                                  late={"bas": -0.003, "central": -0.015, "haut": -0.020},
+        "battery": CostTrajectory(early={"low": -0.014, "central": -0.023, "high": -0.040},
+                                  late={"low": -0.003, "central": -0.015, "high": -0.020},
                                   provenance=storage),
         # Converters follow the balance of system rather than the modules, and generating
         # sets are a mature technology whose real price barely moves.
-        "inverter": CostTrajectory(early={"bas": -0.010, "central": -0.020, "haut": -0.030},
-                                   late={"bas": -0.005, "central": -0.010, "haut": -0.015},
+        "inverter": CostTrajectory(early={"low": -0.010, "central": -0.020, "high": -0.030},
+                                   late={"low": -0.005, "central": -0.010, "high": -0.015},
                                    provenance=learning),
-        "generator": CostTrajectory(early={"bas": 0.0, "central": -0.005, "haut": -0.010},
-                                    late={"bas": 0.0, "central": -0.005, "haut": -0.010},
+        "generator": CostTrajectory(early={"low": 0.0, "central": -0.005, "high": -0.010},
+                                    late={"low": 0.0, "central": -0.005, "high": -0.010},
                                     provenance=Provenance(
                                         source="reciprocating generating sets are a mature "
                                                "technology; real capital cost is taken as "
                                                "flat to slowly declining",
                                         verified=False)),
-        "diesel": CostTrajectory(early={"bas": -0.010, "central": 0.0, "haut": 0.020},
-                                 late={"bas": -0.010, "central": 0.0, "haut": 0.020},
+        "diesel": CostTrajectory(early={"low": -0.010, "central": 0.0, "high": 0.020},
+                                 late={"low": -0.010, "central": 0.0, "high": 0.020},
                                  provenance=fuel),
     }
 
@@ -589,11 +589,11 @@ class GridSpec:
     arrival_hazard_by_stage: tuple[float, ...] = (0.0, 0.15, 0.20, 0.20, 0.20)
     tariff_provenance: Provenance = field(default_factory=lambda: Provenance(
         source="", verified=False,
-        note="ordre de grandeur non sourcé ; relever le tarif du distributeur et le prix "
-             "d'injection auprès du concessionnaire avant tout dimensionnement"))
+        note="an unsourced order of magnitude; take the utility's tariff and the export "
+             "price from the concession holder before sizing anything"))
     provenance: Provenance = field(default_factory=lambda: Provenance(
         source="", verified=False,
-        note="disponibilité et régime de coupures : à relever sur le départ concerné"))
+        note="availability and outage regime: to be measured on the feeder concerned"))
 
     def __post_init__(self) -> None:
         # YAML has no tuple, so a reloaded document brings the hazards back as a list and a
@@ -636,7 +636,7 @@ class ProjectSettings:
 
     site: str = "Samionta"
     year: int = 2025
-    demand_trajectory: str = "centrale"
+    demand_trajectory: str = "central"
     maturity_months: int = 12
     seed: int = 0
 
@@ -671,8 +671,8 @@ class ProjectSettings:
                 raise ValueError("grid.availability must lie in (0, 1]")
             if self.grid.mean_outage_hours <= 0:
                 raise ValueError("grid.mean_outage_hours must be positive")
-        if self.coupling.architecture not in ("dc", "ac", "mixte", "auto"):
-            raise ValueError("coupling.architecture must be 'dc', 'ac', 'mixte' or "
+        if self.coupling.architecture not in ("dc", "ac", "mixed", "auto"):
+            raise ValueError("coupling.architecture must be 'dc', 'ac', 'mixed' or "
                              f"'auto', not {self.coupling.architecture!r}")
         if min(self.coupling.dc_ac_ratio_max, self.coupling.ac_ratio_max) <= 0.0:
             raise ValueError("the array-to-inverter ratios must be strictly positive")
@@ -688,7 +688,7 @@ class ProjectSettings:
             if not 0.0 <= generator.min_load_fraction < 1.0:
                 raise ValueError(f"minimum loading of the {generator.rating_kw} kW unit "
                                  "must lie in [0, 1)")
-        if self.demand_trajectory not in ("lente", "centrale", "rapide"):
+        if self.demand_trajectory not in ("slow", "central", "fast"):
             raise ValueError(f"unknown demand trajectory {self.demand_trajectory!r}")
 
         low, high = self.economics.value_of_lost_load_range_usd_kwh
@@ -817,20 +817,19 @@ def default_settings() -> ProjectSettings:
 
 # ---------------------------------------------------------------------------- CLI
 TEMPLATE_HEADER = """\
-# Paramètres du projet — microgrid-expansion
+# Project parameters -- microgrid-expansion
 #
-# Ce document rassemble tout ce que le modèle a besoin de savoir en dehors des données
-# mesurées. Modifiez-le plutôt que le code : les résultats publiés doivent pouvoir être
-# archivés avec le jeu de paramètres qui les a produits.
+# This document holds everything the model needs to know beyond the measured data. Edit it
+# rather than the code: published results must be archivable together with the parameter
+# set that produced them.
 #
-# Les blocs « provenance » indiquent d'où vient un paramètre et si quelqu'un l'a vérifié.
-# Un paramètre marqué « verified: false » n'a pas été sourcé et ne devrait pas soutenir une
-# conclusion publiée sans être remplacé.
+# A "provenance" block says where a parameter comes from and whether anyone has checked it.
+# A parameter marked "verified: false" has not been sourced and should not support a
+# published conclusion until it is replaced.
 #
-# Les consommations de carburant sont celles des fiches constructeur, à 50, 75 et 100 % de
-# charge ; la courbe de rendement en est déduite. Chaque taille du catalogue porte la
-# sienne : c'est ce qui distingue économiquement les tailles entre lesquelles le
-# certificat arbitre.
+# Fuel consumptions are the manufacturer's own, at 50, 75 and 100 % of load; the efficiency
+# curve is derived from them. Every size in the catalogue carries its own, which is what
+# economically distinguishes the sizes the certificate arbitrates between.
 """
 
 
@@ -845,31 +844,31 @@ def write_template(path: str | Path) -> Path:
 def main(argv: list[str] | None = None) -> int:
     import argparse
 
-    parser = argparse.ArgumentParser(description="Paramètres du projet.")
+    parser = argparse.ArgumentParser(description="Project parameters.")
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("template", help="écrire un fichier de paramètres à remplir") \
-        .add_argument("--output", default="projet.yaml")
-    sub.add_parser("check", help="valider un fichier et signaler le non sourcé") \
+    sub.add_parser("template", help="write a parameter file to fill in") \
+        .add_argument("--output", default="project.yaml")
+    sub.add_parser("check", help="validate a file and report what is unsourced") \
         .add_argument("path")
 
     args = parser.parse_args(argv)
     if args.command == "template":
         path = write_template(args.output)
-        print(f"écrit {path}")
+        print(f"written {path}")
         return 0
 
     settings = ProjectSettings.load(args.path)
-    print(f"{args.path} : validé")
+    print(f"{args.path}: valid")
     unverified = settings.unverified()
     if not unverified:
-        print("tous les paramètres sont sourcés.")
+        print("every parameter is sourced.")
         return 0
-    print(f"\n{len(unverified)} groupe(s) de paramètres non vérifiés :")
+    print(f"\n{len(unverified)} unverified parameter group(s):")
     for path, provenance in unverified:
         print(f"  {path}")
-        print(f"      origine : {provenance.source}")
+        print(f"      origin:  {provenance.source}")
         if provenance.note:
-            print(f"      à faire : {provenance.note}")
+            print(f"      to do:   {provenance.note}")
     return 0
 
 

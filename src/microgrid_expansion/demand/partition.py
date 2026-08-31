@@ -126,18 +126,18 @@ def main() -> int:
     profiles = archetype_profiles(segmented)
     write_archetype_profiles()
 
-    print("Partition opérative (profils de référence RAMP)")
+    print("Operative partition (RAMP reference profiles)")
     print(profiles.round(3).to_string())
-    print("\nRépartition de tous les états :")
+    print("\nShare of every state:")
     print((100 * state_shares(segmented)).round(1).to_string())
 
     weak = profiles.index[~profiles["has_support"]].tolist()
     if weak:
-        print(f"\nArchétype(s) sans support empirique suffisant (< {MIN_SUPPORT} obs) : "
+        print(f"\nArchetype(s) without enough empirical support (< {MIN_SUPPORT} obs): "
               f"{', '.join('C' + c for c in weak)}")
-        print("  leurs paramètres d'appareils sont conservés tels quels, faute de mesure "
-              "permettant de les corriger.")
-    print(f"\nécrit {PROFILES_PATH}")
+        print("  their appliance parameters are kept as they stand, for want of a "
+              "measurement that would correct them.")
+    print(f"\nwritten {PROFILES_PATH}")
     return 0
 
 

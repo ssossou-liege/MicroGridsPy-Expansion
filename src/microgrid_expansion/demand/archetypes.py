@@ -27,17 +27,17 @@ PROFILES = REFERENCE_DIR / "archetype_profiles.csv"
 
 #: What each archetype is, in the words a developer would use about a household.
 DESCRIPTIONS: dict[str, str] = {
-    "0": "Consommation moyenne, étalée sur la journée",
-    "1": "Sobre, strictement vespéral",
-    "2": "Gros consommateur",
-    "3": "Régulier, faible pointe",
+    "0": "Average consumption, spread through the day",
+    "1": "Frugal, strictly evening",
+    "2": "Heavy consumer",
+    "3": "Steady, low peak",
 }
 
 #: Where the shipped figures come from, shown wherever they are used.
 CALIBRATION_NOTE = (
-    "Calibrés sur 1 818 couples ménage-mois relevés au pas quart-horaire chez 141 ménages "
-    "de deux villages béninois. À vérifier avant tout emploi sur une communauté dont les "
-    "usages, le tarif ou les horaires diffèrent."
+    "Calibrated on 1 818 household-months of quarter-hourly records from 141 households in "
+    "two Beninese villages. To be checked before any use on a community whose uses, tariff "
+    "or hours differ."
 )
 
 
@@ -70,7 +70,7 @@ def shipped() -> list[Archetype]:
     return [
         Archetype(
             cluster=str(row.cluster),
-            label=DESCRIPTIONS.get(str(row.cluster), f"Archétype {row.cluster}"),
+            label=DESCRIPTIONS.get(str(row.cluster), f"Archetype {row.cluster}"),
             share_pct=round(100.0 * row.n_observations / total, 1),
             mean_daily_kwh=round(float(row.mean_daily_kwh), 4),
             mean_peak_w=round(float(row.mean_peak_w), 1),
@@ -141,7 +141,7 @@ def rebuild_from_meters(readings: Path, customers: Path) -> list[Archetype]:
     for cluster, block in active.groupby("cluster"):
         out.append(Archetype(
             cluster=str(cluster),
-            label=DESCRIPTIONS.get(str(cluster), f"Archétype {cluster}"),
+            label=DESCRIPTIONS.get(str(cluster), f"Archetype {cluster}"),
             share_pct=round(100.0 * len(block) / total, 1),
             mean_daily_kwh=round(float(block.mean_daily_kWh.mean()), 4),
             mean_peak_w=round(float(block.peak_power.mean()), 1),

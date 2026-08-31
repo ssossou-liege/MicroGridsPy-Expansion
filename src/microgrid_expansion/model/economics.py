@@ -27,7 +27,7 @@ def annualised_unit_costs(costs: dict, architecture: str, settings) -> tuple[flo
     Five figures under the divided array: the part of the field on the load's bus buys the
     string inverters that put it there, which the part on the battery's bus does not.
     """
-    conversion = (0.0 if architecture in ("dc", "mixte") else costs["capex_conv_ac"])
+    conversion = (0.0 if architecture in ("dc", "mixed") else costs["capex_conv_ac"])
     return (
         costs["capex_pv"] * (config.crf(n=config.PV_LIFETIME_Y) + config.PV_OM_RATE)
         + conversion * (config.crf(n=config.CONV_LIFETIME_Y) + config.CONV_OM_RATE),

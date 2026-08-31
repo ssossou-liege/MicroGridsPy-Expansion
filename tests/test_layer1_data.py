@@ -42,7 +42,7 @@ def test_missing_irradiance_is_reported_not_guessed():
     from microgrid_expansion.sites import Site
 
     unserved = Site(name="Nulle-part", census={"HH1": 10}, irradiance_file=None)
-    with pytest.raises(FileNotFoundError, match="aucune série météorologique"):
+    with pytest.raises(FileNotFoundError, match="no meteorological series"):
         unserved.irradiance_path()
 
 

@@ -1,7 +1,7 @@
 {
   "site": "Samionta",
   "year": 2025,
-  "trajectory": "rapide",
+  "trajectory": "fast",
   "maturity_months": 12,
   "voll_usd_kwh": 1.0,
   "design": {
@@ -36,5 +36,5 @@
   "tariff_target_usd_kwh": 0.263,
   "subsidy_fraction": 0.0,
   "subsidy_usd": 0.0,
-  "architecture": "mixte"
+  "architecture": "mixed"
 }

@@ -16,7 +16,8 @@ dist/
 *.log
 
 # Described sites and studies: a user's own work, not the project's.
-projets/
+projects/
+projets/          # the former name, so an existing checkout stays clean
 sites/
 
 # Results (keep summaries, ignore bulk outputs)

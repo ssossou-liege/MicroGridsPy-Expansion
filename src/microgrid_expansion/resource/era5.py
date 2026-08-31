@@ -275,13 +275,13 @@ def main(argv: list[str] | None = None) -> int:
     path = download_era5(get_site(args.site), args.first_year, args.last_year,
                          overwrite=args.overwrite)
     frame = pd.read_csv(path, parse_dates=["timestamp"])
-    print("\nRésumé :")
-    print(f"  période        : {frame['timestamp'].min()} -> {frame['timestamp'].max()}")
+    print("\nSummary:")
+    print(f"  period         : {frame['timestamp'].min()} -> {frame['timestamp'].max()}")
     print(f"  irradiance     : max {frame['irradiance_w_m2'].max():.0f} W/m2, "
-          f"cumul {frame['irradiance_w_m2'].sum() / 1000 / (args.last_year - args.first_year + 1):.0f} kWh/m2/an")
-    print(f"  température    : {frame['temperature_c'].min():.1f} - "
+          f"total {frame['irradiance_w_m2'].sum() / 1000 / (args.last_year - args.first_year + 1):.0f} kWh/m2/yr")
+    print(f"  temperature    : {frame['temperature_c'].min():.1f} - "
           f"{frame['temperature_c'].max():.1f} °C")
-    print(f"  vent           : moyenne {frame['wind_speed_m_s'].mean():.2f} m/s")
+    print(f"  wind           : mean {frame['wind_speed_m_s'].mean():.2f} m/s")
     return 0
 
 

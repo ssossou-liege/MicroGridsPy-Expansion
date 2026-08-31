@@ -40,23 +40,23 @@ class Field:
 
 #: What a developer states about the site. Everything else has a default worth trusting.
 ESSENTIAL: tuple[Field, ...] = (
-    Field("demand_trajectory", "Croissance de la demande", kind="choice",
-          choices=("lente", "centrale", "rapide"),
-          hint="Rythme auquel la consommation croît avec l'ancienneté du raccordement.", key="f.trajectory"),
-    Field("maturity_months", "Ancienneté du raccordement", "mois", kind="integer",
-          hint="Zéro pour un site neuf ; douze pour un réseau en service depuis un an.", key="f.maturity"),
-    Field("economics.horizon_years", "Horizon du projet", "ans", kind="integer", key="f.horizon"),
-    Field("economics.discount_rate", "Taux d'actualisation", "", step=0.005,
+    Field("demand_trajectory", "Demand growth", kind="choice",
+          choices=("slow", "central", "fast"),
+          hint="How fast consumption grows with the age of the connection.", key="f.trajectory"),
+    Field("maturity_months", "Age of the connection", "months", kind="integer",
+          hint="Zero for a new site; twelve for a grid a year into service.", key="f.maturity"),
+    Field("economics.horizon_years", "Project horizon", "years", kind="integer", key="f.horizon"),
+    Field("economics.discount_rate", "Discount rate", "", step=0.005,
           source_path="economics.discount", key="f.discount"),
-    Field("economics.diesel_price_usd_l", "Prix du gazole", "$/L", step=0.01,
+    Field("economics.diesel_price_usd_l", "Diesel price", "$/L", step=0.01,
           source_path="economics.diesel", key="f.diesel"),
-    Field("economics.tariff_usd_kwh", "Tarif visé", "$/kWh", step=0.001,
+    Field("economics.tariff_usd_kwh", "Target tariff", "$/kWh", step=0.001,
           source_path="economics.tariff",
-          hint="Cible de coût actualisé ; l'outil rapporte la subvention qui l'atteint.", key="f.tariff"),
-    Field("economics.demand_growth_rate", "Croissance annuelle de la demande", "", step=0.01,
-          hint="Employée par l'analyse financière seule, pour projeter les recettes. Le "
-               "dimensionnement porte sur l'année et l'ancienneté déclarées ; servir cette "
-               "croissance est l'objet du plan d'extension.", key="f.growth"),
+          hint="Levelised-cost target; the tool reports the subsidy that reaches it.", key="f.tariff"),
+    Field("economics.demand_growth_rate", "Annual demand growth", "", step=0.01,
+          hint="Used by the financial appraisal alone, to project revenue. The sizing is "
+               "for the year and the connection age stated; serving that growth is "
+               "what the expansion plan is for.", key="f.growth"),
 )
 
 #: How amounts are shown. The model computes in dollars because that is the currency its
@@ -64,91 +64,90 @@ ESSENTIAL: tuple[Field, ...] = (
 #: currency of the country, and an interface that will not speak it forces a spreadsheet
 #: between the tool and every conversation it is meant to support.
 CURRENCY: tuple[Field, ...] = (
-    Field("currency.local_code", "Monnaie locale", kind="choice",
+    Field("currency.local_code", "Local currency", kind="choice",
           choices=("XOF", "USD", "EUR", "NGN", "GHS", "KES", "TZS", "ZMW", "MWK"),
-          hint="Les montants sont affichés dans cette monnaie ; le calcul reste en dollars.", key="f.currency"),
-    Field("currency.xof_per_eur", "Unités locales par euro", "", step=0.01,
-          hint="Parité fixe pour le franc CFA ; taux de marché pour les autres.", key="f.per_eur"),
-    Field("currency.usd_per_eur", "Dollars par euro", "", step=0.01, key="f.usd_eur"),
+          hint="Amounts are shown in this currency; the computation stays in dollars.", key="f.currency"),
+    Field("currency.xof_per_eur", "Local units per euro", "", step=0.01,
+          hint="A fixed peg for the CFA franc; a market rate for the others.", key="f.per_eur"),
+    Field("currency.usd_per_eur", "Dollars per euro", "", step=0.01, key="f.usd_eur"),
 )
 
 #: The national grid, where there is one or where one is expected. Half the projects that
 #: need sizing sit where the grid is due within a decade, and the question is not whether it
 #: arrives but what to build in the meantime.
 GRID: tuple[Field, ...] = (
-    Field("grid.connected", "Raccordement au réseau", kind="choice",
-          choices=("non", "oui"),
-          hint="Un réseau intermittent déplace le gazole, pas le stockage : c'est le groupe "
-               "électrogène qu'il remplace, la batterie restant nécessaire pour les "
-               "coupures.", key="f.grid.connected"),
-    Field("grid.availability", "Disponibilité du réseau", "", step=0.01,
-          hint="Part des heures où le départ est sous tension.", key="f.grid.availability"),
-    Field("grid.mean_outage_hours", "Durée typique d'une coupure", "h", step=0.5,
-          hint="Ce que la centrale doit porter seule, et donc ce qui dimensionne le "
-               "stockage. Une moyenne de disponibilité ne le dit pas.", key="f.grid.outage"),
-    Field("grid.import_usd_kwh", "Prix de l'énergie importée", "$/kWh", step=0.01,
+    Field("grid.connected", "Connected to the grid", kind="choice",
+          choices=("no", "yes"),
+          hint="An intermittent grid displaces the fuel, not the storage: it is the "
+               "generating set it replaces, the battery still being needed for the "
+               "outages.", key="f.grid.connected"),
+    Field("grid.availability", "Grid availability", "", step=0.01,
+          hint="Share of the hours the feeder is live.", key="f.grid.availability"),
+    Field("grid.mean_outage_hours", "Typical length of an outage", "h", step=0.5,
+          hint="What the plant must carry alone, and so what sizes the storage. An "
+               "average availability does not say it.", key="f.grid.outage"),
+    Field("grid.import_usd_kwh", "Price of imported energy", "$/kWh", step=0.01,
           source_path="grid.tariff",
-          hint="À relever auprès du distributeur : un tarif réglementé est propre au pays "
-               "et souvent par tranches. La valeur proposée n'est qu'un ordre de grandeur.", key="f.grid.import"),
-    Field("grid.export_usd_kwh", "Prix de l'énergie exportée", "$/kWh", step=0.01,
+          hint="To be taken from the utility: a regulated tariff is particular to the "
+               "country and often banded. The value offered is an order of magnitude.", key="f.grid.import"),
+    Field("grid.export_usd_kwh", "Price of exported energy", "$/kWh", step=0.01,
           source_path="grid.tariff",
-          hint="Zéro si l'injection n'est pas rémunérée ; le surplus est alors écrêté.", key="f.grid.export"),
-    Field("grid.capacity_kw", "Puissance de raccordement", "kW", step=1.0,
-          hint="Zéro pour n'imposer aucune limite au-delà de celle de la conversion.", key="f.grid.capacity"),
-    Field("grid.connection_usd", "Coût du raccordement", "$", step=100.0,
-          hint="Ligne, comptage, protections.", key="f.grid.cost"),
-    Field("grid.arrival_uncertain", "Traiter l'arrivée comme incertaine", kind="choice",
-          choices=("non", "oui"),
-          hint="Pour un village où la ligne est annoncée sans date. Le plan d'extension "
-               "branche alors sur son arrivée : ce qu'on engage aujourd'hui doit tenir "
-               "qu'elle vienne ou non. Sans objet quand le réseau est déjà là, ou "
-               "manifestement pas prévu.", key="f.grid.uncertain"),
+          hint="Zero where export is not paid for; the surplus is then curtailed.", key="f.grid.export"),
+    Field("grid.capacity_kw", "Connection capacity", "kW", step=1.0,
+          hint="Zero to impose no limit beyond the converter's own.", key="f.grid.capacity"),
+    Field("grid.connection_usd", "Cost of the connection", "$", step=100.0,
+          hint="Line, metering, protection.", key="f.grid.cost"),
+    Field("grid.arrival_uncertain", "Treat the arrival as uncertain", kind="choice",
+          choices=("no", "yes"),
+          hint="For a village where the line is announced without a date. The expansion "
+               "plan then branches on its arrival: what is committed today must hold "
+               "whether it comes or not. Immaterial where the grid is already there, "
+               "or plainly not planned.", key="f.grid.uncertain"),
 )
 
 #: Prices and equipment, which move from one market to another.
 EQUIPMENT: tuple[Field, ...] = (
-    Field("photovoltaic.cost_usd_kw", "Photovoltaïque", "$/kW", step=1.0,
+    Field("photovoltaic.cost_usd_kw", "Photovoltaic", "$/kW", step=1.0,
           source_path="photovoltaic", key="f.pv_cost"),
-    Field("battery.cost_usd_kwh", "Stockage", "$/kWh", step=1.0, source_path="battery", key="f.batt_cost"),
-    Field("inverter.cost_usd_kw", "Électronique de puissance", "$/kW", step=1.0,
+    Field("battery.cost_usd_kwh", "Storage", "$/kWh", step=1.0, source_path="battery", key="f.batt_cost"),
+    Field("inverter.cost_usd_kw", "Power electronics", "$/kW", step=1.0,
           source_path="inverter", key="f.inv_cost"),
-    Field("coupling.string_inverter_cost_usd_kw", "Onduleurs de chaîne", "$/kW", step=1.0,
+    Field("coupling.string_inverter_cost_usd_kw", "String inverters", "$/kW", step=1.0,
           source_path="coupling", key="f.string_cost"),
-    Field("photovoltaic.lifetime_years", "Durée de vie du photovoltaïque", "ans",
+    Field("photovoltaic.lifetime_years", "Photovoltaic lifetime", "years",
           kind="integer", key="f.pv_life"),
-    Field("battery.lifetime_years", "Durée de vie du stockage", "ans", kind="integer", key="f.batt_life"),
-    Field("inverter.lifetime_years", "Durée de vie de la conversion", "ans", kind="integer", key="f.inv_life"),
+    Field("battery.lifetime_years", "Storage lifetime", "years", kind="integer", key="f.batt_life"),
+    Field("inverter.lifetime_years", "Converter lifetime", "years", kind="integer", key="f.inv_life"),
 )
 
 #: How the plant is wired and run. Changing these changes what the certificate means.
 ADVANCED: tuple[Field, ...] = (
-    Field("coupling.architecture", "Couplage", kind="choice",
-          choices=("mixte", "dc", "ac", "auto"),
-          hint="Le champ divisé contient les deux dispositions pures comme cas extrêmes.", key="f.coupling"),
-    Field("coupling.dc_ac_ratio_max", "Champ admis par kW, bus batterie", "kW/kW", step=0.1,
+    Field("coupling.architecture", "Coupling", kind="choice",
+          choices=("mixed", "dc", "ac", "auto"),
+          hint="The divided array contains both pure arrangements as extreme cases.", key="f.coupling"),
+    Field("coupling.dc_ac_ratio_max", "Array admitted per kW, battery bus", "kW/kW", step=0.1,
           source_path="coupling", key="f.ratio_dc"),
-    Field("coupling.ac_ratio_max", "Champ admis par kW, bus charge", "kW/kW", step=0.1,
+    Field("coupling.ac_ratio_max", "Array admitted per kW, load bus", "kW/kW", step=0.1,
           source_path="coupling", key="f.ratio_ac"),
-    Field("controller.reserve_multiplier", "Réserve d'anticipation", "", step=0.1,
-          hint="Multiplie l'énergie que l'automate garde pour la nuit à venir.", key="f.reserve"),
-    Field("controller.lookahead_hours", "Fenêtre d'anticipation", "h", kind="integer", key="f.lookahead"),
-    Field("controller.generator_setpoint", "Consigne du groupe", "", step=0.05, key="f.setpoint"),
-    Field("economics.value_of_lost_load_usd_kwh", "Énergie non distribuée", "$/kWh",
+    Field("controller.reserve_multiplier", "Look-ahead reserve", "", step=0.1,
+          hint="Multiplies the energy the controller keeps for the night ahead.", key="f.reserve"),
+    Field("controller.lookahead_hours", "Look-ahead window", "h", kind="integer", key="f.lookahead"),
+    Field("controller.generator_setpoint", "Generator setpoint", "", step=0.05, key="f.setpoint"),
+    Field("economics.value_of_lost_load_usd_kwh", "Unserved energy", "$/kWh",
           step=0.1, source_path="economics.voll", key="f.voll"),
-    Field("economics.min_service_fraction", "Taux de service exigé", "", step=0.005,
-          hint="Part minimale de la demande qu'un dimensionnement doit servir pour être "
-               "retenu. Laissez à zéro pour ne rien exiger et laisser le coût de l'énergie "
-               "non distribuée arbitrer seul ; portez-le à 0,98 quand une concession "
-               "l'impose.", key="f.service"),
-    Field("solver.name", "Solveur", kind="choice", choices=("gurobi", "highs"), key="f.solver"),
+    Field("economics.min_service_fraction", "Required service level", "", step=0.005,
+          hint="The least share of demand a design must serve to be admitted. Leave it at "
+               "zero to require nothing and let the cost of unserved energy arbitrate "
+               "alone; raise it to 0.98 where a concession imposes one.", key="f.service"),
+    Field("solver.name", "Solver", kind="choice", choices=("gurobi", "highs"), key="f.solver"),
 )
 
 GROUPS: tuple[tuple[str, str, tuple[Field, ...]], ...] = (
-    ("essentiel", "Le projet", ESSENTIAL),
-    ("monnaie", "Monnaie d'affichage", CURRENCY),
-    ("reseau", "Réseau national", GRID),
-    ("materiel", "Prix et matériel", EQUIPMENT),
-    ("avance", "Architecture et conduite", ADVANCED),
+    ("project", "The project", ESSENTIAL),
+    ("currency", "Display currency", CURRENCY),
+    ("grid", "National grid", GRID),
+    ("equipment", "Prices and equipment", EQUIPMENT),
+    ("advanced", "Architecture and control", ADVANCED),
 )
 
 
@@ -214,7 +213,7 @@ def describe(settings: ProjectSettings | None = None,
             entries.append({
                 "path": f.path, "label": label, "unit": f.unit, "kind": f.kind,
                 "choices": list(f.choices), "step": f.step, "hint": hint,
-                "value": ({True: "oui", False: "non"}[read(settings, f.path)]
+                "value": ({True: "yes", False: "no"}[read(settings, f.path)]
                           if f.kind == "choice" and isinstance(read(settings, f.path), bool)
                           else read(settings, f.path)),
                 "source": provenance_of(settings, f.source_path, lang),
@@ -234,7 +233,7 @@ def apply(settings: ProjectSettings, overrides: dict[str, Any]) -> ProjectSettin
     known = {f.path for _, _, group in GROUPS for f in group} | ELSEWHERE
     for path, value in overrides.items():
         if path not in known:
-            raise KeyError(f"réglage inconnu : {path}")
+            raise KeyError(f"unknown setting: {path}")
         owner, name = _resolve(settings, path)
         current = getattr(owner, name)
         if value is None:
@@ -244,7 +243,7 @@ def apply(settings: ProjectSettings, overrides: dict[str, Any]) -> ProjectSettin
             setattr(owner, name, None)
             continue
         if isinstance(current, bool):
-            value = value in (True, "oui", "true", 1, "1") if isinstance(value, (str, bool, int)) \
+            value = value in (True, "yes", "true", 1, "1") if isinstance(value, (str, bool, int)) \
                 else bool(value)
         elif isinstance(current, int) and not isinstance(current, bool):
             value = int(round(float(value)))

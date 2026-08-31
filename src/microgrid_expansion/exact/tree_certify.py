@@ -134,7 +134,7 @@ def certify_tree(plans: dict, tree: ScenarioTree, rep: dict[int, RepDays],
     steps = {"pv_kw": settings.photovoltaic.unit_kw,
              "battery_kwh": settings.battery.unit_kwh,
              "inverter_kw": settings.inverter.unit_kw}
-    if architecture == "mixte":
+    if architecture == "mixed":
         # The array is divided, so the part on the load's bus is a coordinate of its own:
         # left out, the descent could only move the whole field through the ceiling on the
         # battery's bus, which is the restriction the divided array exists to lift.
@@ -176,8 +176,8 @@ def certify_tree(plans: dict, tree: ScenarioTree, rep: dict[int, RepDays],
 
     best, traces = evaluate_plan(best_plans, tree, rep, architecture, settings)
     if verbose:
-        print(f"    descente : {started_at:,.0f} → {best:,.0f} $ "
-              f"en {evaluations} évaluations sur {workers} cœurs "
+        print(f"    descent: {started_at:,.0f} -> {best:,.0f} $ "
+              f"in {evaluations} evaluations on {workers} cores "
               f"({time.time() - started:.0f} s)", flush=True)
     return TreeCertificate(plans=best_plans, traces=traces, z_rule=best, z_opt=z_opt,
                            architecture=architecture, evaluations=evaluations,

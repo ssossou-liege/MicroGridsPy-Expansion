@@ -91,11 +91,11 @@ def test_newly_connected_households_are_the_most_inactive():
 # --------------------------------------------------------------------- growth
 def test_the_three_trajectories_are_available_and_distinct():
     laws = {name: GR.trajectory_law(name) for name in GR.TRAJECTORIES}
-    assert set(laws) == {"lente", "centrale", "rapide"}
+    assert set(laws) == {"slow", "central", "fast"}
     for law in laws.values():
         assert np.allclose(law.sum(axis=1), 1.0)
-    slow = laws["lente"].xs("HH1", level="customer_type")
-    fast = laws["rapide"].xs("HH1", level="customer_type")
+    slow = laws["slow"].xs("HH1", level="customer_type")
+    fast = laws["fast"].xs("HH1", level="customer_type")
     # the fast trajectory must put more mass on the high-consumption archetype by 2 years
     assert fast.loc["13-24", "2"] > slow.loc["13-24", "2"]
 

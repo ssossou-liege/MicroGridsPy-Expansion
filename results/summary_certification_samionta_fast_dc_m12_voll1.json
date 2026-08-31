@@ -1,7 +1,7 @@
 {
   "site": "Samionta",
   "year": 2025,
-  "trajectory": "rapide",
+  "trajectory": "fast",
   "maturity_months": 12,
   "voll_usd_kwh": 1.0,
   "design": {

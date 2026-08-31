@@ -57,8 +57,8 @@ def run(cfg: ModelConfig, out_dir: Path = RESULTS_DIR, verbose: bool = True) -> 
     tree = build_tree(paths, cfg)
     tree.check_probabilities()
     if verbose:
-        print(f"arbre : {len(tree.nodes)} nœuds, {len(tree.leaves)} feuilles, "
-              f"distorsion par étape "
+        print(f"tree: {len(tree.nodes)} nodes, {len(tree.leaves)} leaves, "
+              f"distortion per stage "
               + ", ".join(f"{y}:{e:.3f}" for y, e in tree.reduction_error.items()),
               flush=True)
 
@@ -107,16 +107,16 @@ def run(cfg: ModelConfig, out_dir: Path = RESULTS_DIR, verbose: bool = True) -> 
                            stem=f"summary_tree_{cfg.site.lower()}")
     if verbose:
         root = plans[0]
-        champ = f"{root.pv_kw:.1f} kW"
+        array = f"{root.pv_kw:.1f} kW"
         if getattr(root, "pv_ac_kw", 0.0) > 0:
-            champ += f" + {root.pv_ac_kw:.1f} kW sur le bus charge"
-        print(f"\nplan de premier niveau : PV {champ} · "
-              f"batterie {root.battery_kwh:.0f} kWh · conversion {root.inverter_kw:.1f} kW · "
-              f"groupe {root.generator_kw:.0f} kW   (couplage {architecture})")
-        print(f"prix de l'heuristique  : {expected['price_of_heuristic_usd']:,.0f} $ "
+            array += f" + {root.pv_ac_kw:.1f} kW on the load bus"
+        print(f"\nfirst-stage plan: PV {array} | "
+              f"battery {root.battery_kwh:.0f} kWh | conversion {root.inverter_kw:.1f} kW | "
+              f"generator {root.generator_kw:.0f} kW   (coupling {architecture})")
+        print(f"price of the heuristic : {expected['price_of_heuristic_usd']:,.0f} $ "
               f"({expected['price_of_heuristic_pct']:.1f} %)")
-        print(f"coût actualisé attendu : {expected['expected_lcoe_usd_kwh']:.4f} $/kWh")
-        print(f"écrit {written}")
+        print(f"expected levelised cost: {expected['expected_lcoe_usd_kwh']:.4f} $/kWh")
+        print(f"written {written}")
     return {"expected": expected, "plans": plans, "tree": tree, "report": written}
 
 

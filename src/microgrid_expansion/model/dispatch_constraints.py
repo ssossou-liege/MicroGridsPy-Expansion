@@ -36,7 +36,7 @@ def add_dispatch_constraints(m: linopy.Model, v: dict, c: Coords, cfg: ModelConf
     ``yield``, ``usable`` and ``retention``, each shaped ``(rday, htod)``.
     """
     ac_coupled = architecture == "ac"
-    divided = architecture == "mixte"
+    divided = architecture == "mixed"
     grid_spec = getattr(settings, "grid", None) if settings is not None else None
     grid_room = 0.0
     if grid_spec is not None and grid_spec.connected:

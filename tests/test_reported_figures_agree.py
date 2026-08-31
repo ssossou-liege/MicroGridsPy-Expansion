@@ -63,8 +63,8 @@ def test_residual_value_is_credited_by_both_or_by_neither():
     """A late-replaced asset leaves value on the table, and both readings must see it."""
     _, _, money = _both()
     assert money.salvage > 0, (
-        "le flux de trésorerie ne crédite aucune valeur résiduelle alors que le coût "
-        "actualisé en crédite une ; les deux figurent sur la même page")
+        "the cash flow credits no residual value while the levelised cost credits "
+        "one; both appear on the same page")
 
 
 def test_a_subsidy_sized_to_the_target_tariff_brings_the_project_to_break_even():
@@ -77,7 +77,7 @@ def test_a_subsidy_sized_to_the_target_tariff_brings_the_project_to_break_even()
     """
     settings, cost, _ = _both()
     if not cost.subsidy_usd:
-        pytest.skip("aucune subvention n'est nécessaire à ce tarif")
+        pytest.skip("no subsidy is needed at this tariff")
     _, _, money = _both(subsidy_usd=cost.subsidy_usd)
     assert money.net_present_value == pytest.approx(0.0, abs=0.02 * abs(money.initial_capital))
     assert money.irr == pytest.approx(settings.economics.discount_rate, abs=0.01)
@@ -105,9 +105,9 @@ def test_the_service_floor_binds_both_oracles():
     from microgrid_expansion.exact import certify, lower_bound
 
     assert "min_service_fraction" in inspect.getsource(lower_bound.cost_optimal_dispatch), (
-        "le programme relaxé ignore le plancher de service que l'automate subit")
+        "the relaxed programme ignores the service floor the controller is held to")
     assert "min_service_fraction" in inspect.getsource(certify._evaluate_rule), (
-        "l'automate ignore le plancher de service")
+        "the controller ignores the service floor")
 
 
 def test_the_cache_key_carries_the_whole_site_description():
@@ -149,14 +149,14 @@ def test_a_sizing_reproduces_across_processes():
     for _ in range(3):
         done = subprocess.run([sys.executable, "-c", programme], capture_output=True,
                               text=True, timeout=900)
-        lines = [ligne for ligne in done.stdout.splitlines()
-                 if ligne.startswith("TOTAL")]
+        lines = [line for line in done.stdout.splitlines()
+                 if line.startswith("TOTAL")]
         assert lines, (
-            "la simulation n'a rien produit ; un test qui compare des sorties vides "
-            f"passerait sans rien vérifier. stderr : {done.stderr[-400:]}")
+            "the simulation produced nothing; a test comparing empty outputs "
+            f"would pass without checking anything. stderr: {done.stderr[-400:]}")
         runs.append(lines[0])
-    assert float(runs[0].split()[1]) > 0, "charge simulée nulle : rien n'est comparé"
-    assert len(set(runs)) == 1, f"trois exécutions, résultats distincts : {set(runs)}"
+    assert float(runs[0].split()[1]) > 0, "simulated load is zero: nothing is compared"
+    assert len(set(runs)) == 1, f"three runs, distinct results: {set(runs)}"
 
 
 def test_a_plant_is_priced_against_the_grid_it_was_sized_with():
@@ -174,11 +174,11 @@ def test_a_plant_is_priced_against_the_grid_it_was_sized_with():
 
     source = inspect.getsource(engine.size_site)
     assert "_grid_link" in source, (
-        "l'économie du dimensionnement ne construit pas le lien réseau")
+        "the sizing economics do not build the grid link")
     assert source.count("grid=link") >= 1, (
-        "la simulation de tarification ignore le réseau que la recherche a supposé")
+        "the pricing simulation ignores the grid the search assumed")
     assert "_grid_capital_usd_yr" in source, (
-        "le capital du raccordement n'entre pas dans le coût de cycle de vie")
+        "the connection capital does not enter the life-cycle cost")
 
 
 def test_the_grid_displaces_the_generator_before_the_battery():
@@ -202,10 +202,10 @@ def test_the_grid_displaces_the_generator_before_the_battery():
     link = GridLink(available=np.ones(hours, dtype=bool), import_usd_kwh=0.11)
     run = simulate(demand, yield_, temperature, plant, BatteryModel(), GeneratorModel(),
                    grid=link)
-    assert run.discharge_kw.sum() > 0, "le stockage devrait servir avant le réseau"
-    assert run.grid_import_kw.sum() > 0, "le réseau devrait servir quand le stockage s'épuise"
+    assert run.discharge_kw.sum() > 0, "storage should serve before the grid"
+    assert run.grid_import_kw.sum() > 0, "the grid should serve when storage runs out"
     assert run.generator_kw.sum() == pytest.approx(0.0, abs=1e-6), (
-        "le groupe ne devrait pas démarrer tant que le réseau est disponible")
+        "the generator should not start while the grid is available")
 
 
 def test_the_bound_survives_a_grid_connection():
@@ -241,7 +241,7 @@ def test_the_bound_survives_a_grid_connection():
     from microgrid_expansion.instances import SiteYear
     instance = SiteYear(site="essai", year=2025, demand_kw=demand, specific_yield=yield_,
                         t_amb_c=temperature, usable_fraction=np.ones(hours),
-                        self_discharge=np.zeros(hours), trajectory="centrale",
+                        self_discharge=np.zeros(hours), trajectory="central",
                         maturity_months=12, seed=0)
 
     battery, generator = BatteryModel(), GeneratorModel()
@@ -254,5 +254,5 @@ def test_the_bound_survives_a_grid_connection():
                                     terminal="free", initial_soc_fraction=0.5, grid=link)
     scale = 8760.0 / hours
     assert (relaxed.value - relaxed.capital_cost) <= rule * scale + 1e-6, (
-        "le minorant dépasse le coût sous automate : la proposition 1 est violée dès qu'un "
-        "réseau est raccordé")
+        "the lower bound exceeds the cost under the controller: proposition 1 is "
+        "violated as soon as a grid is connected")

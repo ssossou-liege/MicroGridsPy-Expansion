@@ -129,8 +129,8 @@ the measured and calibrated inputs, reproducibly and with a seed.
 
 With two reference villages one cannot estimate how a third will grow: there is one that
 grows and one that does not. Rather than average them into a trajectory describing neither,
-the two behaviours are carried as an envelope — `lente` (Samionta), `rapide` (Gbowele) and a
-site-balanced `centrale` — each being a mixture law measured at a real site, so nothing is
+the two behaviours are carried as an envelope — `slow` (Samionta), `fast` (Gbowele) and a
+site-balanced `central` — each being a mixture law measured at a real site, so nothing is
 extrapolated. **A sizing must be computed at both bounds**, and the width of the resulting
 bracket is an honest statement of what two calibration sites can support.
 

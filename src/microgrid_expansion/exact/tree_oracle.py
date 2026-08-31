@@ -48,7 +48,7 @@ def simulate_node(plan, year: dict, costs: dict, settings: ProjectSettings,
                             pv_ac_kw=getattr(plan, "pv_ac_kw", 0.0),
                             architecture=architecture)
 
-    if architecture == "mixte":
+    if architecture == "mixed":
         admissible = capacities.admissible(config.DC_AC_RATIO_MAX, config.AC_RATIO_MAX)
     else:
         ratio = config.DC_AC_RATIO_MAX if architecture == "dc" else config.AC_RATIO_MAX

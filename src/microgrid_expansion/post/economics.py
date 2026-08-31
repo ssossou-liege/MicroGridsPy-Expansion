@@ -135,12 +135,12 @@ class LifeCycleCost:
 
     def __str__(self) -> str:
         base = (f"NPC {self.net_present_cost:,.0f} $ | "
-                f"annualisé {self.annualised_cost:,.0f} $/an | "
+                f"annualised {self.annualised_cost:,.0f} $/yr | "
                 f"LCOE {self.lcoe_usd_kwh:.4f} $/kWh")
         if self.tariff_target_usd_kwh is None:
-            return base + " (tarif = LCOE, recouvrement intégral)"
-        return (base + f" | tarif cible {self.tariff_target_usd_kwh:.4f} $/kWh"
-                f" -> subvention {self.subsidy_fraction:.1%} "
+            return base + " (tariff = LCOE, full recovery)"
+        return (base + f" | target tariff {self.tariff_target_usd_kwh:.4f} $/kWh"
+                f" -> subsidy {self.subsidy_fraction:.1%} "
                 f"({self.subsidy_usd:,.0f} $)")
 
 

@@ -22,7 +22,7 @@ from ..sites import Site, get_site
 from .uncertainty_space import DemandAxis
 
 #: Growth trajectories, in the order the envelope brackets them.
-TRAJECTORIES = ("lente", "centrale", "rapide")
+TRAJECTORIES = ("slow", "central", "fast")
 
 #: Where the realisation pools live.
 DEMAND_POOL_DIR = RESULTS_DIR / "cache" / "demand_pool"
@@ -49,7 +49,7 @@ def _pool_path(site_name: str, trajectory: str, maturity: int) -> Path:
     return DEMAND_POOL_DIR / f"demand_{site_name.lower()}_{trajectory}_m{maturity}.npy"
 
 
-def demand_pool(site: Site | str = "Samionta", trajectory: str = "centrale",
+def demand_pool(site: Site | str = "Samionta", trajectory: str = "central",
                 maturity_months: int = 12, size: int = POOL_SIZE,
                 year: int = 2025, seed: int = 0) -> np.ndarray:
     """Realisations of one community-year, cached on disk.
@@ -81,7 +81,7 @@ def demand_pool(site: Site | str = "Samionta", trajectory: str = "centrale",
 def simulate_stage_demand(demand_axis: DemandAxis, stage_year: int,
                           rng: np.random.Generator,
                           site: Site | str = "Samionta",
-                          trajectory: str = "centrale",
+                          trajectory: str = "central",
                           base_maturity_months: int = 12,
                           year: int = 2025) -> np.ndarray:
     """Hourly demand [kW] at a stage, for a community that has aged into it."""

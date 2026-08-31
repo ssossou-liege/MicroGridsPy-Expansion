@@ -169,13 +169,13 @@ def main() -> int:
     table = write_scaling(scaling)
     measured = measured_statistics()
 
-    print("Facteurs d'ajustement par archétype")
+    print("Scaling factors by archetype")
     print(table.to_string(index=False))
-    print("\nVérification après ajustement :")
+    print("\nCheck after scaling:")
     appliances = load_archetype_appliances()
-    print(f"{'arch':>5s}{'énergie kWh/j':>26s}{'pointe W':>22s}")
-    print(f"{'':5s}{'simulé':>11s}{'mesuré':>10s}{'écart':>8s}"
-          f"{'simulé':>10s}{'mesuré':>8s}{'écart':>8s}")
+    print(f"{'arch':>5s}{'energy kWh/d':>26s}{'peak W':>22s}")
+    print(f"{'':5s}{'simulated':>11s}{'measured':>10s}{'gap':>8s}"
+          f"{'simulated':>10s}{'measured':>8s}{'gap':>8s}")
     for archetype in ARCHETYPES:
         stats = simulate_archetype(archetype, appliances[archetype], scaling,
                                    n_households=60, seed=99)
@@ -185,7 +185,7 @@ def main() -> int:
               f"{100 * (stats.daily_energy_kwh - e_ref) / e_ref:+7.1f}%"
               f"{stats.peak_w:10.0f}{p_ref:8.0f}"
               f"{100 * (stats.peak_w - p_ref) / p_ref:+7.1f}%")
-    print(f"\nécrit {SCALING_PATH}")
+    print(f"\nwritten {SCALING_PATH}")
     return 0
 
 

@@ -20,7 +20,7 @@
     "expected_energy_kwh": 630823.4405838915,
     "expected_lcoe_usd_kwh": 0.22434765667234435,
     "discount_rate": 0.08,
-    "architecture": "mixte",
+    "architecture": "mixed",
     "expected_rule_cost_usd": 141523.7606689819,
     "expected_optimal_cost_usd": 133765.5133711811,
     "price_of_heuristic_usd": 7758.247297800815,

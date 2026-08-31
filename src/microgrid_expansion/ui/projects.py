@@ -19,7 +19,10 @@ from .i18n import DEFAULT as DEFAULT_LANG
 from .i18n import t
 from ..paths import RESULTS_DIR
 
-PROJECTS_DIR = RESULTS_DIR.parent / "projets"
+PROJECTS_DIR = RESULTS_DIR.parent / "projects"
+
+# A project may be named in the language its author speaks, whatever language the interface
+# is being read in, so the slug keeps accented letters. (accents intentional)
 _SAFE = re.compile(r"[^A-Za-z0-9À-ÿ _.-]")
 
 

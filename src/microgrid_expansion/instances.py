@@ -95,7 +95,7 @@ def _cache_key(site: str, year: int, trajectory: str, maturity_months: int,
 def build_site_year(
     site: Site | str,
     year: int = 2025,
-    trajectory: str = "centrale",
+    trajectory: str = "central",
     maturity_months: int = 12,
     seed: int = 0,
     chemistry: str | None = None,

@@ -13,12 +13,17 @@ def calibration():
 
 
 def test_the_activity_taxonomy_separates_what_the_meters_separate():
-    """Class names must map the declared activities, accents and case notwithstanding."""
-    assert P.classify("MOULIN À MAÏS") == "mouture"
-    assert P.classify("Ventes de glace, eau glacée") == "froid"
-    assert P.classify("Couvaison des oeufs") == "couvaison"
-    assert P.classify("TAILLEUR") == "couture"
-    assert P.classify("Scierie") == "scierie"
+    """Class names must map the declared activities, accents and case notwithstanding.
+
+    The strings tested against are the survey's own, transcribed as the enumerators wrote
+    them. They are data, not untranslated text: changing them would test a survey nobody
+    ran.
+    """
+    assert P.classify("MOULIN À MAÏS") == "milling"
+    assert P.classify("Ventes de glace, eau glacée") == "refrigeration"
+    assert P.classify("Couvaison des oeufs") == "incubation"
+    assert P.classify("TAILLEUR") == "tailoring"
+    assert P.classify("Scierie") == "sawmill"
     assert P.classify("commerçant") == P.UNSURVEYED     # the survey did not reach these
 
 
@@ -33,8 +38,8 @@ def test_classes_differ_in_shape_and_not_merely_in_size(calibration):
     shapes = calibration.profiles[hours]
     daytime = shapes[[h for h in hours if 7 <= h <= 18]].sum(axis=1) / shapes.sum(axis=1)
 
-    assert daytime["mouture"] > 0.75                    # a mill runs in daylight
-    assert daytime["couvaison"] < 0.50                  # incubators run through the night
+    assert daytime["milling"] > 0.75                    # a mill runs in daylight
+    assert daytime["incubation"] < 0.50                  # incubators run through the night
     # and the classes span a real range rather than sitting on one another
     assert daytime.max() - daytime.min() > 0.25
 
@@ -42,9 +47,9 @@ def test_classes_differ_in_shape_and_not_merely_in_size(calibration):
 def test_enterprises_are_counted_against_connections_not_against_the_census(calibration):
     """Intensity is per connected household: enterprises appear beside existing supply."""
     rng = np.random.default_rng(0)
-    few = [sum(P.sample_units(calibration, 20, "25+", "centrale", rng).values())
+    few = [sum(P.sample_units(calibration, 20, "25+", "central", rng).values())
            for _ in range(60)]
-    many = [sum(P.sample_units(calibration, 200, "25+", "centrale", rng).values())
+    many = [sum(P.sample_units(calibration, 200, "25+", "central", rng).values())
             for _ in range(60)]
     assert np.mean(many) > 5 * np.mean(few)
 
@@ -52,11 +57,11 @@ def test_enterprises_are_counted_against_connections_not_against_the_census(cali
 def test_the_connection_trajectory_is_ordered_and_grows(calibration):
     """The envelope must bracket, and maturity must not reduce the count."""
     intensity = calibration.intensity
-    assert (intensity["lente"] <= intensity["centrale"] + 1e-9).all()
-    assert (intensity["centrale"] <= intensity["rapide"] + 1e-9).all()
+    assert (intensity["slow"] <= intensity["central"] + 1e-9).all()
+    assert (intensity["central"] <= intensity["fast"] + 1e-9).all()
     # beyond the first months, in which one household and one shop can be the whole village
     settled = intensity.loc[["4-6", "7-12", "13-24", "25+"]]
-    assert settled["rapide"].is_monotonic_increasing
+    assert settled["fast"].is_monotonic_increasing
 
 
 def test_the_mix_belongs_to_the_trajectory(calibration):
@@ -66,15 +71,15 @@ def test_the_mix_belongs_to_the_trajectory(calibration):
     ones. Drawing both from a pooled mix reproduces neither.
     """
     mix = calibration.mix
-    for column in ("lente", "centrale", "rapide"):
+    for column in ("slow", "central", "fast"):
         assert abs(mix[column].sum() - 1.0) < 1e-9      # exact: a draw depends on it
-    assert mix.loc[P.UNSURVEYED, "rapide"] > mix.loc[P.UNSURVEYED, "lente"]
+    assert mix.loc[P.UNSURVEYED, "fast"] > mix.loc[P.UNSURVEYED, "slow"]
 
 
 def test_repeating_a_mean_day_would_flatten_the_peak(calibration):
     """Day-to-day spread is carried, so the month is not twenty-eight identical days."""
     rng = np.random.default_rng(1)
-    counts = {"mouture": 4, P.UNSURVEYED: 10}
+    counts = {"milling": 4, P.UNSURVEYED: 10}
     profile = P.monthly_profile_kw(counts, calibration, days=28, rng=rng)
 
     assert profile.size == 28 * 24
@@ -93,9 +98,9 @@ def test_productive_uses_change_the_shape_of_the_community_load():
 
     site = get_site("Samionta")
     without = simulate_demand_year(site, 2025, seed=3, maturity_months=24,
-                                   trajectory="centrale", include_productive=False)
+                                   trajectory="central", include_productive=False)
     with_pue = simulate_demand_year(site, 2025, seed=3, maturity_months=24,
-                                    trajectory="centrale", include_productive=True)
+                                    trajectory="central", include_productive=True)
 
     assert with_pue.annual_energy_kwh > without.annual_energy_kwh
     assert with_pue.enterprises and not without.enterprises

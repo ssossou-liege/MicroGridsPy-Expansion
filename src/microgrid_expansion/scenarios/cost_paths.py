@@ -18,7 +18,7 @@ from ..settings import ProjectSettings, default_settings
 from .uncertainty_space import EconomicAxis
 
 #: The three futures, shared by every technology so that a draw is coherent.
-COST_SCENARIOS = ("bas", "central", "haut")
+COST_SCENARIOS = ("low", "central", "high")
 
 
 def draw_cost_scenario(rng: np.random.Generator,

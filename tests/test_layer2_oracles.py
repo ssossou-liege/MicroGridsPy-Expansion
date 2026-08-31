@@ -171,7 +171,7 @@ def _instance_from(demand, yield_, temperature):
     return SiteYear(site="test", year=2025, demand_kw=demand, specific_yield=yield_,
                     t_amb_c=temperature, usable_fraction=usable_fraction(temperature),
                     self_discharge=self_discharge_fraction(temperature),
-                    trajectory="centrale", maturity_months=12, seed=0)
+                    trajectory="central", maturity_months=12, seed=0)
 
 
 @pytest.mark.parametrize("design", [

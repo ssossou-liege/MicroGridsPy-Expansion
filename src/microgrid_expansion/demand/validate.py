@@ -56,19 +56,19 @@ def main(argv: list[str] | None = None) -> int:
 
     from .growth import TRAJECTORIES, growth_envelope
 
-    print(f"=== {site.name} — énergie mesurée selon l'ancienneté de raccordement ===")
+    print(f"=== {site.name} -- measured energy by age of connection ===")
     measured = measured_energy_by_maturity(site)
     print(measured.round(3).to_string())
 
-    print("\n=== enveloppe de croissance mesurée sur les deux sites de référence ===")
+    print("\n=== growth envelope measured across the two reference sites ===")
     envelope = growth_envelope()
     print(envelope.factors.round(2).to_string())
-    print(f"éventail le plus large : x{envelope.spread:.2f}")
+    print(f"widest spread: x{envelope.spread:.2f}")
 
-    print(f"\n=== année simulée à {args.maturity_months} mois d'ancienneté, "
-          f"par trajectoire (graine {args.seed}) ===")
-    print(f"{'trajectoire':>12s}{'énergie kWh':>14s}{'pointe kW':>12s}{'fc':>8s}"
-          f"{'kWh/ménage/j':>15s}")
+    print(f"\n=== year simulated at {args.maturity_months} months of connection age, "
+          f"by trajectory (seed {args.seed}) ===")
+    print(f"{'trajectory':>12s}{'energy kWh':>14s}{'peak kW':>12s}{'cf':>8s}"
+          f"{'kWh/household/d':>17s}")
     results = {}
     for trajectory in TRAJECTORIES:
         year = simulate_demand_year(site, year=args.year, seed=args.seed,
@@ -80,8 +80,8 @@ def main(argv: list[str] | None = None) -> int:
               f"{year.load_factor:8.3f}{per_household_day:15.3f}")
 
     spread = max(results.values()) / min(results.values())
-    print(f"\néventail du dimensionnement induit : x{spread:.2f}")
-    print("Une sélection de capacité doit être calculée aux deux bornes, non au seul cas central.")
+    print(f"\nspread of the induced sizing: x{spread:.2f}")
+    print("A capacity selection must be computed at both bounds, not at the central case alone.")
     return 0
 
 

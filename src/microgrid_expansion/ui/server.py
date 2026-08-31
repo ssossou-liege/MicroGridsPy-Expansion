@@ -51,7 +51,7 @@ class ArchetypeRequest(BaseModel):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="MicroGrids — dimensionnement certifié", docs_url=None,
+    app = FastAPI(title="MicroGridsPy", docs_url=None,
                   redoc_url=None)
     registry = JobRegistry()
 

@@ -418,7 +418,7 @@ def simulate_demand_year(
     year: int = 2025,
     seed: int = 0,
     maturity_months: int = 0,
-    trajectory: str = "centrale",
+    trajectory: str = "central",
     scaling: ArchetypeScaling | None = None,
     apply_seasonality: bool = True,
     include_productive: bool = True,

@@ -35,13 +35,13 @@ from .maturity import (
 )
 
 #: Named growth trajectories and the reference site whose behaviour each reproduces.
-#: ``centrale`` is the site-balanced law, midway between the two by construction.
+#: ``central`` is the site-balanced law, midway between the two by construction.
 TRAJECTORIES = {
-    "lente": "Samionta",
-    "centrale": None,
-    "rapide": "Gbowele",
+    "slow": "Samionta",
+    "central": None,
+    "fast": "Gbowele",
 }
-DEFAULT_TRAJECTORY = "centrale"
+DEFAULT_TRAJECTORY = "central"
 
 
 def maturity_band(maturity_months: int) -> str:
@@ -158,20 +158,20 @@ def seasonal_index(frame: pd.DataFrame | None = None) -> pd.Series:
 def main() -> int:
     frame = with_maturity()
     envelope = growth_envelope(frame)
-    print("Croissance de la demande après raccordement, par site")
-    print("(facteur par rapport au premier trimestre du site)")
+    print("Demand growth after connection, by site")
+    print("(factor relative to the site's first quarter)")
     print(envelope.factors.round(2).to_string())
-    print(f"\néventail le plus large entre trajectoires : x{envelope.spread:.2f}")
+    print(f"\nwidest spread between trajectories: x{envelope.spread:.2f}")
 
     print("\nTrajectoires disponibles :")
     for name, site in TRAJECTORIES.items():
         law = trajectory_law(name, frame)
         hh1 = law.xs("HH1", level="customer_type")
-        origin = site if site else "moyenne équilibrée des deux sites"
-        print(f"\n  {name} ({origin}) — part de chaque état pour HH1 [%] :")
+        origin = site if site else "balanced average of the two sites"
+        print(f"\n  {name} ({origin}) -- share of each state for HH1 [%]:")
         print((100 * hh1.reindex(list(MATURITY_LABELS))).round(1).to_string())
 
-    print("\nIndice saisonnier résiduel (moyenne 1) :")
+    print("\nResidual seasonal index (mean 1):")
     print(seasonal_index(frame).round(3).to_string())
     return 0
 

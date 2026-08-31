@@ -258,9 +258,9 @@ class Certificate:
         return (f"PV {d.pv_kw:.1f} kW continu + {d.pv_ac_kw:.1f} kW alternatif · "
                 f"batterie {d.battery_kwh:.0f} kWh · "
                 f"onduleur {d.inverter_kw:.1f} kW · groupe {d.generator_kw:.0f} kW\n"
-                f"z_B* = {self.z_rule:,.0f} $/an   optimum prouvé : {self.proven}\n"
-                f"écart à la borne coût-optimal : {self.gap_rel:.2f} % "
-                f"(tend vers le prix de l'heuristique, non vers zéro)")
+                f"z_B* = {self.z_rule:,.0f} $/yr   optimum proven: {self.proven}\n"
+                f"gap to the cost-optimal bound: {self.gap_rel:.2f} % "
+                f"(tends to the price of the heuristic, not to zero)")
 
 
 @lru_cache(maxsize=1)
@@ -363,8 +363,8 @@ def _evaluate_rule(instance, capacities, economics, battery, generator, controll
     return dispatch.operating_cost(generator, voll_usd_kwh=economics.voll_usd_kwh) * scale + capital
 
 
-# --------------------------------------------------------------- évaluation en parallèle
-#: Contexte d'un processus ouvrier, posé une fois à l'ouverture du pool.
+# ------------------------------------------------------------------ parallel evaluation
+#: A worker process's context, set once when the pool opens.
 _WORKER: dict = {}
 
 
@@ -456,7 +456,7 @@ def coarse_incumbent(instance, lattice, economics, battery, generator, controlle
     repaid many times over, since a good incumbent prunes boxes that would each otherwise
     demand a relaxation sixty times more expensive.
     """
-    if evaluator is None:      # appelé hors certification : évaluation en série
+    if evaluator is None:      # called outside a certification: evaluate in series
         evaluator = _Evaluator((instance, economics, battery, generator, controller,
                                 annualised), workers=1)
     best, best_design, calls = float("inf"), None, 0
@@ -508,7 +508,7 @@ def _refine(instance, lattice, centre, economics, battery, generator, controller
             annualised, radius: int = 3,
             evaluator: "_Evaluator | None" = None) -> tuple[float, Capacities, int]:
     """Local search around a design, again with the cheap oracle only."""
-    if evaluator is None:      # appelé hors certification : évaluation en série
+    if evaluator is None:      # called outside a certification: evaluate in series
         evaluator = _Evaluator((instance, economics, battery, generator, controller,
                                 annualised), workers=1)
     best, best_design, calls = float("inf"), centre, 0
@@ -652,16 +652,16 @@ def narrow_to_incumbent(instance, lattice, incumbent, economics, battery, genera
                        n_pv_ac=ranges["pv_ac"], architecture=lattice.architecture)
     removed = lattice.size - narrowed.size
     if verbose:
-        print(f"  resserrement par bornes : {lattice.size:,} → {narrowed.size:,} "
-              f"dimensionnements ({100.0 * removed / max(lattice.size, 1):.1f} % écartés, "
+        print(f"  narrowed by bounds: {lattice.size:,} -> {narrowed.size:,} "
+              f"designs ({100.0 * removed / max(lattice.size, 1):.1f} % excluded, "
               f"{calls} relaxations)", flush=True)
-        for name, axis, unit in (("PV continu", "pv", lattice.pv_unit_kw),
-                                 ("PV alternatif", "pv_ac", lattice.pv_unit_kw),
-                                 ("stockage", "batt", lattice.batt_unit_kwh),
-                                 ("onduleur", "inv", lattice.inv_unit_kw)):
+        for name, axis, unit in (("PV DC", "pv", lattice.pv_unit_kw),
+                                 ("PV AC", "pv_ac", lattice.pv_unit_kw),
+                                 ("storage", "batt", lattice.batt_unit_kwh),
+                                 ("inverter", "inv", lattice.inv_unit_kw)):
             before, after = getattr(lattice, f"n_{axis}"), ranges[axis]
-            print(f"      {name:9s} {before[0]*unit:6.0f}–{before[1]*unit:<6.0f} → "
-                  f"{after[0]*unit:6.0f}–{after[1]*unit:<6.0f}", flush=True)
+            print(f"      {name:9s} {before[0]*unit:6.0f}-{before[1]*unit:<6.0f} -> "
+                  f"{after[0]*unit:6.0f}-{after[1]*unit:<6.0f}", flush=True)
     return narrowed, removed, calls
 
 
@@ -807,7 +807,7 @@ def _certify(instance, lattice, settings, tolerance, max_relaxations,
     if refined < incumbent:
         incumbent, design = refined, refined_design
     if verbose:
-        print(f"  incumbent après {sims} simulations : {incumbent:,.0f} $/an", flush=True)
+        print(f"  incumbent after {sims} simulations: {incumbent:,.0f} $/yr", flush=True)
 
     # A relaxation costs about sixty simulations, so pruning a box is only worth its price
     # when the box holds more designs than that; below the threshold, enumerating with the
@@ -964,8 +964,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--site", default="Samionta")
     parser.add_argument("--year", type=int, default=2025)
-    parser.add_argument("--trajectory", default="centrale",
-                        choices=["lente", "centrale", "rapide"])
+    parser.add_argument("--trajectory", default="central",
+                        choices=["slow", "central", "fast"])
     parser.add_argument("--maturity-months", type=int, default=12)
     parser.add_argument("--voll", type=float, default=None,
                         help="value of lost load; defaults to the project setting")
@@ -977,9 +977,9 @@ def main(argv: list[str] | None = None) -> int:
                              "the simulation oracle is cheap; branch: branch-and-simulate "
                              "with the cost-optimal relaxation")
     parser.add_argument("--workers", type=int, default=None,
-                        help="processus d'évaluation ; par défaut tous les cœurs. La "
-                             "simulation tient le verrou de l'interpréteur, donc seuls "
-                             "des processus séparés utilisent les autres cœurs")
+                        help="evaluation processes; every core by default. The "
+                             "simulation holds the interpreter lock, so only separate "
+                             "processes use the other cores")
     parser.add_argument("--solver", default=None,
                         help="overrides the project setting; gurobi is about four times "
                              "faster than highs on the wide boxes of the search, when a "
@@ -998,10 +998,10 @@ def main(argv: list[str] | None = None) -> int:
 
     instance = build_site_year(args.site, args.year, trajectory=args.trajectory,
                                maturity_months=args.maturity_months)
-    print(f"{args.site} {args.year} — trajectoire {args.trajectory}, "
-          f"ancienneté {args.maturity_months} mois")
-    print(f"solveur  : {settings.solver.name}")
-    print("couplage : mixte — la répartition du champ entre les deux bus est décidée")
+    print(f"{args.site} {args.year} -- trajectory {args.trajectory}, "
+          f"connection age {args.maturity_months} months")
+    print(f"solver   : {settings.solver.name}")
+    print("coupling : divided array -- the split between the two buses is searched over")
 
     # The coupling is no longer a choice between two arrangements but a split of the field
     # between two buses, each with its own converter, its own ceiling and its own price. A
@@ -1010,8 +1010,8 @@ def main(argv: list[str] | None = None) -> int:
     # being lost by not doing so, the ceiling on the first having been saturated at every
     # optimum certified when only the corners were available.
     lattice = Lattice.around(instance, settings)
-    print(f"espace de recherche : {lattice.size:,} dimensionnements câblables")
-    architecture = "mixte"
+    print(f"search space: {lattice.size:,} wirable designs")
+    architecture = "mixed"
     if args.method == "exhaustive":
         result = certify_exhaustive(instance, lattice, settings,
                                     coarse_step=args.coarse_step,
@@ -1023,16 +1023,16 @@ def main(argv: list[str] | None = None) -> int:
     ranked = [(architecture, result)]
 
     print("\n" + result.summary())
-    print(f"\n  élagués sans simulation : {result.pruned_points:,} "
-          f"({result.pruned_fraction:.1f} % du treillis)")
-    print(f"  simulés                 : {result.enumerated_points:,}")
-    print(f"  couverture              : {result.covered_points:,} / {result.lattice_size:,}")
-    print(f"  relaxations             : {result.relaxations}")
-    print(f"  durée                   : {result.seconds / 60:.1f} min")
+    print(f"\n  pruned without simulation : {result.pruned_points:,} "
+          f"({result.pruned_fraction:.1f} % of the lattice)")
+    print(f"  simulated                 : {result.enumerated_points:,}")
+    print(f"  covered                   : {result.covered_points:,} / {result.lattice_size:,}")
+    print(f"  relaxations               : {result.relaxations}")
+    print(f"  runtime                   : {result.seconds / 60:.1f} min")
     if result.design_opt is not None:
         print(f"\n  z_A* = {result.z_opt:,.0f} $/an  →  PV {result.design_opt.pv_kw:.1f} kW, "
-              f"batterie {result.design_opt.battery_kwh:.0f} kWh, "
-              f"groupe {result.design_opt.generator_kw:.0f} kW")
+              f"battery {result.design_opt.battery_kwh:.0f} kWh, "
+              f"generator {result.design_opt.generator_kw:.0f} kW")
     print(f"  prix de l'heuristique   : {result.price_abs:,.0f} $/an "
           f"({result.price_rel:.1f} %)")
 
@@ -1062,22 +1062,22 @@ def main(argv: list[str] | None = None) -> int:
         assets=assets_from_settings(settings, architecture="ac"))
     local = settings.currency.to_local
 
-    print(f"\n  énergie servie          : {served:,.0f} kWh  "
-          f"(non distribuée {instance.demand_kwh - served:,.0f} kWh)")
-    print(f"  valeur actuelle nette   : {cost.net_present_cost:,.0f} $ = "
+    print(f"\n  energy served           : {served:,.0f} kWh  "
+          f"(unserved {instance.demand_kwh - served:,.0f} kWh)")
+    print(f"  net present cost        : {cost.net_present_cost:,.0f} $ = "
           f"{local(cost.net_present_cost):,.0f} FCFA")
-    print(f"  coût actualisé (LCOE)   : {cost.lcoe_usd_kwh:.4f} $/kWh = "
+    print(f"  levelised cost (LCOE)   : {cost.lcoe_usd_kwh:.4f} $/kWh = "
           f"{local(cost.lcoe_usd_kwh):.0f} FCFA/kWh")
     if target is None:
-        print(f"  tarif de plein recouvrement : {local(cost.tariff_usd_kwh):.0f} FCFA/kWh")
+        print(f"  full-recovery tariff    : {local(cost.tariff_usd_kwh):.0f} FCFA/kWh")
     else:
-        print(f"  tarif cible             : {local(target):.0f} FCFA/kWh")
+        print(f"  target tariff           : {local(target):.0f} FCFA/kWh")
         if cost.subsidy_fraction > 0:
-            print(f"  subvention nécessaire   : {cost.subsidy_fraction:.1%} de "
-                  f"l'investissement, soit {local(cost.subsidy_usd):,.0f} FCFA")
+            print(f"  subsidy needed          : {cost.subsidy_fraction:.1%} of the "
+                  f"investment, that is {local(cost.subsidy_usd):,.0f} FCFA")
         else:
-            print(f"  subvention nécessaire   : aucune — le coût actualisé est déjà "
-                  f"sous la cible")
+            print(f"  subsidy needed          : none -- the levelised cost is already "
+                  f"below the target")
     record_tariff = {
         "energy_served_kwh": served,
         "npc_usd": cost.net_present_cost,
@@ -1124,7 +1124,7 @@ def main(argv: list[str] | None = None) -> int:
             f"_voll{settings.economics.value_of_lost_load_usd_kwh:g}")
     path = RESULTS_DIR / f"{stem}.json"
     path.write_text(json.dumps(record, indent=2))
-    print(f"\nécrit {path}")
+    print(f"\nwritten {path}")
     return 0
 
 
@@ -1225,7 +1225,7 @@ def _worth_narrowing(survivors: int, per_design_s: float, verbose: bool) -> bool
     enumeration_s = survivors * per_design_s
     narrowing_s = _NARROWING_RELAXATIONS * _RELAXATION_SECONDS
     if verbose:
-        print(f"  énumérer {survivors:,} dimensionnements : ~{enumeration_s:.0f} s ; "
+        print(f"  enumerating {survivors:,} designs: ~{enumeration_s:.0f} s; "
               f"resserrer d'abord : ~{narrowing_s:.0f} s de relaxations", flush=True)
     return enumeration_s > narrowing_s
 
@@ -1243,7 +1243,7 @@ def _certify_exhaustive(instance, lattice, settings, coarse_step, verbose, evalu
     if refined < incumbent:
         incumbent, design = refined, refined_design
     if verbose:
-        print(f"  incumbent après {sims} simulations : {incumbent:,.0f} $/an", flush=True)
+        print(f"  incumbent after {sims} simulations: {incumbent:,.0f} $/yr", flush=True)
 
     # Trim the lattice to what a bound cannot exclude -- but only when that costs less than
     # enumerating it. The capital bound is free, so what the enumeration would actually have

@@ -20,8 +20,8 @@ from .coords import Coords
 def add_investment_constraints(m: linopy.Model, v: dict, c: Coords,
                                cfg: ModelConfig, architecture: str = "dc") -> None:
     """Capacity recursions, the generator state, and the array-to-converter ceiling."""
-    divided = architecture == "mixte"
-    ratio = (config.DC_AC_RATIO_MAX if architecture in ("dc", "mixte")
+    divided = architecture == "mixed"
+    ratio = (config.DC_AC_RATIO_MAX if architecture in ("dc", "mixed")
              else config.AC_RATIO_MAX)
     ratings = np.asarray(cfg.gen_catalog_kw, dtype=float)
 

@@ -23,7 +23,7 @@ class AxisDraw:
     resource: str                       # SSP pathway
     policy: float                       # minimum penetration target
     costs: dict[str, float] = field(default_factory=dict)
-    trajectory: str = "centrale"        # demand growth, held over the path
+    trajectory: str = "central"        # demand growth, held over the path
     cost_scenario: str = "central"      # cost future, held over the path
     #: Whether the national grid has reached the village by this milestone. A state, not an
     #: event: once the line is there it stays.

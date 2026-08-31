@@ -170,7 +170,7 @@ class Capacities:
     #: Array on string inverters, feeding the load's bus. Zero recovers a plant whose whole
     #: field is on the hybrid inverter; setting ``pv_kw`` to zero recovers the converse.
     pv_ac_kw: float = 0.0
-    architecture: str = "mixte"
+    architecture: str = "mixed"
     pv_conversion_kw: float | None = None
 
     @property

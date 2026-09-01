@@ -8,7 +8,15 @@ version = "0.1.0"
 description = "Multi-stage stochastic capacity-expansion model for off-grid microgrid sizing"
 readme = "README.md"
 requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Scherif Sossou" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering",
+]
 dependencies = [
     "numpy",
     "pandas",

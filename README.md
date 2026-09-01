@@ -140,3 +140,15 @@ python -m microgrid_expansion.run --site Samionta             # multi-stage expa
 
 See [docs/formulation/model.tex](docs/formulation/model.tex) for the full mathematical
 formulation.
+
+## Licence
+
+Apache License 2.0 — see [LICENSE](LICENSE). You may use, modify and redistribute this
+work, including commercially, provided the licence and the copyright notice travel with
+it and you state what you changed.
+
+[NOTICE](NOTICE) records what this project owes to others: the name and logo it takes
+from MicroGridsPy, the uGrid/uGridNet policy the rule-based controller follows, the
+vendored copy of Leaflet, and the provenance of the meteorological and climate data. No
+MicroGridsPy source code is included here; the two projects share no code beyond the
+boilerplate every Python file carries.

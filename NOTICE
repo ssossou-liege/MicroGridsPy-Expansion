@@ -1,0 +1,57 @@
+MicroGridsPy-Expansion
+Copyright 2026 Scherif Sossou
+
+Licensed under the Apache License, Version 2.0. See LICENSE for the terms.
+
+
+Name and mark
+-------------
+This project takes its name and its logo from MicroGridsPy, the micro-grid sizing and
+dispatch model developed by the SESAM group at Politecnico di Milano and published under
+the European Union Public Licence v1.2:
+
+    https://github.com/SESAM-Polimi/MicroGridsPy-SESAM
+
+It is an independent extension and is not an official MicroGridsPy release, nor endorsed
+by its authors. No MicroGridsPy source code is included here; the two projects share no
+code beyond the boilerplate every Python file carries.
+
+The two image files below are MicroGridsPy's own and are reproduced unmodified:
+
+    src/microgrid_expansion/ui/static/brand/microgridspy.png
+    src/microgrid_expansion/ui/static/brand/logo-square.png
+
+
+Method
+------
+The rule-based generation-balance controller this model sizes against follows the policy of
+uGrid / uGridNet (Cicilio et al.), which is cited in docs/formulation/references.bib. It was
+re-implemented from that published description under this model's own physics rather than
+taken from any source: the reference policy updates storage without round-trip losses, has
+no minimum stable loading, and lets an uncoverable deficit vanish, and all three would put
+the simulated trajectory outside the feasible set the certificate rests on.
+
+
+Bundled third-party software
+----------------------------
+Leaflet 1.9.4 -- (c) 2010-2023 Vladimir Agafonkin, (c) 2010-2011 CloudMade
+BSD 2-Clause Licence. https://leafletjs.com
+Vendored under src/microgrid_expansion/ui/static/vendor/, with its copyright notice
+retained in the files themselves.
+
+
+Data
+----
+Demand calibration rests on quarter-hourly meter records from two Beninese villages,
+collected for this work. The behavioural archetypes derived from them are shipped with the
+model and are documented in data/ramp_params/reference/.
+
+Meteorological series are derived from ERA5-Land, produced by the Copernicus Climate
+Change Service (C3S) at ECMWF. Neither the European Commission nor ECMWF is responsible
+for any use of the Copernicus information this project makes.
+
+Climate pathways are derived from CMIP6 downscaled projections; their provenance is
+recorded in data/irradiance/README.md.
+
+Load profiles are generated with RAMP (https://github.com/RAMP-project/RAMP), which is
+declared as a dependency and is not redistributed here.

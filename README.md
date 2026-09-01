@@ -9,6 +9,12 @@ solved as a single deterministic-equivalent MILP with
 [linopy](https://linopy.readthedocs.io/); the faster of Gurobi and HiGHS is detected at
 startup.
 
+It takes its name and its interface conventions from
+[MicroGridsPy](https://github.com/SESAM-Polimi/MicroGridsPy-SESAM), the micro-grid sizing
+model developed at Politecnico di Milano, and extends it: where that model sizes a plant,
+this one certifies the sizing against the controller that will run it, and plans the
+expansion of that plant across a scenario tree.
+
 What distinguishes it is that the plant is sized against the controller it will actually
 run under. The rule-based controller is **simulated**, not encoded: an earlier attempt to
 write it as MILP constraints was withdrawn, the rule's own trajectory sitting below the
@@ -90,11 +96,17 @@ site's meteorological series.
 
 ### First run
 
-The interface opens on **Community**. Two example villages are already there, the ones
-the behavioural archetypes were calibrated on; pick one and press **Size the plant** to see a
-complete result in half a minute. To size your own, choose *New community*, place the point
-on the map, state how many households and how many productive uses you expect, then fetch
-the meteorological series for that point.
+The interface opens on **Community**. Two example villages are already there, the ones the
+behavioural archetypes were calibrated on; pick one and press **Size the plant**. Expect a
+few minutes the first time and about half a minute afterwards: a community's demand is
+simulated appliance by appliance and then cached, and a fresh clone has nothing cached yet.
+The cache is keyed on the calibration tables, on the code that reads them and on the
+appliance library, so it rebuilds when any of those change and never serves the demand of a
+model that no longer exists.
+
+To size your own community, choose *New community*, place the point on the map, state how
+many households and how many productive uses you expect, then fetch the meteorological
+series for that point.
 
 The interface is in English. The picker in the top right switches it to French, and the
 choice is remembered — including in the printable report and in the CSV exports, whose

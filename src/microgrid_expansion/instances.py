@@ -49,18 +49,76 @@ class SiteYear:
         return float(self.demand_kw.max())
 
 
-def _calibration_fingerprint() -> str:
-    """Digest of the calibration tables the demand generator reads.
+#: The demand modules whose code decides what a simulated year contains. Every module in
+#: the package is either here or in ``_OFFLINE_SOURCES``; a test refuses a third category,
+#: so a module added to the package forces someone to say which it is rather than being
+#: silently left out of the key.
+_GENERATION_SOURCES = ("generator.py", "growth.py", "productive.py", "archetypes.py")
 
-    Without it a cached instance survives a recalibration and the run silently sizes
-    against the demand of a model that no longer exists — which is not hypothetical: the
-    appliance windows were corrected under a cache that would have gone on serving the
-    uncorrected year.
+#: Modules that build the calibration tables rather than read them. Their output is the
+#: CSVs, which the digest already covers, so hashing them too would rebuild every cached
+#: year for a change that cannot reach one.
+_OFFLINE_SOURCES = ("__init__.py", "build_archetype_shapes.py",
+                    "build_mixture_probabilities.py",
+                    "build_monthly_household_clusters.py",
+                    "build_productive_profiles.py",
+                    "calibration.py", "maturity.py", "partition.py", "validate.py")
+
+
+def _code_digest(path: Path) -> bytes:
+    """A module's code, as the parser sees it: comments and formatting excluded.
+
+    Hashing the raw text would rebuild an hour of cached demand because someone rewrapped a
+    comment. Hashing the syntax tree invalidates on a change that can alter what the module
+    computes, and on nothing else. Docstrings are dropped for the same reason -- they are
+    prose that happens to be stored as a node.
+    """
+    import ast
+
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef,
+                                 ast.AsyncFunctionDef)):
+            continue
+        body = node.body
+        if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) \
+                and isinstance(body[0].value.value, str):
+            node.body = body[1:] or [ast.Pass()]
+    return ast.dump(tree).encode()
+
+
+def _demand_fingerprint() -> str:
+    """Digest of everything that decides the demand a cached year carries.
+
+    Three things decide it, and the key has to carry all three. The calibration tables,
+    because a recalibration makes a cached year describe a model that no longer exists --
+    which is not hypothetical: the appliance windows were corrected under a cache that would
+    have gone on serving the uncorrected year. The code that reads those tables, for exactly
+    the same reason, and this half was missing: the seeding fix that made the generator
+    reproducible never invalidated anything, so the cache went on serving pools drawn before
+    it, unseeded, and a rename of a table column was what finally dislodged them. And the
+    appliance library, because it is what actually draws the usage windows.
+
+    What it does not cover is worth stating: the versions of numpy and pandas, whose random
+    streams and numerics are stable across the range this project pins, and the resource
+    series, which the site fingerprint carries instead.
     """
     digest = hashlib.sha1()
     for path in sorted(REFERENCE_DIR.glob("*.csv")):
         digest.update(path.name.encode())
         digest.update(path.read_bytes())
+
+    demand_dir = Path(__file__).parent / "demand"
+    for name in sorted(_GENERATION_SOURCES):
+        digest.update(name.encode())
+        digest.update(_code_digest(demand_dir / name))
+
+    try:
+        import ramp
+
+        digest.update(str(getattr(ramp, "__version__", "unknown")).encode())
+    except ImportError:                     # the library is optional at import time
+        digest.update(b"no-ramp")
     return digest.hexdigest()[:12]
 
 
@@ -84,11 +142,12 @@ def _cache_key(site: str, year: int, trajectory: str, maturity_months: int,
                description: str = "") -> str:
     # The chemistry belongs in the key: it changes the storage ceiling and the
     # self-discharge the instance carries, so a cached instance from another chemistry
-    # would silently describe a different battery. So does the calibration, for the same
-    # reason: it decides the demand the instance carries. So does the site's own
-    # description, for the plainest reason of all: it *is* the community.
+    # would silently describe a different battery. So does the demand fingerprint, for the
+    # same reason: it decides the demand the instance carries, tables and generating code
+    # alike. So does the site's own description, for the plainest reason of all: it *is*
+    # the community.
     raw = (f"{site}|{year}|{trajectory}|{maturity_months}|{seed}|{chemistry}"
-           f"|{_calibration_fingerprint()}|{archetypes}|{description}")
+           f"|{_demand_fingerprint()}|{archetypes}|{description}")
     return hashlib.sha1(raw.encode()).hexdigest()[:16]
 
 

@@ -54,15 +54,16 @@ def demand_pool(site: Site | str = "Samionta", trajectory: str = "central",
                 year: int = 2025, seed: int = 0) -> np.ndarray:
     """Realisations of one community-year, cached on disk.
 
-    The cache is keyed on the calibration as well as on the site and the trajectory, so a
-    recalibration invalidates it rather than being silently served the demand of a model
-    that no longer exists.
+    The cache is keyed on the demand fingerprint as well as on the site and the trajectory:
+    the calibration tables, the code that reads them and the appliance library alike, so a
+    change to any of them invalidates the pool rather than being silently served the demand
+    of a model that no longer exists.
     """
     site = get_site(site) if isinstance(site, str) else site
-    from ..instances import _calibration_fingerprint
+    from ..instances import _demand_fingerprint
 
     DEMAND_POOL_DIR.mkdir(parents=True, exist_ok=True)
-    stamp = _calibration_fingerprint()
+    stamp = _demand_fingerprint()
     path = _pool_path(f"{site.name}_{stamp}", trajectory, maturity_months)
     if path.exists():
         cached = np.load(path)

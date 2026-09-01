@@ -45,6 +45,9 @@ const amount = (v, d = 0) => v === null || v === undefined ? "—"
 const perKwh = v => v === null || v === undefined ? "—"
   : nf(toLocal(v), currency.per_usd > 50 ? 0 : 4);
 const unit = suffixe => `${currency.code}${suffixe}`;
+// "per year" is a word, not punctuation. Each language abbreviates it its own way, and
+// hard-coding one of them printed it on the other language's page.
+const perYear = () => unit(T("unit.per_year"));
 
 function figure(k, v, u, note) {
   return `<div class="figure"><div class="k">${k}</div>
@@ -241,11 +244,16 @@ function renderSize(r) {
       <div class="figures">
         ${figure(T("res.pv"), nf(total, 1), "kW",
                  d.pv_ac_kw ? `${nf(d.pv_kw,1)} ${T("res.battery_bus")} · ${nf(d.pv_ac_kw,1)} ${T("res.load_bus")}` : null)}
-        ${figure(T("res.storage"), nf(d.battery_kwh), "kWh")}
+        ${figure(T("res.storage"), nf(d.battery_kwh), "kWh",
+                 r.battery_life_years ? T("res.battery_life",
+                    { n: nf(r.battery_life_years, 1) }) : null)}
         ${figure(T("res.conversion"), nf(d.inverter_kw, 1), "kW")}
         ${figure(T("res.generator"), nf(d.generator_kw), "kW")}
       </div>
       <p style="margin:16px 0 0">${badge}</p>
+      ${(r.binding_ceilings || []).length ? `<p class="hint" style="margin-top:10px">${
+          T("res.ceiling_binds", {
+            which: r.binding_ceilings.map(c => T(`res.ceiling.${c}`)).join(", ") })}</p>` : ""}
     </div>
 
     <div class="card">
@@ -253,12 +261,12 @@ function renderSize(r) {
       <div class="figures">
         ${figure(T("res.lcoe"), perKwh(r.lcoe_usd_kwh), unit("/kWh"),
                  `${T("res.target")} ${perKwh(r.tariff_target_usd_kwh)}`)}
-        ${figure(T("res.annual"), amount(r.z_rule_usd_yr), unit("/an"))}
+        ${figure(T("res.annual"), amount(r.z_rule_usd_yr), perYear())}
         ${figure(T("res.subsidy"), sub ? pct(sub * 100) : T("res.subsidy.none"), "",
                  sub ? T("res.subsidy", { n: `${amount(r.subsidy_usd)} ${currency.code}` })
                      : T("res.subsidy.met"))}
         ${figure(T("res.gap"), pct(r.price_rel_pct), "",
-                 `${amount(r.price_abs_usd_yr)} ${unit("/an")}`)}
+                 `${amount(r.price_abs_usd_yr)} ${perYear()}`)}
       </div>
     </div>
 
@@ -280,7 +288,9 @@ function renderSize(r) {
         ${figure(T("fin.irr"), r.finance.irr === null ? T("fin.irr.none")
                  : pct(r.finance.irr * 100), "",
                  r.finance.irr === null ? T("fin.irr.never")
-                 : T("fin.at_tariff", { tariff: `${perKwh(r.tariff_target_usd_kwh)} ${unit("/kWh")}` }))}
+                 : (r.finance.irr_without_salvage === null || r.finance.irr_without_salvage === undefined
+                    ? T("fin.at_tariff", { tariff: `${perKwh(r.tariff_target_usd_kwh)} ${unit("/kWh")}` })
+                    : T("fin.bare_irr", { rate: pct(r.finance.irr_without_salvage * 100) })))}
         ${figure(T("fin.payback"),
                  r.finance.payback_years === null ? T("fin.payback.never")
                  : nf(r.finance.payback_years, 1), r.finance.payback_years === null ? "" : T("fin.years"),
@@ -291,14 +301,19 @@ function renderSize(r) {
                  r.finance.subsidy_usd ? T("fin.of_which", { n: amount(r.finance.subsidy_usd) }) : null)}
       </div>
       <table style="margin-top:18px">
-        <tr><th>${T("fin.year")}</th><th>${T("fin.investment")}</th><th>${T("fin.operating")}</th><th>${T("fin.revenue")}</th><th>${T("fin.net")}</th></tr>
+        <tr><th>${T("fin.year")}</th><th>${T("fin.investment")}</th><th>${T("fin.operating")}</th>
+            <th>${T("fin.revenue")}</th><th>${T("fin.salvage")}</th><th>${T("fin.net")}</th></tr>
         ${r.finance.cash_flows.filter(c => c.year <= 3 || c.capital > 0 ||
             c.year === r.finance.cash_flows.length - 1).slice(0, 9).map(c => `<tr>
           <td>${c.year}</td><td>${c.capital ? amount(c.capital) : "—"}</td>
           <td>${c.operating ? amount(c.operating) : "—"}</td>
           <td>${c.revenue ? amount(c.revenue) : "—"}</td>
+          <td>${c.salvage ? amount(c.salvage) : "—"}</td>
           <td><b>${amount(c.net)}</b></td></tr>`).join("")}
       </table>
+      ${r.infrastructure_usd ? `<p class="hint" style="margin-top:10px">${
+          T("fin.beyond_plant", { n: `${amount(r.infrastructure_usd)} ${currency.code}` })}</p>`
+        : `<p class="hint warn" style="margin-top:10px">${T("fin.plant_only")}</p>`}
       <p class="hint" style="margin-top:12px">${T("fin.hint")}
          ${r.finance_unsubsidised && r.finance.subsidy_usd
            ? T("fin.unsubsidised", { rate: r.finance_unsubsidised.irr === null

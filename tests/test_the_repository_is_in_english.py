@@ -65,6 +65,22 @@ FRENCH_WORDS = re.compile(
 LOOKS_FRENCH_IS_ENGLISH = re.compile(
     r"(?<![\w-])(?:la|les|des|est|son|tout|par|plus|puis|encore|comme)(?![\w-])", re.I)
 
+#: Constructions that are French and can be nothing else, needing no second witness. The
+#: word-counting rule above missed "noyau de l'automate" -- no accent, and only one word
+#: from its list -- which is exactly the shape a comment takes when it is not translated.
+FRENCH_PHRASES = re.compile(
+    r"(?<![\w-])(?:"
+    r"de (?:la|l'|ce|cette|son|ses|leur|chaque|tout|deux|trois)"
+    r"|(?:du|au|aux) [a-z]+ (?:de|qui|est)"
+    r"|n'(?:est|a|y|ont)|c'est|qu'(?:il|elle|on|un|une)|d'(?:un|une|abord|ailleurs)"
+    r"|l'(?:automate|outil|ensemble|arbre|heure|annee|energie)"
+    r"|est (?:le|la|les|un|une)"
+    # Units and technology words that appear in printed output, where a lone French word
+    # is the whole of the mistake: "$/an", "batterie 100 kWh", "PV 22.8 kW continu".
+    r"|\$/an|kWh/an|kW/an|/an\b"
+    r"|(?:batterie|onduleur|groupe electrogene|champ continu|kW continu|kW alternatif)"
+    r")(?![\w-])", re.I)
+
 
 def _files() -> list[Path]:
     try:
@@ -114,11 +130,14 @@ def test_no_unaccented_french_prose_in_the_source() -> None:
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             hits = [w for w in FRENCH_WORDS.findall(line)
                     if not LOOKS_FRENCH_IS_ENGLISH.fullmatch(w)]
+            phrase = FRENCH_PHRASES.search(line)
             # One such word is a coincidence -- an English line may hold "la" as a note name
-            # or "est" as a compass point. Two or more in one line is prose.
-            if len(hits) >= 2:
+            # or "est" as a compass point. Two or more in one line is prose, and so is a
+            # single construction that exists in no other language.
+            if len(hits) >= 2 or phrase:
+                found = hits + ([phrase.group(0)] if phrase else [])
                 offenders.append(
-                    f"{path.relative_to(ROOT)}:{number}: {line.strip()[:90]}  {hits}")
+                    f"{path.relative_to(ROOT)}:{number}: {line.strip()[:90]}  {found}")
     assert not offenders, "French prose in the published source:\n" + "\n".join(offenders[:20])
 
 

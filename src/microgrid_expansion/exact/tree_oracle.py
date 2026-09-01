@@ -70,12 +70,13 @@ def simulate_node(plan, year: dict, costs: dict, settings: ProjectSettings,
             export_usd_kwh=settings.grid.export_usd_kwh,
             exports=settings.grid.export_usd_kwh > 0.0)
 
-    degradation = settings.battery.degradation_usd_kwh()
+    # Storage wear is not an operating cost here either: the pack is recovered over its
+    # service life in the capital term, and charging both bought it twice. The programme
+    # this is compared against drops the same term, so the ordering between them holds.
     voll = settings.economics.value_of_lost_load_usd_kwh
     trace = _simulate_year(year["demand"], year["yield"], year["t_amb"],
                            capacities, battery, generator, controller, grid=link)
     operating = (trace["fuel"] * costs["fuel_price"]
-                 + trace["discharge"] * degradation
                  + trace["unserved"] * voll
                  + trace.get("grid_import", 0.0) * settings.grid.import_usd_kwh
                  - trace.get("grid_export", 0.0) * settings.grid.export_usd_kwh)

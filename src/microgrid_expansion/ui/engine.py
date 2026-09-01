@@ -40,10 +40,9 @@ def size_site(job: Job, overrides: dict[str, Any]) -> dict:
 
     # The certificate settles which plant is cheapest; what it costs a customer is a second
     # question, answered by running the certified design once more and pricing its life.
-    from ..exact.certify import _grid_capital_usd_yr, _grid_link
+    from ..exact.certify import _grid_link
     from ..exact.simulator import BatteryModel, GeneratorModel, simulate
-    from ..post.economics import assets_from_settings, life_cycle_cost
-    from ..post.finance import appraise
+    from ..post.appraisal import price_certified_design
 
     design = result.design
     battery = BatteryModel.from_spec(settings.battery)
@@ -56,46 +55,16 @@ def size_site(job: Job, overrides: dict[str, Any]) -> dict:
     link = _grid_link(instance, settings)
     dispatch = simulate(instance.demand_kw, instance.specific_yield, instance.t_amb_c,
                         design, battery, generator, grid=link)
-    operating = dispatch.operating_cost(
-        generator, degradation_usd_kwh=settings.battery.degradation_usd_kwh(),
-        voll_usd_kwh=settings.economics.value_of_lost_load_usd_kwh)
-    served = instance.demand_kwh - float(dispatch.unserved_kw.sum())
-    target = (settings.economics.tariff_usd_kwh
-              if settings.economics.tariff_is_target else None)
-    # The connection is capital the plant carries, so it belongs in the life-cycle cost as
-    # it already does in the annualised one the search minimises.
-    grid_capital_usd_yr = _grid_capital_usd_yr(settings)
-    horizon = settings.economics.horizon_years
-    rate = settings.economics.discount_rate
-    annuity = sum(1.0 / (1.0 + rate) ** y for y in range(1, horizon + 1))
-    cost = life_cycle_cost(
-        {"pv": design.pv_total_kw, "battery": design.battery_kwh,
-         "inverter": design.inverter_kw, "generator": design.generator_kw,
-         "conversion": design.pv_ac_kw},
-        operating + grid_capital_usd_yr, served, horizon_years=horizon,
-        discount_rate=rate, tariff_target_usd_kwh=target,
-        assets=assets_from_settings(settings, architecture="ac"))
-
-    assets = assets_from_settings(settings, architecture="ac")
-    plant = {"pv": design.pv_total_kw, "battery": design.battery_kwh,
-             "inverter": design.inverter_kw, "generator": design.generator_kw,
-             "conversion": design.pv_ac_kw}
-    growth = settings.economics.demand_growth_rate
-    finance = appraise(plant, operating, served,
-                       tariff_usd_kwh=settings.economics.tariff_usd_kwh,
-                       horizon_years=settings.economics.horizon_years,
-                       discount_rate=settings.economics.discount_rate,
-                       assets=assets, subsidy_usd=cost.subsidy_usd or 0.0,
-                       demand_growth_rate=growth)
-    unsubsidised = appraise(plant, operating, served,
-                            tariff_usd_kwh=settings.economics.tariff_usd_kwh,
-                            horizon_years=settings.economics.horizon_years,
-                            discount_rate=settings.economics.discount_rate,
-                            assets=assets, subsidy_usd=0.0,
-                            demand_growth_rate=growth)
+    priced = price_certified_design(instance, design, settings, dispatch, generator)
+    cost, finance = priced.cost, priced.finance
+    served = priced.energy_served_kwh
+    unsubsidised = priced.finance_unsubsidised
 
     return {
         "site": settings.site,
+        "binding_ceilings": list(priced.binding_ceilings),
+        "battery_life_years": priced.battery_life_years,
+        "infrastructure_usd": priced.infrastructure_usd,
         "trajectory": settings.demand_trajectory,
         "currency": _currency(settings),
         "finance": finance.to_dict(),
@@ -127,7 +96,7 @@ def size_site(job: Job, overrides: dict[str, Any]) -> dict:
         "npc_usd": cost.net_present_cost,
         "subsidy_fraction": cost.subsidy_fraction,
         "subsidy_usd": cost.subsidy_usd,
-        "tariff_target_usd_kwh": target,
+        "tariff_target_usd_kwh": cost.tariff_target_usd_kwh,
         "energy_served_kwh": served,
         "unserved_kwh": instance.demand_kwh - served,
     }
@@ -171,8 +140,11 @@ def plan_expansion(job: Job, overrides: dict[str, Any]) -> dict:
     certificate = certify_tree(plans, tree, rep, solved.objective,
                                architecture=architecture, settings=settings, verbose=False)
     traces = certificate.traces
+    from ..exact.certify import _infrastructure_usd_yr
+
     expected = expected_npc_lcoe(certificate.plans, tree, traces,
-                                 discount_rate=settings.economics.discount_rate)
+                                 discount_rate=settings.economics.discount_rate,
+                                 infrastructure_usd_yr=_infrastructure_usd_yr(settings))
     expected.update({
         "architecture": architecture,
         "expected_rule_cost_usd": certificate.z_rule,

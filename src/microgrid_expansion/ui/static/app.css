@@ -264,3 +264,7 @@ th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em;
 @media (prefers-color-scheme: dark) { .brand .wordmark { filter: brightness(1.06); } }
 .langpick { margin-top: auto; padding: 0 6px; }
 .langpick select { font-size: 12.5px; padding: 6px 9px; }
+
+/* A caution the reader has to see: the plant is priced and the project is not. It is a
+   sentence, not a badge, because what is missing takes a sentence to say. */
+.hint.warn { color: var(--warn); }

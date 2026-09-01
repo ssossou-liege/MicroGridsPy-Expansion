@@ -49,13 +49,20 @@ def node_kpis(plans: dict, node: int, tree: ScenarioTree, simulated: dict) -> di
 
 
 def expected_npc_lcoe(plans: dict, tree: ScenarioTree, simulated: dict,
-                      discount_rate: float | None = None) -> dict:
+                      discount_rate: float | None = None,
+                      infrastructure_usd_yr: float = 0.0) -> dict:
     """Expected net present cost and levelised cost over the tree.
 
     Both are expectations over the leaves, and both are ratios of expectations rather than
     expectations of ratios: the operator pays the expected cost and sells the expected
     energy, and averaging a levelised cost over scenarios would weight a cheap kilowatt-hour
     in a large year the same as a dear one in a small year.
+
+    ``infrastructure_usd_yr`` carries the network, the connections, the civil works and the
+    development, which the plant does not buy and which no plan escapes. It is charged in
+    every node and every year, so that a plan and a single-year sizing of the same community
+    answer with the same cost boundary. Without it the plan reported the cheaper of two
+    boundaries and the sizing the dearer, which is worse than either being wrong alone.
     """
     rate = config.DISCOUNT_RATE if discount_rate is None else discount_rate
     cost = 0.0
@@ -63,11 +70,12 @@ def expected_npc_lcoe(plans: dict, tree: ScenarioTree, simulated: dict,
     for node in tree.nodes:
         trace = simulated[node]
         weight = tree.prob[node] * tree.disc[node] * tree.n_years[node]
-        cost += weight * trace["annual_cost_usd"]
+        cost += weight * (trace["annual_cost_usd"] + infrastructure_usd_yr)
         energy += weight * trace["served_kwh"]
     return {
         "expected_npc_usd": cost,
         "expected_energy_kwh": energy,
         "expected_lcoe_usd_kwh": cost / max(energy, 1e-9),
+        "infrastructure_usd_yr": infrastructure_usd_yr,
         "discount_rate": rate,
     }

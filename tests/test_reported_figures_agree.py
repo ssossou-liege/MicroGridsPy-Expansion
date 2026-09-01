@@ -170,6 +170,7 @@ def test_a_plant_is_priced_against_the_grid_it_was_sized_with():
     """
     import inspect
 
+    from microgrid_expansion.post import appraisal
     from microgrid_expansion.ui import engine
 
     source = inspect.getsource(engine.size_site)
@@ -177,7 +178,9 @@ def test_a_plant_is_priced_against_the_grid_it_was_sized_with():
         "the sizing economics do not build the grid link")
     assert source.count("grid=link") >= 1, (
         "the pricing simulation ignores the grid the search assumed")
-    assert "_grid_capital_usd_yr" in source, (
+    # The connection's capital is charged where a design is priced, which is now one
+    # function shared by the interface and the command line rather than two copies.
+    assert "_grid_capital_usd_yr" in inspect.getsource(appraisal.price_certified_design), (
         "the connection capital does not enter the life-cycle cost")
 
 
@@ -256,3 +259,41 @@ def test_the_bound_survives_a_grid_connection():
     assert (relaxed.value - relaxed.capital_cost) <= rule * scale + 1e-6, (
         "the lower bound exceeds the cost under the controller: proposition 1 is "
         "violated as soon as a grid is connected")
+
+
+def test_the_interface_and_the_command_line_price_a_design_the_same_way() -> None:
+    """One function, two callers -- because two copies drifted.
+
+    The interface and the command line each wrote out their own pricing block, near
+    identical. When storage stopped being charged twice, the correction landed in one and
+    not the other, and the certificates written to ``results/`` went on reporting a
+    levelised cost the interface no longer agreed with. Nothing failed, because each path
+    was internally consistent; the disagreement was only visible by reading both.
+
+    Asserting the numbers match would need an hour of certification. Asserting that neither
+    path does its own arithmetic costs nothing and catches the same thing sooner.
+    """
+    import inspect
+
+    from microgrid_expansion.exact import certify
+    from microgrid_expansion.ui import engine
+
+    for name, function in (("the command line", certify.main),
+                           ("the interface", engine.size_site)):
+        source = inspect.getsource(function)
+        assert "price_certified_design" in source, f"{name} does not use the shared pricing"
+        assert "life_cycle_cost(" not in source, f"{name} prices a design on its own again"
+        assert "appraise(" not in source, f"{name} appraises a design on its own again"
+
+
+def test_the_shared_pricing_charges_fuel_at_the_project_s_price() -> None:
+    """It takes the generator, so it cannot fall back on the library's default price."""
+    import inspect
+
+    from microgrid_expansion.post import appraisal
+
+    signature = inspect.signature(appraisal.price_certified_design)
+    assert "generator" in signature.parameters
+    source = inspect.getsource(appraisal.price_certified_design)
+    assert "operating_cost(\n        generator" in source or \
+           "operating_cost(generator" in source, "the fuel price is not the project's"

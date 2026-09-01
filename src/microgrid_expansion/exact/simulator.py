@@ -270,15 +270,32 @@ class Dispatch:
     clipped_kwh: float = 0.0
 
     @property
-    def fuel_cost_usd(self) -> float:
+    def fuel_litres_total(self) -> float:
+        """Litres burned over the horizon simulated.
+
+        This was once called ``fuel_cost_usd`` and returned exactly this number, so anyone
+        reading it as a cost was out by the price of a litre. It had no callers, which is
+        the only reason no reported figure was wrong. Costing fuel is ``operating_cost``'s
+        business, because that is where the price lives.
+        """
         return float(self.fuel_litres.sum())
 
     def operating_cost(self, generator: GeneratorModel = GeneratorModel(),
-                       degradation_usd_kwh: float | None = None,
+                       degradation_usd_kwh: float = 0.0,
                        voll_usd_kwh: float = config.VOLL_USD_KWH) -> float:
-        """Annual operating cost: fuel, storage degradation and unserved energy."""
-        degradation = (config.battery_degradation_cost()
-                       if degradation_usd_kwh is None else degradation_usd_kwh)
+        """Annual operating cost: fuel, unserved energy, and the grid's net bill.
+
+        Storage wear is deliberately absent. It used to be charged here at the pack's
+        cost divided by its cycle life, beside a pack that was *also* replaced on its
+        calendar life in the capital accounts -- the same battery bought twice, worth a
+        sixth of the levelised cost. Wear now sets the replacement interval instead, in
+        ``BatterySpec.effective_lifetime_years``, and is charged there or nowhere.
+
+        The argument survives at zero for callers that genuinely want a throughput price
+        -- a pack under a warranty priced per kilowatt-hour, say -- but nothing in this
+        project passes one.
+        """
+        degradation = degradation_usd_kwh
         imported = (0.0 if self.grid_import_kw is None
                     else float(self.grid_import_kw.sum()) * self.grid_import_usd_kwh)
         exported = (0.0 if self.grid_export_kw is None
@@ -343,7 +360,7 @@ class Dispatch:
 
 
 
-# ------------------------------------------------------------------- noyau de l'automate
+# --------------------------------------------------------------- the controller's kernel
 def _controller_loop(n, demand, pv, soc, losses, ceilings, next_ceiling, reserve,
                      gen, charge, discharge, curtailed, unserved, pv_to_load,
                      inverter_flow, floor, share_dc, eta_ac, power_limit, timestep_h,

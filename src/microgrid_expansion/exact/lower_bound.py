@@ -98,6 +98,11 @@ class Economics:
     #: What imported energy costs and what exported energy earns, per kilowatt-hour.
     grid_import_usd_kwh: float = 0.0
     grid_export_usd_kwh: float = 0.0
+    #: Annualised capital of everything between the plant and the customer -- network,
+    #: connections, civil works, development. It does not depend on the design, so it moves
+    #: every cost by the same amount and leaves the ranking, and the certificate, untouched.
+    #: It moves the tariff and the subsidy, which is what the project is judged on.
+    infrastructure_usd_yr: float = 0.0
 
     def __post_init__(self) -> None:
         if self.crf is None:
@@ -105,6 +110,26 @@ class Economics:
         if self.degradation_usd_kwh is None:
             object.__setattr__(self, "degradation_usd_kwh",
                                config.battery_degradation_cost())
+
+    #: The storage pack, needed to work out which of its two lives ends it. Left unset the
+    #: calendar life is used, which is the relaxation the lower bound wants.
+    battery_spec: object | None = None
+
+    def battery_annualised(self, capacity_kwh: float = 0.0,
+                           annual_discharge_kwh: float = 0.0) -> float:
+        """Annualised cost of one kilowatt-hour of storage, on the life that ends it.
+
+        A pack cycled beyond its cycle life is replaced sooner than the calendar says, and
+        charging it over the calendar life would understate it. Charging it over both --
+        capital on the calendar, wear on the cycles -- is what this replaces, and that
+        overstated it by more.
+        """
+        _, om_batt, _, _ = self.om_rates
+        life = self.lifetimes[1]
+        if self.battery_spec is not None and capacity_kwh > 0 and annual_discharge_kwh > 0:
+            life = self.battery_spec.effective_lifetime_years(capacity_kwh,
+                                                              annual_discharge_kwh)
+        return self.battery_usd_kwh * (config.crf(n=life) + om_batt)
 
     def annualised(self) -> tuple[float, float, float, float]:
         """Annualised cost of one unit of each capacity, capital plus maintenance.
@@ -404,16 +429,29 @@ def cost_optimal_dispatch(
     operating = (
         (w * (economics.fuel_usd_l * fuel_1) * p_gen).sum()
         + (w * (economics.fuel_usd_l * fuel_0) * commit).sum()
-        + (w * economics.degradation_usd_kwh * p_dis).sum()
         + (w * economics.voll_usd_kwh * unserved).sum()
         + ((w * economics.grid_import_usd_kwh * grid_load).sum()
            - (w * economics.grid_export_usd_kwh * grid_export).sum()
            if grid_load is not None else 0.0)
     )
+    # No throughput charge on the battery. Its cost is its capital, recovered over the life
+    # that ends it, and charging its wear here as well paid for the same pack twice. The
+    # capital below recovers it over the calendar life, which is the longest life it can
+    # have and therefore the cheapest: a relaxation, which is what a lower bound must be.
+    #
     # A field on the battery's bus buys only its modules, the conversion coming with the
     # hybrid inverter; a field on the load's bus buys its string inverters as well.
     capital = (a_pv * cap_pv + a_pv_ac * cap_pv_ac + a_batt * cap_batt
                + a_inv * cap_inv + a_gen * cap_gen)
+    # The connection and the balance of plant are the same amount for every design, so they
+    # move the bound and the rule oracle by exactly as much and leave the ranking alone.
+    # Leaving them out of the bound alone does not make it invalid -- a smaller number is
+    # still a lower bound -- but it makes it loose by their whole size, and a loose bound
+    # prunes nothing. With them the gap is the price of the heuristic; without them it was
+    # the price of the heuristic plus the network.
+    # Added to the solved value rather than to the model: a constant term shifts no
+    # optimum, and linopy declines to carry one.
+    constant = economics.grid_connection_usd_yr + economics.infrastructure_usd_yr
     m.add_objective(operating + capital)
 
     # The bound is solved thousands of times; its progress bars would drown every other
@@ -475,8 +513,8 @@ def cost_optimal_dispatch(
     capital_value = (a_pv * solution.pv_kw + a_pv_ac * solution.pv_ac_kw
                      + a_batt * solution.battery_kwh
                      + a_inv * solution.inverter_kw + a_gen * solution.generator_kw)
-    total = float(m.objective.value)
+    total = float(m.objective.value) + constant
     return LowerBound(value=total, capacities=solution,
-                      operating_cost=total - capital_value,
-                      capital_cost=capital_value,
+                      operating_cost=total - capital_value - constant,
+                      capital_cost=capital_value + constant,
                       relaxed_commitment=relax_commitment, status=status)

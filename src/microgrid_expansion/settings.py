@@ -124,9 +124,41 @@ class BatterySpec:
              "figures"))
 
     def degradation_usd_kwh(self) -> float:
-        """Throughput cost of storage [$ per kWh discharged]."""
+        """Throughput cost of storage [$ per kWh discharged].
+
+        Kept because it is the natural way to read a cycle life as a price, and it is what
+        ``effective_lifetime_years`` is built on. It is no longer charged as an operating
+        cost: doing that beside a pack that is also replaced on its calendar life paid for
+        the same battery twice, and inflated the levelised cost by a sixth.
+        """
         throughput = self.cycles * (self.soc_max - self.soc_min)
         return self.cost_usd_kwh / throughput
+
+    def cycle_limited_years(self, capacity_kwh: float,
+                            annual_discharge_kwh: float) -> float:
+        """Years until the pack's cycle life is spent at this rate of use.
+
+        A pack cycled hard is worn out before its calendar life is up, and a pack barely
+        used outlives its cycles by years. Which of the two binds is a property of the
+        design and its dispatch, not a constant, so it is computed rather than assumed.
+        """
+        if capacity_kwh <= 0 or annual_discharge_kwh <= 0:
+            return float("inf")
+        usable = capacity_kwh * (self.soc_max - self.soc_min)
+        cycles_per_year = annual_discharge_kwh / usable
+        return self.cycles / cycles_per_year
+
+    def effective_lifetime_years(self, capacity_kwh: float = 0.0,
+                                 annual_discharge_kwh: float = 0.0) -> float:
+        """The life that actually ends the pack: calendar or cycles, whichever comes first.
+
+        The battery is bought once and charged once. Before this, its capital was recovered
+        over the calendar life *and* its throughput was charged at the cycle-life price,
+        which is the same capital counted a second time. Here the two lives compete and the
+        shorter one sets the replacement interval; nothing is charged per kilowatt-hour.
+        """
+        return min(float(self.lifetime_years),
+                   self.cycle_limited_years(capacity_kwh, annual_discharge_kwh))
 
 
 @dataclass
@@ -446,6 +478,11 @@ class EconomicSettings:
     #: and a sizing that reports the shortfall after the fact cannot honour it: the level
     #: has to bound the search, not describe its outcome.
     min_service_fraction: float | None = None
+    #: Share of the energy served that is billed and actually collected. A rural mini-grid
+    #: loses some to non-technical losses and some to arrears; taking every kilowatt-hour
+    #: served as paid for is the optimistic end of an appraisal whose other end is a cost
+    #: boundary that stops at the plant. One is worth as much as the other.
+    collection_rate: float = 1.0
     #: Annual growth of the energy billed, used by the financial appraisal alone. The
     #: sizing is done for the year and maturity stated, not for this curve; a plant that
     #: must serve the growth is what the expansion plan is for.
@@ -542,6 +579,96 @@ def best_available_solver() -> str:
         return "gurobi"
     except Exception:
         return "highs"
+
+
+@dataclass
+class InfrastructureSpec:
+    """Everything between the power plant and the customer's lamp.
+
+    A certified plant is not a project. The generation equipment is perhaps half of what a
+    mini-grid costs: the low-voltage network, the service drop and meter at each customer,
+    the civil works the plant stands on and the development spent before a shovel moves are
+    the rest, and leaving them out is not a conservative simplification -- it is the single
+    largest error a sizing can make. Priced at the plant alone this project's own example
+    site came to three hundred dollars a household, against the eight hundred to fifteen
+    hundred a West African mini-grid actually costs to connect, and reported a levelised
+    cost that needed no subsidy where the real one needs a third of its capital granted.
+
+    None of it changes which plant is cheapest -- it does not depend on the design -- so it
+    shifts the certified cost without disturbing the certificate. It changes the tariff, the
+    subsidy and the return, which is to say everything a developer is asked about.
+
+    All figures default to zero. That is not an estimate: nobody can guess a village's
+    network from its coordinates, and a plausible-looking default would be quoted as though
+    it were sourced. Zero is visibly missing, and the interface says so.
+    """
+
+    #: The low-voltage network: poles, conductor, earthing, and the labour to string it.
+    #: A lump sum, because a developer knows their layout and no per-kilometre figure
+    #: transfers between a compact village and a scattered one.
+    distribution_usd: float = 0.0
+    distribution_lifetime_years: int = 30
+    distribution_om_rate: float = 0.02
+
+    #: Per customer connected, meter included: the service drop, the board, the meter and
+    #: the labour. Single- and three-phase are separated because they differ by a factor of
+    #: two or more, and because it is the productive users -- the mill, the welder, the
+    #: sawmill -- that take three phases and that decide whether the plant is daytime-heavy.
+    connection_single_phase_usd: float = 0.0
+    connection_three_phase_usd: float = 0.0
+    connection_lifetime_years: int = 15
+    connection_om_rate: float = 0.02
+
+    #: Foundations, the plant room or container, fencing, access, earthing.
+    civil_works_usd: float = 0.0
+    civil_lifetime_years: int = 30
+    civil_om_rate: float = 0.01
+
+    #: Feasibility, survey, permits, design, and the developer's own time before financial
+    #: close. Spent once, never replaced, and carrying no maintenance.
+    development_usd: float = 0.0
+
+    provenance: Provenance = field(default_factory=lambda: Provenance(
+        source="", verified=False,
+        note="the balance of plant is site-specific and must be quoted, not defaulted; "
+             "left at zero the reported cost is the plant's alone and understates the "
+             "project"))
+
+    def connections_usd(self, single_phase: int, three_phase: int) -> float:
+        """Capital of connecting this many customers of each kind."""
+        return (self.connection_single_phase_usd * max(int(single_phase), 0)
+                + self.connection_three_phase_usd * max(int(three_phase), 0))
+
+    def capital_usd(self, single_phase: int = 0, three_phase: int = 0) -> float:
+        """Everything the plant does not buy, at year zero."""
+        return (self.distribution_usd + self.civil_works_usd + self.development_usd
+                + self.connections_usd(single_phase, three_phase))
+
+    def annualised_usd_yr(self, single_phase: int = 0, three_phase: int = 0,
+                          discount_rate: float | None = None,
+                          horizon_years: int | None = None) -> float:
+        """The same capital as an annual charge, each part over its own service life.
+
+        Development is recovered over the project horizon rather than a service life: it
+        buys no equipment, so there is nothing to replace and nothing left at the end.
+        """
+        from . import config as _config
+
+        rate = _config.DISCOUNT_RATE if discount_rate is None else discount_rate
+        horizon = _config.PROJECT_YEARS if horizon_years is None else horizon_years
+
+        def annuity(amount: float, life: int, om_rate: float) -> float:
+            if amount <= 0:
+                return 0.0
+            return amount * (_config.crf(rate, life) + om_rate)
+
+        return (annuity(self.distribution_usd, self.distribution_lifetime_years,
+                        self.distribution_om_rate)
+                + annuity(self.connections_usd(single_phase, three_phase),
+                          self.connection_lifetime_years, self.connection_om_rate)
+                + annuity(self.civil_works_usd, self.civil_lifetime_years,
+                          self.civil_om_rate)
+                + annuity(self.development_usd, horizon, 0.0))
 
 
 @dataclass
@@ -652,6 +779,7 @@ class ProjectSettings:
     controller: ControllerSettings = field(default_factory=ControllerSettings)
     calibration: CalibrationSettings = field(default_factory=CalibrationSettings)
     grid: GridSpec = field(default_factory=GridSpec)
+    infrastructure: InfrastructureSpec = field(default_factory=InfrastructureSpec)
     solver: SolverSettings = field(default_factory=SolverSettings)
 
     # ---------------------------------------------------------------- validation

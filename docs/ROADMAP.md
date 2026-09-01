@@ -267,7 +267,7 @@ unmeasurable parameter — so long as costs stay in the observed range.
   sixty times more. A relaxation is therefore worth its price only for a box holding more
   than about sixty designs; below that, enumerating with the cheap oracle is both faster and
   exact. The search accordingly buys a strong incumbent with a multi-resolution sweep of
-  simulations — 1 956 of them reach 10 470 $/an on the full lattice in 84 s, against 163 min
+  simulations — 1 956 of them reach 10 470 $/yr on the full lattice in 84 s, against 163 min
   to enumerate it — and spends relaxations only on discarding whole regions.
 - **Half the lattice was never a plant.** Enumerating capacities independently of one
   another produced designs no installer could wire, and a certificate over such a set proves

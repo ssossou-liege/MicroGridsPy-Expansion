@@ -255,9 +255,9 @@ class Certificate:
 
     def summary(self) -> str:
         d = self.design
-        return (f"PV {d.pv_kw:.1f} kW continu + {d.pv_ac_kw:.1f} kW alternatif · "
-                f"batterie {d.battery_kwh:.0f} kWh · "
-                f"onduleur {d.inverter_kw:.1f} kW · groupe {d.generator_kw:.0f} kW\n"
+        return (f"PV {d.pv_kw:.1f} kW DC + {d.pv_ac_kw:.1f} kW AC | "
+                f"battery {d.battery_kwh:.0f} kWh | "
+                f"inverter {d.inverter_kw:.1f} kW | generator {d.generator_kw:.0f} kW\n"
                 f"z_B* = {self.z_rule:,.0f} $/yr   optimum proven: {self.proven}\n"
                 f"gap to the cost-optimal bound: {self.gap_rel:.2f} % "
                 f"(tends to the price of the heuristic, not to zero)")
@@ -318,6 +318,57 @@ def _grid_capital_usd_yr(settings) -> float:
                                   + config.INV_OM_RATE)
 
 
+def customers_to_connect(settings) -> tuple[int, int]:
+    """How many single- and three-phase customers the project has to connect.
+
+    Households take one phase; the productive users -- the mill, the welder, the sawmill --
+    take three, which is also why they are the ones that decide whether the plant is
+    daytime-heavy. Where the developer has not said how many productive units to expect, the
+    count falls to zero rather than to a guess: a connection cost invented here would be
+    charged to the project as though someone had quoted it.
+    """
+    from ..sites import get_site
+
+    try:
+        site = get_site(settings.site)
+    except Exception:                        # a site being described, not yet saved
+        return 0, 0
+    households = int(getattr(site, "connections", 0) or sum(site.census.values()))
+    productive = int(getattr(site, "productive_units", 0) or 0)
+    return households, productive
+
+
+def _infrastructure_usd_yr(settings) -> float:
+    """Annualised network, connections, civil works and development.
+
+    Zero unless the developer has priced them, which is the honest default: the balance of
+    plant is the half of a mini-grid that cannot be inferred from coordinates.
+    """
+    spec = getattr(settings, "infrastructure", None)
+    if spec is None:
+        return 0.0
+    single, three = customers_to_connect(settings)
+    return spec.annualised_usd_yr(single, three,
+                                  discount_rate=settings.economics.discount_rate,
+                                  horizon_years=settings.economics.horizon_years)
+
+
+def _price_relative(z_rule: float, z_opt: float, economics) -> float:
+    """The price of the heuristic, against the cost the dispatch can actually move.
+
+    It measures the controller, so it is read against what the controller decides. The
+    connection, the network, the civil works and the development are the same money under
+    any dispatch, and leaving them in the denominator would let a developer shrink the
+    apparent price of their controller by pricing their network -- on this project's own
+    example site it fell from 6.1 to 3.5 per cent without a line of the controller
+    changing. Netting them out keeps the figure a property of the plant.
+    """
+    constant = getattr(economics, "grid_connection_usd_yr", 0.0) + getattr(
+        economics, "infrastructure_usd_yr", 0.0)
+    movable = max(z_opt - constant, 1.0)
+    return 100.0 * (z_rule - z_opt) / movable
+
+
 def _evaluate_rule(instance, capacities, economics, battery, generator, controller,
                    annualised, grid=None) -> float:
     """Annualised total cost of one design under the deployed controller.
@@ -344,13 +395,22 @@ def _evaluate_rule(instance, capacities, economics, battery, generator, controll
     # string inverters that put it there. Charging the first coefficient to ``pv_kw`` alone
     # left the second part free, which understated every design that used it and let the
     # relaxation exceed a cost that had not been fully counted.
+    #
+    # The storage is charged on the life that ends it, which needs the dispatch: a pack
+    # cycled hard is replaced before its calendar life is up. The lower bound cannot know
+    # this -- its dispatch is a decision, not a result -- so it charges the calendar life,
+    # the longest and cheapest, and stays a bound.
+    battery_annualised = economics.battery_annualised(
+        capacities.battery_kwh,
+        float(dispatch.discharge_kw.sum()) * (8760.0 / instance.demand_kw.size))
     capital = (annualised[0] * capacities.pv_kw
                + _string_inverter_cost() * capacities.pv_ac_kw
                + annualised[0] * capacities.pv_ac_kw
-               + annualised[1] * capacities.battery_kwh
+               + battery_annualised * capacities.battery_kwh
                + annualised[2] * capacities.inverter_kw
                + annualised[3] * capacities.generator_kw
-               + economics.grid_connection_usd_yr)
+               + economics.grid_connection_usd_yr
+               + economics.infrastructure_usd_yr)
     # A required service level bounds the search rather than describing its outcome. It
     # only ever removes designs, so the certificate stays a certificate -- over the smaller
     # set the requirement defines, which is the set the contract allows anyway.
@@ -665,7 +725,7 @@ def narrow_to_incumbent(instance, lattice, incumbent, economics, battery, genera
     return narrowed, removed, calls
 
 
-def _capital_floor(lattice, box, annualised) -> float:
+def _capital_floor(lattice, box, annualised, constant: float = 0.0) -> float:
     """Cheapest annualised capital any design in the box can carry.
 
     Operating cost is non-negative and capital is increasing in every capacity, so the
@@ -673,8 +733,13 @@ def _capital_floor(lattice, box, annualised) -> float:
     design inside it — obtained without solving anything. On a lattice sized generously
     enough to be sure of containing the optimum, most of the volume sits at capacities far
     above it, and this free test discards that volume before a single relaxation is spent.
+
+    ``constant`` carries the costs no design escapes -- the connection, the network, the
+    civil works, the development -- which raise every floor by the same amount and so make
+    the test bite sooner without ever discarding the optimum.
     """
-    return (annualised[0] * box.pv[0] * lattice.pv_unit_kw
+    return (constant
+            + annualised[0] * box.pv[0] * lattice.pv_unit_kw
             + annualised[1] * box.batt[0] * lattice.batt_unit_kwh
             + annualised[2] * box.inv[0] * lattice.inv_unit_kw
             + annualised[3] * min(box.gens))
@@ -772,6 +837,8 @@ def certify(
         grid_connection_usd_yr=_grid_capital_usd_yr(settings),
         grid_import_usd_kwh=settings.grid.import_usd_kwh if settings.grid.connected else 0.0,
         grid_export_usd_kwh=settings.grid.export_usd_kwh if settings.grid.connected else 0.0,
+        infrastructure_usd_yr=_infrastructure_usd_yr(settings),
+        battery_spec=settings.battery,
         conversion_usd_kw=settings.coupling.cost_usd_kw(lattice.architecture))
     battery = BatteryModel.from_spec(settings.battery)
     biggest = max(settings.generators, key=lambda g: g.rating_kw)
@@ -864,7 +931,9 @@ def _certify(instance, lattice, settings, tolerance, max_relaxations,
             design = lattice.capacities(n_pv, n_bt, n_iv, gen, n_ac)
 
         for child in _split(box):
-            floor = _capital_floor(lattice, child, annualised)
+            floor = _capital_floor(lattice, child, annualised,
+                                   economics.grid_connection_usd_yr
+                                   + economics.infrastructure_usd_yr)
             if floor >= incumbent - margin:
                 pruned_points += child.n_admissible(lattice)   # discarded on capital, for free
                 free_prunes += 1
@@ -906,7 +975,7 @@ def _certify(instance, lattice, settings, tolerance, max_relaxations,
         gap_abs=gap_abs, gap_rel=100.0 * gap_abs / max(incumbent, 1.0), proven=proven,
         design_opt=design_opt, z_opt=z_opt,
         price_abs=incumbent - z_opt,
-        price_rel=100.0 * (incumbent - z_opt) / max(z_opt, 1.0),
+        price_rel=_price_relative(incumbent, z_opt, economics),
         lattice_size=full_size, simulations=sims, relaxations=relaxations,
         boxes=boxes, seconds=time.time() - started,
         pruned_points=pruned_points + removed_by_narrowing, enumerated_points=enumerated,
@@ -1011,6 +1080,7 @@ def main(argv: list[str] | None = None) -> int:
     # optimum certified when only the corners were available.
     lattice = Lattice.around(instance, settings)
     print(f"search space: {lattice.size:,} wirable designs")
+    grid = _grid_link(instance, settings)
     architecture = "mixed"
     if args.method == "exhaustive":
         result = certify_exhaustive(instance, lattice, settings,
@@ -1030,14 +1100,18 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  relaxations               : {result.relaxations}")
     print(f"  runtime                   : {result.seconds / 60:.1f} min")
     if result.design_opt is not None:
-        print(f"\n  z_A* = {result.z_opt:,.0f} $/an  →  PV {result.design_opt.pv_kw:.1f} kW, "
+        print(f"\n  z_A* = {result.z_opt:,.0f} $/yr  ->  PV {result.design_opt.pv_kw:.1f} kW, "
               f"battery {result.design_opt.battery_kwh:.0f} kWh, "
               f"generator {result.design_opt.generator_kw:.0f} kW")
-    print(f"  prix de l'heuristique   : {result.price_abs:,.0f} $/an "
+    print(f"  price of the heuristic  : {result.price_abs:,.0f} $/yr "
           f"({result.price_rel:.1f} %)")
 
     # --- what the certified design implies for the tariff -------------------
-    from ..post.economics import assets_from_settings, life_cycle_cost
+    # Through the same function the interface uses. These two blocks were once written out
+    # separately and drifted: the storage double-charge was corrected in one and left in
+    # the other, so certificates written here reported a levelised cost the interface no
+    # longer agreed with, and nothing failed.
+    from ..post.appraisal import price_certified_design
     from .simulator import simulate
 
     design = result.design
@@ -1046,20 +1120,11 @@ def main(argv: list[str] | None = None) -> int:
                key=lambda g: abs(g.rating_kw - design.generator_kw))
     generator = GeneratorModel.from_spec(unit, settings.economics.diesel_price_usd_l)
     dispatch = simulate(instance.demand_kw, instance.specific_yield, instance.t_amb_c,
-                        design, battery, generator)
-    operating = dispatch.operating_cost(
-        generator, degradation_usd_kwh=settings.battery.degradation_usd_kwh(),
-        voll_usd_kwh=settings.economics.value_of_lost_load_usd_kwh)
-    served = instance.demand_kwh - float(dispatch.unserved_kw.sum())
-    target = (settings.economics.tariff_usd_kwh
-              if settings.economics.tariff_is_target else None)
-    cost = life_cycle_cost(
-        {"pv": design.pv_total_kw, "battery": design.battery_kwh,
-         "inverter": design.inverter_kw, "generator": design.generator_kw,
-         "conversion": design.pv_ac_kw},
-        operating, served, horizon_years=settings.economics.horizon_years,
-        discount_rate=settings.economics.discount_rate, tariff_target_usd_kwh=target,
-        assets=assets_from_settings(settings, architecture="ac"))
+                        design, battery, generator, grid=grid)
+    priced = price_certified_design(instance, design, settings, dispatch, generator)
+    cost = priced.cost
+    served = priced.energy_served_kwh
+    target = cost.tariff_target_usd_kwh
     local = settings.currency.to_local
 
     print(f"\n  energy served           : {served:,.0f} kWh  "
@@ -1085,6 +1150,12 @@ def main(argv: list[str] | None = None) -> int:
         "tariff_target_usd_kwh": target,
         "subsidy_fraction": cost.subsidy_fraction,
         "subsidy_usd": cost.subsidy_usd,
+        "battery_life_years": priced.battery_life_years,
+        "infrastructure_usd": priced.infrastructure_usd,
+        "collection_rate": settings.economics.collection_rate,
+        "binding_ceilings": list(priced.binding_ceilings),
+        "irr": priced.finance.irr,
+        "irr_without_salvage": priced.finance.irr_without_salvage,
     }
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -1166,6 +1237,8 @@ def certify_exhaustive(
         grid_connection_usd_yr=_grid_capital_usd_yr(settings),
         grid_import_usd_kwh=settings.grid.import_usd_kwh if settings.grid.connected else 0.0,
         grid_export_usd_kwh=settings.grid.export_usd_kwh if settings.grid.connected else 0.0,
+        infrastructure_usd_yr=_infrastructure_usd_yr(settings),
+        battery_spec=settings.battery,
         conversion_usd_kw=settings.coupling.cost_usd_kw(lattice.architecture))
     battery = BatteryModel.from_spec(settings.battery)
     biggest = max(settings.generators, key=lambda g: g.rating_kw)
@@ -1226,7 +1299,7 @@ def _worth_narrowing(survivors: int, per_design_s: float, verbose: bool) -> bool
     narrowing_s = _NARROWING_RELAXATIONS * _RELAXATION_SECONDS
     if verbose:
         print(f"  enumerating {survivors:,} designs: ~{enumeration_s:.0f} s; "
-              f"resserrer d'abord : ~{narrowing_s:.0f} s de relaxations", flush=True)
+              f"narrowing first: ~{narrowing_s:.0f} s of relaxations", flush=True)
     return enumeration_s > narrowing_s
 
 
@@ -1313,7 +1386,7 @@ def _certify_exhaustive(instance, lattice, settings, coarse_step, verbose, evalu
         gap_abs=incumbent - z_opt, gap_rel=100.0 * (incumbent - z_opt) / max(incumbent, 1.0),
         proven=True, design_opt=design_opt, z_opt=z_opt,
         price_abs=incumbent - z_opt,
-        price_rel=100.0 * (incumbent - z_opt) / max(z_opt, 1.0),
+        price_rel=_price_relative(incumbent, z_opt, economics),
         lattice_size=full_size, simulations=sims, relaxations=2 + narrowing_calls, boxes=0,
         seconds=time.time() - started, pruned_points=pruned + removed_by_narrowing,
         enumerated_points=enumerated, free_prunes=pruned,

@@ -229,6 +229,34 @@ STRINGS: dict[str, dict[str, str]] = {
 
     # ---------------------------------------------------------------- finance
     "fin.title": {"en": "What the project returns", "fr": "Ce que le projet rend"},
+    "fin.bare_irr": {"en": "{rate} once the residual value is struck out",
+                     "fr": "{rate} une fois la valeur résiduelle retirée"},
+    "fin.salvage": {"en": "Residual value", "fr": "Valeur résiduelle"},
+    "fin.beyond_plant": {
+        "en": "Includes {n} of network, connections, civil works and development.",
+        "fr": "Comprend {n} de réseau, branchements, génie civil et développement."},
+    "fin.plant_only": {
+        "en": "This is the power plant alone. The distribution network, the connections, "
+              "the civil works and the development are not priced, and they are about half "
+              "of what a mini-grid costs. Enter them under \u201cBeyond the plant\u201d.",
+        "fr": "Ceci n'est que la centrale. Le réseau de distribution, les branchements, le "
+              "génie civil et le développement ne sont pas chiffrés, et ils représentent "
+              "environ la moitié du coût d'un mini-réseau. Saisissez-les sous "
+              "\u00ab\u202fAu-delà de la centrale\u202f\u00bb."},
+    "res.battery_life": {"en": "replaced every {n} years",
+                         "fr": "remplacé tous les {n} ans"},
+    "res.ceiling_binds": {
+        "en": "The optimum sits exactly on a ceiling ({which}), so a single sourced ratio "
+              "decides it as much as anything entered here. Worth a sensitivity.",
+        "fr": "L'optimum se pose exactement sur un plafond ({which}) : un seul ratio "
+              "sourcé le décide autant que ce qui a été saisi ici. Mérite une "
+              "sensibilité."},
+    "res.ceiling.dc_ratio": {"en": "array per kW on the battery bus",
+                             "fr": "champ par kW sur le bus batterie"},
+    "res.ceiling.ac_ratio": {"en": "array per kW on the load bus",
+                             "fr": "champ par kW sur le bus charge"},
+
+    "unit.per_year": {"en": "/yr", "fr": "/an"},
     "fin.irr": {"en": "Internal rate of return", "fr": "Taux de rentabilité"},
     "fin.irr.none": {"en": "none", "fr": "aucun"},
     "fin.irr.never": {"en": "revenue never covers the capital",
@@ -393,6 +421,46 @@ STRINGS: dict[str, dict[str, str]] = {
     "choice.dc": {"en": "battery bus only", "fr": "bus batterie seul"},
     "choice.ac": {"en": "load bus only", "fr": "bus charge seul"},
     "choice.auto": {"en": "let the tool choose", "fr": "laisser l'outil choisir"},
+
+    "group.balance": {"en": "Beyond the plant", "fr": "Au-delà de la centrale"},
+    "f.distribution": {"en": "Distribution network", "fr": "Réseau de distribution"},
+    "f.distribution.hint": {
+        "en": "Poles, conductor, earthing and the labour to string them. A lump sum: no "
+              "per-kilometre figure carries from a compact village to a scattered one.",
+        "fr": "Poteaux, conducteur, mise à la terre et main-d'œuvre de pose. Une somme "
+              "forfaitaire : aucun prix au kilomètre ne se transporte d'un village "
+              "groupé à un village dispersé."},
+    "f.connection_1p": {"en": "Connection, single phase", "fr": "Branchement monophasé"},
+    "f.connection_1p.hint": {
+        "en": "Per household connected, meter included: service drop, board, meter, labour.",
+        "fr": "Par foyer raccordé, compteur compris : branchement, coffret, compteur, pose."},
+    "f.connection_3p": {"en": "Connection, three phase", "fr": "Branchement triphasé"},
+    "f.connection_3p.hint": {
+        "en": "Per productive customer. The mill, the welder and the sawmill take three "
+              "phases, and they are counted from the productive units declared for the "
+              "community.",
+        "fr": "Par client productif. Le moulin, le soudeur et la scierie demandent trois "
+              "phases, et leur nombre est celui des unités productives déclarées pour la "
+              "communauté."},
+    "f.civil": {"en": "Civil works", "fr": "Génie civil"},
+    "f.civil.hint": {
+        "en": "Foundations, plant room or container, fencing, access, earthing.",
+        "fr": "Fondations, local technique ou conteneur, clôture, accès, mise à la terre."},
+    "f.development": {"en": "Development", "fr": "Frais de développement"},
+    "f.development.hint": {
+        "en": "Feasibility, survey, permits, design and the developer's own time before "
+              "financial close. Spent once and never replaced.",
+        "fr": "Faisabilité, levés, autorisations, études et temps du développeur avant "
+              "le bouclage financier. Dépensés une fois, jamais remplacés."},
+    "f.collection": {"en": "Energy billed and collected",
+                     "fr": "Énergie facturée et encaissée"},
+    "f.collection.hint": {
+        "en": "Share of the energy served that is actually paid for. One means every "
+              "kilowatt-hour delivered is billed and collected, which no rural mini-grid "
+              "achieves.",
+        "fr": "Part de l'énergie servie qui est réellement payée. Un signifie que chaque "
+              "kilowattheure distribué est facturé et encaissé, ce qu'aucun mini-réseau "
+              "rural n'atteint."},
 
     "group.project": {"en": "The project", "fr": "Le projet"},
     "group.currency": {"en": "Display currency", "fr": "Monnaie d'affichage"},

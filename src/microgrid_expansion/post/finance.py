@@ -23,9 +23,17 @@ class CashFlow:
     capital: float = 0.0            # negative outflow, positive nothing
     operating: float = 0.0
     revenue: float = 0.0
+    #: Residual value of what is still serviceable at the horizon. On its own line because
+    #: it is not revenue: nobody pays it, and a lender strips it before reading the return.
+    #: Carried in ``net`` all the same, a plant being worth something when the study ends.
+    salvage: float = 0.0
 
     @property
     def net(self) -> float:
+        return self.revenue + self.salvage - self.operating - self.capital
+
+    @property
+    def net_without_salvage(self) -> float:
         return self.revenue - self.operating - self.capital
 
 
@@ -39,7 +47,10 @@ class Financials:
     annual_operating: float = 0.0
     salvage: float = 0.0
     demand_growth_rate: float = 0.0
+    collection_rate: float = 1.0
     irr: float | None = None
+    #: The same return with the residual value struck out, which is how a lender reads it.
+    irr_without_salvage: float | None = None
     payback_years: float | None = None
     discounted_payback_years: float | None = None
     net_present_value: float = 0.0
@@ -50,7 +61,9 @@ class Financials:
             "initial_capital_usd": self.initial_capital,
             "annual_revenue_usd": self.annual_revenue,
             "annual_operating_usd": self.annual_operating,
-            "irr": self.irr, "payback_years": self.payback_years,
+            "irr": self.irr, "irr_without_salvage": self.irr_without_salvage,
+            "collection_rate": self.collection_rate,
+            "payback_years": self.payback_years,
             "discounted_payback_years": self.discounted_payback_years,
             "net_present_value_usd": self.net_present_value,
             "subsidy_usd": self.subsidy_usd,
@@ -58,7 +71,7 @@ class Financials:
             "demand_growth_rate": self.demand_growth_rate,
             "cash_flows": [{"year": c.year, "capital": c.capital,
                             "operating": c.operating, "revenue": c.revenue,
-                            "net": c.net} for c in self.years],
+                            "salvage": c.salvage, "net": c.net} for c in self.years],
         }
 
 
@@ -103,6 +116,7 @@ def appraise(
     assets: dict[str, Asset] | None = None,
     subsidy_usd: float = 0.0,
     demand_growth_rate: float = 0.0,
+    collection_rate: float = 1.0,
 ) -> Financials:
     """Build the project's cash flows and read the usual measures off them.
 
@@ -118,7 +132,12 @@ def appraise(
     initial = sum(capital_by_asset.values())
     maintenance = sum(assets[name].om_rate * capital
                       for name, capital in capital_by_asset.items())
-    revenue = tariff_usd_kwh * energy_served_kwh
+    # Billed and collected, not merely delivered. A rural mini-grid loses some energy to
+    # non-technical losses and some of its billing to arrears, and an appraisal that assumes
+    # every kilowatt-hour served is paid for is optimistic in exactly the place the tariff
+    # discussion happens.
+    collected = max(0.0, min(collection_rate, 1.0))
+    revenue = tariff_usd_kwh * energy_served_kwh * collected
 
     # An asset replaced late still has life in it when the horizon ends, and the levelised
     # cost already credits that. Leaving it out here put two figures on one page computed on
@@ -145,9 +164,10 @@ def appraise(
         flows.append(CashFlow(year=year, capital=replacement,
                               operating=annual_operating_cost + maintenance,
                               revenue=grown))
-    flows[-1].revenue += salvage
+    flows[-1].salvage = salvage
 
     net = [c.net for c in flows]
+    bare = [c.net_without_salvage for c in flows]
     cumulative, running = [], 0.0
     for value in net:
         running += value
@@ -160,8 +180,10 @@ def appraise(
     return Financials(
         years=flows, initial_capital=initial,
         annual_revenue=revenue, annual_operating=annual_operating_cost + maintenance,
-        irr=_irr(net), payback_years=_crossing(cumulative),
+        irr=_irr(net), irr_without_salvage=_irr(bare),
+        payback_years=_crossing(cumulative),
         discounted_payback_years=_crossing(discounted),
         net_present_value=discounted[-1], subsidy_usd=subsidy_usd,
         salvage=salvage, demand_growth_rate=demand_growth_rate,
+        collection_rate=collected,
     )

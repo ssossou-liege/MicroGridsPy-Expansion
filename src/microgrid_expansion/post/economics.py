@@ -59,7 +59,8 @@ class Asset:
                 "total": capital + replacements + maintenance - salvage}
 
 
-def assets_from_settings(settings=None, architecture: str | None = None) -> dict[str, Asset]:
+def assets_from_settings(settings=None, architecture: str | None = None,
+                         battery_lifetime_years: float | None = None) -> dict[str, Asset]:
     """The technologies, described by the project's own equipment settings.
 
     Cost, lifetime and maintenance come from the same place: a lifetime drives replacement
@@ -87,13 +88,67 @@ def assets_from_settings(settings=None, architecture: str | None = None) -> dict
         "conversion": conversion,
         "pv": Asset("pv", settings.photovoltaic.cost_usd_kw,
                     settings.photovoltaic.lifetime_years, settings.photovoltaic.om_rate),
+        # The life that ends the pack, calendar or cycles, whichever comes first. Passing
+        # the calendar life alone charged a hard-cycled battery for years it will not see;
+        # charging its wear on top of that, as this once did, charged it for the same pack
+        # twice.
         "battery": Asset("battery", settings.battery.cost_usd_kwh,
-                         settings.battery.lifetime_years, settings.battery.om_rate),
+                         max(1, int(round(settings.battery.lifetime_years
+                                          if battery_lifetime_years is None
+                                          else battery_lifetime_years))),
+                         settings.battery.om_rate),
         "inverter": Asset("inverter", settings.inverter.cost_usd_kw,
                           settings.inverter.lifetime_years, settings.inverter.om_rate),
         "generator": Asset("generator", generator.cost_usd_kw,
                            generator.lifetime_years, generator.om_rate),
     }
+
+
+def infrastructure_assets(settings=None, horizon_years: int | None = None
+                          ) -> dict[str, Asset]:
+    """The balance of plant, described as assets so it is replaced and salvaged like one.
+
+    A lump sum with a service life behaves exactly as a technology whose capacity is one:
+    the network is renewed at thirty years, the meters and service drops at fifteen, and
+    what is left of each at the horizon is credited. Development is given the horizon as
+    its life, which is how a cost that buys no equipment behaves -- never replaced, nothing
+    left at the end.
+
+    Empty when nothing has been priced, so a project that has not costed its network is
+    charged nothing for one rather than being handed a plausible invention.
+    """
+    from ..settings import default_settings
+
+    settings = default_settings() if settings is None else settings
+    spec = getattr(settings, "infrastructure", None)
+    if spec is None:
+        return {}
+    horizon = (settings.economics.horizon_years if horizon_years is None else horizon_years)
+    single, three = 0, 0
+    try:
+        from ..sites import get_site
+
+        site = get_site(settings.site)
+        single = int(sum(site.census.values()))
+        three = int(getattr(site, "productive_units", 0) or 0)
+    except Exception:                        # a site being described, not yet saved
+        pass
+
+    out: dict[str, Asset] = {}
+    if spec.distribution_usd > 0:
+        out["distribution"] = Asset("distribution", spec.distribution_usd,
+                                    spec.distribution_lifetime_years,
+                                    spec.distribution_om_rate)
+    connections = spec.connections_usd(single, three)
+    if connections > 0:
+        out["connections"] = Asset("connections", connections,
+                                   spec.connection_lifetime_years, spec.connection_om_rate)
+    if spec.civil_works_usd > 0:
+        out["civil_works"] = Asset("civil_works", spec.civil_works_usd,
+                                   spec.civil_lifetime_years, spec.civil_om_rate)
+    if spec.development_usd > 0:
+        out["development"] = Asset("development", spec.development_usd, horizon, 0.0)
+    return out
 
 
 def default_assets() -> dict[str, Asset]:
@@ -152,12 +207,14 @@ def life_cycle_cost(
     discount_rate: float = config.DISCOUNT_RATE,
     assets: dict[str, Asset] | None = None,
     tariff_target_usd_kwh: float | None = None,
+    collection_rate: float = 1.0,
 ) -> LifeCycleCost:
     """Net present cost and levelised cost of one design.
 
-    ``annual_operating_cost`` is the recurring cost the dispatch produces — fuel, storage
-    degradation and unserved energy — held constant over the horizon, the demand being
-    represented by one operating year.
+    ``annual_operating_cost`` is the recurring cost the dispatch produces — fuel, unserved
+    energy and the grid's net bill — held constant over the horizon, the demand being
+    represented by one operating year. Storage wear is not among them: it sets the pack's
+    replacement interval instead, which is where a battery is paid for.
 
     When ``tariff_target_usd_kwh`` is given, the capital subsidy required to bring the
     levelised cost down to it is computed. A grant covering a share *s* of the net present
@@ -185,9 +242,13 @@ def life_cycle_cost(
     annualised = present * crf
     lcoe = annualised / energy_served_kwh if energy_served_kwh > 0 else math.inf
 
+    # What the project recovers is the tariff on the kilowatt-hours it is actually paid
+    # for, not on every one it delivers. A plant collecting nine tenths of its energy needs
+    # the subsidy of a plant charging nine tenths of the tariff.
     fraction = 0.0
     if tariff_target_usd_kwh is not None and math.isfinite(lcoe) and lcoe > 0:
-        fraction = max(0.0, 1.0 - tariff_target_usd_kwh / lcoe)
+        collected = tariff_target_usd_kwh * max(0.0, min(collection_rate, 1.0))
+        fraction = max(0.0, 1.0 - collected / lcoe)
     return LifeCycleCost(net_present_cost=present, annualised_cost=annualised,
                          lcoe_usd_kwh=lcoe, energy_served_kwh=energy_served_kwh,
                          breakdown=breakdown,

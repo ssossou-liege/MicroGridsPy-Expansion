@@ -120,6 +120,37 @@ EQUIPMENT: tuple[Field, ...] = (
     Field("inverter.lifetime_years", "Converter lifetime", "years", kind="integer", key="f.inv_life"),
 )
 
+#: Everything between the plant and the customer's lamp. It is perhaps half of what a
+#: mini-grid costs and none of it can be inferred from the site's coordinates, so all of it
+#: starts at zero and says so. A sizing priced at the plant alone is not wrong about the
+#: plant; it is silent about the project.
+BALANCE: tuple[Field, ...] = (
+    Field("infrastructure.distribution_usd", "Distribution network", "$", step=1000.0,
+          source_path="infrastructure",
+          hint="Poles, conductor, earthing and the labour to string them. A lump sum: no "
+               "per-kilometre figure carries from a compact village to a scattered one.",
+          key="f.distribution"),
+    Field("infrastructure.connection_single_phase_usd", "Connection, single phase", "$",
+          step=10.0,
+          hint="Per household connected, meter included: service drop, board, meter, "
+               "labour.", key="f.connection_1p"),
+    Field("infrastructure.connection_three_phase_usd", "Connection, three phase", "$",
+          step=10.0,
+          hint="Per productive customer. The mill, the welder and the sawmill take three "
+               "phases, and they are counted from the productive units declared for the "
+               "community.", key="f.connection_3p"),
+    Field("infrastructure.civil_works_usd", "Civil works", "$", step=1000.0,
+          hint="Foundations, plant room or container, fencing, access, earthing.",
+          key="f.civil"),
+    Field("infrastructure.development_usd", "Development", "$", step=1000.0,
+          hint="Feasibility, survey, permits, design and the developer's own time before "
+               "financial close. Spent once and never replaced.", key="f.development"),
+    Field("economics.collection_rate", "Energy billed and collected", "", step=0.01,
+          hint="Share of the energy served that is actually paid for. One means every "
+               "kilowatt-hour delivered is billed and collected, which no rural mini-grid "
+               "achieves.", key="f.collection"),
+)
+
 #: How the plant is wired and run. Changing these changes what the certificate means.
 ADVANCED: tuple[Field, ...] = (
     Field("coupling.architecture", "Coupling", kind="choice",
@@ -147,6 +178,7 @@ GROUPS: tuple[tuple[str, str, tuple[Field, ...]], ...] = (
     ("currency", "Display currency", CURRENCY),
     ("grid", "National grid", GRID),
     ("equipment", "Prices and equipment", EQUIPMENT),
+    ("balance", "Beyond the plant", BALANCE),
     ("advanced", "Architecture and control", ADVANCED),
 )
 

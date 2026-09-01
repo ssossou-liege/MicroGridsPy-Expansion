@@ -48,7 +48,6 @@ def add_objective(m: linopy.Model, v: dict, c: Coords, cfg: ModelConfig, data: d
 
     settings = default_settings() if settings is None else settings
     voll = settings.economics.value_of_lost_load_usd_kwh
-    degradation = settings.battery.degradation_usd_kwh()
     fuel_0, fuel_1 = fuel_minorant
 
     total = 0.0
@@ -61,6 +60,11 @@ def add_objective(m: linopy.Model, v: dict, c: Coords, cfg: ModelConfig, data: d
         a_pv, a_batt, a_inv, a_gen, a_pv_ac = annualised_unit_costs(
             block["costs"], architecture, settings)
 
+        # No throughput charge on the storage. Its capital is recovered over its service
+        # life just above; charging its wear as well, as this once did, paid for the same
+        # pack twice -- once in ``a_batt`` and once per kilowatt-hour discharged. The
+        # simulation the plan is certified against drops the same term, so the programme
+        # stays below it.
         capital = (a_pv * cap_pv + a_pv_ac * cap_pv_ac + a_batt * cap_batt
                    + a_inv * cap_inv + a_gen * cap_gen)
 
@@ -78,7 +82,6 @@ def add_objective(m: linopy.Model, v: dict, c: Coords, cfg: ModelConfig, data: d
         operating = (
             (day_weight * fuel * fuel_1 * v["p_gen"].sel(node=node)).sum()
             + (day_weight * fuel * fuel_0 * v["commit"].sel(node=node)).sum()
-            + (day_weight * degradation * v["p_dis"].sel(node=node)).sum()
             + (day_weight * voll * v["unserved"].sel(node=node)).sum()
             + (day_weight * import_price * v["grid_load"].sel(node=node)).sum()
             - (day_weight * export_price * v["grid_export"].sel(node=node)).sum()

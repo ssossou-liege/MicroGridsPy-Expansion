@@ -47,6 +47,10 @@ data/irradiance/raw/
 # Manufacturer documentation: third-party copyright, kept locally as a source.
 docs/generator/
 
+# The reviewer agent reads the follow-up document and is written in the language that
+# document is read in. Local, like the document itself.
+.claude/agents/superviseur.md
+
 # Supervisor follow-up and presentations -- kept local, never pushed.
 # The public repository stays strictly about the model.
 docs/suivi/

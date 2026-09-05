@@ -107,7 +107,7 @@ def simulate_node(plan, year: dict, costs: dict, settings: ProjectSettings,
 #: erases it by construction.
 #:
 #: The upper oracle therefore runs the full operating year at every node. It can afford to:
-#: a year of simulation costs some fifty milliseconds, so a plan over a tree of fifty nodes
+#: a year of simulation costs about a millisecond of processor time, so a plan over a tree of fifty nodes
 #: is evaluated in a couple of seconds, and the search spends thousands of them. Compression
 #: is imposed on the programme, which cannot solve eight thousand hours at fifty nodes; it
 #: is not imposed on the simulation, and imposing it there would compress away the answer.

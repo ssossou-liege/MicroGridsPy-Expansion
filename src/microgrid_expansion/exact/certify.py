@@ -17,8 +17,9 @@ either pruned by a bound or evaluated by a simulation. What the bound buys is no
 gap but the right to discard whole regions unexamined.
 
 **The two oracles do not cost the same, and on real data the ratio is the reverse of what a
-toy suggests.** Simulating the controller over a year takes about fifty milliseconds; the
-relaxation takes three seconds, sixty times more. The search is therefore designed to be
+toy suggests.** Simulating the controller over a year costs about a millisecond of processor
+time once the hourly loops are compiled; a relaxation costs thirty-five seconds of it, some
+thirty-five thousand times more. The search is therefore designed to be
 frugal in lower bounds and liberal in simulations: a coarse sweep of simulations first
 establishes a strong incumbent, and the relaxation is spent only on proving that nothing
 better remains. Ordering the work the other way round — the arrangement a costly simulation
@@ -42,7 +43,7 @@ from .lower_bound import CapacityBox, Economics, cost_optimal_dispatch
 
 #: Relaxations a narrowing typically spends: four axes, two ends each, a handful of rounds.
 _NARROWING_RELAXATIONS = 36
-#: Seconds one of them takes on the wide boxes the narrowing works over.
+#: Wall-clock seconds one of them takes on the wide boxes the narrowing works over.
 _RELAXATION_SECONDS = 5.0
 #: Designs timed to establish what one costs before deciding whether to narrow.
 _CALIBRATION_DESIGNS = 4096
@@ -76,9 +77,10 @@ class Lattice:
     #: buy; it reaches storage without a second conversion; and it competes with the
     #: discharge for the hybrid inverter on its way to the load. The first two favour it
     #: unconditionally, and the third weighs only when the inverter is congested in
-    #: daylight — which the measured trajectories are not, the flow peaking at 45 per cent
-    #: of the plate because the inverter is sized by the field it must admit rather than by
-    #: the power it must carry. Filling the battery's bus to its ceiling and placing the
+    #: daylight — which the measured trajectories are not: over the certified designs the
+    #: flow peaks at 57 to 74 per cent of the plate during production hours and never
+    #: reaches it, so the array on the battery's bus never disputes the passage with the
+    #: discharge. Filling the battery's bus to its ceiling and placing the
     #: remainder on the load's bus is therefore the split the search would choose, and
     #: deriving it removes a dimension that multiplied the space by a thousand.
     #:
@@ -653,9 +655,10 @@ def narrow_to_incumbent(instance, lattice, incumbent, economics, battery, genera
     beyond it costs at least that bound and so is strictly worse than a sizing already in
     hand. The same argument from below gives the other end.
 
-    On the reference instance this removes ninety-five per cent of the lattice — 633,186
-    designs down to 32,760 — in thirty-seven relaxations and three and a half minutes,
-    against the eight hours enumerating it would take.
+    On the reference instance this removes the greater part of the lattice in a few dozen
+    relaxations. Whether it pays is measured rather than assumed: since the hourly
+    loops were compiled, enumerating what the capital floor leaves is cheaper on both
+    reference sites, and ``_worth_narrowing`` decides at run time.
     What it removes is *counted as discarded*, not forgotten: the certificate still accounts
     for every design of the lattice it was asked to search.
     """
@@ -1143,7 +1146,46 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(f"  subsidy needed          : none -- the levelised cost is already "
                   f"below the target")
+    # What the certified plant does over the year, and not only what it costs. These were
+    # reported in writing without being archived anywhere, which made them reproducible but
+    # not checkable: a reader had to re-run the simulation to know whether the generator
+    # really ran three hundred hours. They are cheap to carry and they are what an operator
+    # asks about first.
+    _gen = np.asarray(dispatch.generator_kw)
+    _on = _gen[_gen > 1e-6]
+    _thermal = float(_gen.sum())
+    _discharged = float(dispatch.discharge_kw.sum())
+    _curtailed = float(np.asarray(dispatch.curtailed_kw).sum())
+    _delivered = float(dispatch.pv_to_load_kw.sum()) + _discharged + _thermal
+    _usable = design.battery_kwh * (settings.battery.soc_max - settings.battery.soc_min)
+    _flow = np.abs(np.asarray(dispatch.inverter_flow_kw))
+    _hour = np.arange(_flow.size) % 24
+    _day = _flow[(_hour >= 7) & (_hour <= 18)]
+    _peak_flow = float(_flow.max() / design.inverter_kw) if design.inverter_kw else 0.0
+    _peak_flow_day = (float(_day.max() / design.inverter_kw)
+                      if design.inverter_kw and _day.size else 0.0)
+    operation = {
+        "generator_hours": int(_on.size),
+        "generator_mean_load_fraction": (float(_on.mean() / design.generator_kw)
+                                         if _on.size and design.generator_kw else 0.0),
+        "generator_kwh": _thermal,
+        "fuel_litres": dispatch.fuel_litres_total,
+        "solar_penetration_pct": 100.0 * (1.0 - _thermal / max(served, 1.0)),
+        "curtailed_kwh": _curtailed,
+        "curtailed_pct": 100.0 * _curtailed / max(_delivered + _curtailed, 1.0),
+        "storage_throughput_kwh": _discharged,
+        "equivalent_full_cycles_per_year": (_discharged / _usable) if _usable > 0 else 0.0,
+        # How hard the power electronics is worked, over the year and during production
+        # hours. The second is the one that decides whether the array on the battery's bus
+        # ever disputes the passage with the discharge, and it is what justifies deriving
+        # the split rather than searching it -- an argument that was made in writing from
+        # numbers nothing recorded.
+        "inverter_peak_fraction": _peak_flow,
+        "inverter_peak_fraction_daylight": _peak_flow_day,
+    }
+
     record_tariff = {
+        **operation,
         "energy_served_kwh": served,
         "npc_usd": cost.net_present_cost,
         "lcoe_usd_kwh": cost.lcoe_usd_kwh,
@@ -1213,13 +1255,15 @@ def certify_exhaustive(
 
     Capital cost is increasing in every capacity and operating cost is non-negative, so a
     design whose capital alone exceeds the incumbent cannot be optimal — a bound that costs
-    nothing to evaluate. On this instance it discards seven designs in ten before any
-    programme is solved, and the survivors are settled exactly by the cheap oracle.
+    nothing to evaluate. On the reference instances it discards between six and seven designs
+    in ten before any programme is solved, and the survivors are settled exactly by the cheap
+    oracle.
 
     That this outruns the branch-and-bound is a property of the instance, not a defect of
-    the method, and it is worth stating: when a simulation costs fifty milliseconds and a
-    relaxation five seconds, a relaxation must displace a hundred simulations to pay for
-    itself, and only a bound far tighter than the trivial one can. The relaxation earns its
+    the method, and it is worth stating: measured on the same clock, a simulation costs about
+    a millisecond of processor time and a relaxation thirty-five seconds, so a relaxation must
+    displace some thirty-five thousand simulations to pay for itself, and only a bound far
+    tighter than the trivial one can. The relaxation earns its
     price where the simulation oracle becomes expensive — over a scenario tree, where every
     upper bound means simulating each node and each scenario in turn. Both routes yield the
     same certificate; this one is faster here.

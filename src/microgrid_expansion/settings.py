@@ -512,7 +512,8 @@ class EconomicSettings:
         source="160 FCFA/kWh charged on the micro-grid (2026)", verified=True))
     voll_provenance: Provenance = field(default_factory=lambda: Provenance(
         source="bounded below by the tariff households demonstrably pay (0.26 $/kWh) and "
-               "by the marginal cost of diesel generation in this model (0.36 $/kWh), "
+               "by the marginal cost of diesel generation in this model (0.40 $/kWh at "
+               "the catalogue's best specific consumption), "
                "below which the optimiser would shed load rather than generate; anchored "
                "on the cost of the substitute households actually use during an outage, "
                "self-generation in Africa costing about 0.47 $/kWh and lighting and phone "

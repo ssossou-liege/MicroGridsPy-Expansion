@@ -218,12 +218,40 @@ def _night_reserve_loop(n, horizon, deficit, pv, demand, reserve):
         reserve[h] = total
 
 
-try:                                   # compiled when numba is present, interpreted if not
-    from numba import njit as _njit_reserve
+#: Whether the two hour-by-hour kernels were compiled. Read by ``compiled_kernels`` and by
+#: the test that keeps a silent fallback from going unnoticed.
+_COMPILED: dict[str, bool] = {"night_reserve": False, "controller": False}
 
-    _night_reserve_loop = _njit_reserve(cache=True)(_night_reserve_loop)
-except Exception:                      # pragma: no cover - depends on the installation
-    pass
+
+def _compile(kernel, name: str):
+    """Compile one kernel, or hand back the interpreted one and say so.
+
+    numba is a declared dependency, so the fallback is not the expected path: it means the
+    library is missing, too old, or shadowed. Any of those costs a factor of fifty on every
+    simulated year, which is a certification in half an hour rather than half a minute, and
+    the previous ``except Exception: pass`` let it happen without a word. It is not an error
+    -- the interpreted kernels give the same numbers to the last digit -- so it warns rather
+    than raises, once, naming what it costs.
+    """
+    try:
+        from numba import njit
+
+        compiled = njit(cache=True)(kernel)
+        _COMPILED[name] = True
+        return compiled
+    except Exception as exc:           # pragma: no cover - depends on the installation
+        import warnings
+
+        warnings.warn(
+            f"the {name} kernel could not be compiled ({type(exc).__name__}: {exc}); "
+            "it will run interpreted, which is about fifty times slower per simulated "
+            "year and turns a half-minute certification into half an hour. Install numba, "
+            "or check that nothing on sys.path shadows it.",
+            RuntimeWarning, stacklevel=2)
+        return kernel
+
+
+_night_reserve_loop = _compile(_night_reserve_loop, "night_reserve")
 
 
 def night_reserve(demand_kw: np.ndarray, pv_kw: np.ndarray,
@@ -518,12 +546,12 @@ def _controller_loop(n, demand, pv, soc, losses, ceilings, next_ceiling, reserve
     return spill, clipped_total
 
 
-try:                                   # compiled when numba is present, interpreted if not
-    from numba import njit
+_controller_loop = _compile(_controller_loop, "controller")
 
-    _controller_loop = njit(cache=True)(_controller_loop)
-except Exception:                      # pragma: no cover - depends on the installation
-    pass
+
+def compiled_kernels() -> dict[str, bool]:
+    """Which hour-by-hour kernels are compiled, for a caller that wants to check."""
+    return dict(_COMPILED)
 
 
 def simulate(

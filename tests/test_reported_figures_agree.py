@@ -297,3 +297,34 @@ def test_the_shared_pricing_charges_fuel_at_the_project_s_price() -> None:
     source = inspect.getsource(appraisal.price_certified_design)
     assert "operating_cost(\n        generator" in source or \
            "operating_cost(generator" in source, "the fuel price is not the project's"
+
+
+def test_the_hourly_kernels_are_compiled() -> None:
+    """A silent fallback to the interpreter costs a factor of fifty and says nothing.
+
+    numba is a declared dependency, so the compiled path is the expected one. It failed
+    once because a stray file named numba.py sat on sys.path, and nothing said so: the
+    kernels ran interpreted, a simulated year went from 0.9 to 49 milliseconds, and the only
+    symptom was a certification that took half an hour. The numbers were identical to the
+    last digit, which is exactly why nobody would look.
+    """
+    from microgrid_expansion.exact.simulator import compiled_kernels
+
+    pytest.importorskip("numba", reason="the fallback is legitimate without numba")
+    state = compiled_kernels()
+    assert state, "the simulator no longer reports which kernels it compiled"
+    uncompiled = sorted(name for name, ok in state.items() if not ok)
+    assert not uncompiled, (
+        f"{uncompiled} fell back to the interpreter while numba is importable; "
+        "something is shadowing it or it is too old")
+
+
+def test_the_interpreted_kernels_give_the_same_answer() -> None:
+    """The fallback must stay a performance question and never a numerical one."""
+    import inspect
+
+    from microgrid_expansion.exact import simulator
+
+    source = inspect.getsource(simulator._compile)
+    assert "warnings.warn" in source, "the fallback is silent again"
+    assert "njit" in source and "cache=True" in source

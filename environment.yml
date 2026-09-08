@@ -10,6 +10,12 @@ dependencies:
   - scipy
   - scikit-learn
   - matplotlib
+  # The dispatch recursion is scalar arithmetic over the hours of a year. Compiled it runs
+  # a simulated year in about a millisecond; interpreted, in about fifty. A certification
+  # spends nearly all its time there, so this is not an optimisation but the difference
+  # between half a minute and half an hour. Installed from the same channel as numpy so the
+  # two agree on their binary interface.
+  - numba
   - pytest
   - pip
   - pip:

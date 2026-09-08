@@ -30,7 +30,10 @@ dependencies = [
     "cdsapi",
     "netcdf4",
     "dask",
-    "numba"
+    # Not optional in practice: see the note in environment.yml. The floor is the first
+    # release that carries the NumPy 2 binary interface this project's other dependencies
+    # already require.
+    "numba>=0.60"
 ]
 
 [project.optional-dependencies]

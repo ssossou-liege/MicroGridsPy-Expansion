@@ -61,7 +61,15 @@ conda env create -f environment.yml
 conda activate mgpy_dev
 ```
 
-That installs the model, the interface and the open-source solver. Two things are optional:
+That installs the model, the interface, the open-source solver and numba, which compiles the
+two hour-by-hour dispatch kernels. Numba is not an optimisation to bolt on later: a simulated
+year costs about a millisecond compiled and about fifty interpreted, and a certification
+spends nearly all its time there, so it is the difference between half a minute and half an
+hour. If it is ever missing, too old, or shadowed by another file on the path, the tool warns
+once and carries on with the interpreted kernels, which give the same numbers to the last
+digit.
+
+Two things are optional:
 
 - **Gurobi** solves the tree programme in about half the time of HiGHS. It is installed
   already; it only needs a licence, free for academic use, from

@@ -18,6 +18,21 @@ from .paths import DEMAND_DIR, IRRADIANCE_DIR, USER_SITES_DIR, require
 HOUSEHOLD_TYPES = ("HH1", "HH2", "HH3")
 
 
+def standard_offset(longitude: float | None) -> int:
+    """The time zone a site at this longitude most likely keeps [h from UTC].
+
+    Solar noon follows longitude at fifteen degrees an hour, and a country's legal zone is
+    usually the nearest whole hour to it. Not always: several keep a zone an hour or more
+    from their sun, and where that is so the offset has to be corrected by hand. It is
+    derived rather than asked because an hour's displacement between generation and
+    consumption is the error a storage sizing is most sensitive to, and a developer typing
+    it from memory is how that error gets in. ``None`` longitude keeps the old default.
+    """
+    if longitude is None:
+        return 1
+    return int(round(float(longitude) / 15.0))
+
+
 @dataclass(frozen=True)
 class Site:
     """One community served by a micro-grid.
@@ -48,6 +63,11 @@ class Site:
     #: whose mill and welder arrive with the connection, and those are the loads that
     #: decide whether the plant is daytime-heavy or evening-heavy.
     productive_units: int | None = None
+    #: How many of each activity class, when the developer has surveyed them rather than
+    #: only counted them. A roster is better information than a total: two mills and a
+    #: welder do not make the same day as three tailors. ``None`` falls back to the total
+    #: above, and that in turn to the ratio measured at the reference villages.
+    productive_mix: dict[str, int] | None = None
     #: ``"template"`` for the two shipped with the tool, ``"user"`` for a described one.
     origin: str = "template"
     #: Standard time offset from UTC [h]. A property of the site, not of the acquisition:
@@ -112,6 +132,7 @@ def to_record(site: Site) -> dict:
             "latitude": site.latitude, "longitude": site.longitude,
             "irradiance_file": site.irradiance_file, "meter_file": site.meter_file,
             "productive_units": site.productive_units,
+            "productive_mix": site.productive_mix,
             "utc_offset_hours": site.utc_offset_hours, "origin": site.origin}
 
 
@@ -122,6 +143,7 @@ def from_record(record: dict) -> Site:
                 irradiance_file=record.get("irradiance_file"),
                 meter_file=record.get("meter_file"),
                 productive_units=record.get("productive_units"),
+                productive_mix=record.get("productive_mix"),
                 utc_offset_hours=int(record.get("utc_offset_hours", 1)),
                 origin=record.get("origin", "user"))
 

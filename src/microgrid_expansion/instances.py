@@ -132,9 +132,18 @@ def _site_fingerprint(site: Site) -> str:
     hundred and fifty -- no error, no warning, a plausible number for the wrong village.
     """
     census = ";".join(f"{k}={v}" for k, v in sorted(site.census.items()))
-    return "|".join(str(x) for x in (
-        census, site.latitude, site.longitude, site.irradiance_file,
-        site.productive_units, site.utc_offset_hours))
+    parts = [census, site.latitude, site.longitude, site.irradiance_file,
+             site.productive_units, site.utc_offset_hours]
+    # A surveyed roster of enterprises decides the demand as plainly as the census does, so
+    # it belongs in the key. It is appended rather than folded in, and only when there is
+    # one: a community that never declared a roster fingerprints exactly as it did before
+    # the field existed, and years computed for it stay valid. Written into every key, an
+    # empty roster would have invalidated every cached year on this machine and every other
+    # -- some thirty pools at ten minutes apiece -- to record the absence of something.
+    roster = getattr(site, "productive_mix", None)
+    if roster:
+        parts.append(";".join(f"{k}={v}" for k, v in sorted(roster.items())))
+    return "|".join(str(x) for x in parts)
 
 
 def _cache_key(site: str, year: int, trajectory: str, maturity_months: int,

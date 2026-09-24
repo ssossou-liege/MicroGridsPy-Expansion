@@ -107,3 +107,37 @@ def test_productive_uses_change_the_shape_of_the_community_load():
 
     daytime = lambda y: y.hourly_kw.reshape(-1, 24)[:, 7:19].sum() / y.hourly_kw.sum()
     assert daytime(with_pue) > daytime(without)
+
+
+def test_a_surveyed_roster_is_taken_as_stated_and_not_drawn(calibration):
+    """When the developer counted the enterprises, the model must not guess at them.
+
+    The mix is otherwise drawn from the two calibration villages, which is the right
+    answer for a community nobody has visited and the wrong one for a community somebody
+    has: a village with six mills and no cold room is not the average of Samionta and
+    Gbowele, and a sizing that averages it away loses exactly the daytime load that decides
+    how the array is coupled.
+    """
+    rng = np.random.default_rng(0)
+    declared = {"milling": 6, "refrigeration": 0, "small_trade": 11}
+    units = P.sample_units(calibration, 180, "central", "central", rng,
+                           declared_mix=declared)
+    assert units["milling"] == 6
+    assert units["refrigeration"] == 0
+    assert units["small_trade"] == 11
+    # Every class the model knows is reported, so that a class the survey did not mention
+    # reads as none rather than as missing.
+    assert set(units) == set(calibration.mix.index)
+    assert all(v == 0 for k, v in units.items() if k not in declared)
+    # And it is a statement, not a seed: the same roster returns the same counts whatever
+    # the draw would have been.
+    again = P.sample_units(calibration, 180, "central", "central",
+                           np.random.default_rng(99), declared_mix=declared)
+    assert again == units
+
+
+def test_a_negative_count_is_read_as_none_rather_than_as_a_credit(calibration):
+    """A form can send a negative number; a village cannot have minus two mills."""
+    units = P.sample_units(calibration, 120, "central", "central",
+                           np.random.default_rng(1), declared_mix={"milling": -2})
+    assert units["milling"] == 0

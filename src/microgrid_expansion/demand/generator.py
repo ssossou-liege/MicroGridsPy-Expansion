@@ -478,8 +478,15 @@ def simulate_demand_year(
             if declared is not None:
                 share = connected / max(site.n_households, 1)
                 expected_units = float(declared) * share
+            # A stated roster is taken as it stands; it is scaled by how far the connection
+            # has advanced, as the total is, because an enterprise waits for the line like
+            # a household does.
+            roster = getattr(site, "productive_mix", None)
+            if roster:
+                share = connected / max(site.n_households, 1)
+                roster = {k: int(round(v * share)) for k, v in roster.items()}
             units = sample_units(productive, connected, band, trajectory, rng,
-                                 expected_units=expected_units)
+                                 expected_units=expected_units, declared_mix=roster)
             enterprises[month] = units
             profile = profile + monthly_profile_kw(units, productive,
                                                    profile.size // 24, rng)

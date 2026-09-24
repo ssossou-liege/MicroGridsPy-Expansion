@@ -93,7 +93,8 @@ class ProductiveCalibration:
 def sample_units(calibration: ProductiveCalibration, n_connected: int,
                  maturity_band: str, trajectory: str,
                  rng: np.random.Generator,
-                 expected_units: int | None = None) -> dict[str, int]:
+                 expected_units: int | None = None,
+                 declared_mix: dict[str, int] | None = None) -> dict[str, int]:
     """Draw how many enterprises of each class are connected.
 
     ``n_connected`` counts the households already on the grid, not the community's census:
@@ -112,7 +113,18 @@ def sample_units(calibration: ProductiveCalibration, n_connected: int,
     evening-heavy, and someone who has surveyed the community knows how many are coming.
     It replaces the mean, not the draw -- the count stays uncertain because business
     creation is.
+
+    ``declared_mix`` goes one step further: a developer who has surveyed the community
+    knows not only how many enterprises to expect but which. Given it, neither the count
+    nor the split is drawn -- a village that says it has two mills and one welder is
+    answered with two mills and one welder, since a measured roster is not a distribution
+    to sample from. The measured mix is still what fills the classes the survey left
+    unstated, and it alone decides the shape of each one's day.
     """
+    if declared_mix is not None:
+        return {klass: int(max(declared_mix.get(klass, 0), 0))
+                for klass in calibration.mix.index}
+
     band = maturity_band if maturity_band in calibration.intensity.index \
         else calibration.intensity.index[-1]
     column = trajectory if trajectory in calibration.intensity.columns else "central"

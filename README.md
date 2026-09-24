@@ -84,7 +84,7 @@ Two things are optional:
 ## Running the interface
 
 ```bash
-microgrid-ui
+mgpy-ui
 ```
 
 The interface opens in a window of its own, not in a browser tab: **Windows** and **macOS**
@@ -94,8 +94,8 @@ your browser instead — the same interface either way. You can also ask for tha
 for the server alone:
 
 ```bash
-microgrid-ui --browser     # open in the default browser
-microgrid-ui --serve       # server only, no window (for a remote session)
+mgpy-ui --browser     # open in the default browser
+mgpy-ui --serve       # server only, no window (for a remote session)
 ```
 
 Nothing leaves the machine: the server listens on the loopback address, and the only
@@ -104,17 +104,35 @@ site's meteorological series.
 
 ### First run
 
-The interface opens on **Community**. Two example villages are already there, the ones the
-behavioural archetypes were calibrated on; pick one and press **Size the plant**. Expect a
-few minutes the first time and about half a minute afterwards: a community's demand is
-simulated appliance by appliance and then cached, and a fresh clone has nothing cached yet.
-The cache is keyed on the calibration tables, on the code that reads them and on the
-appliance library, so it rebuilds when any of those change and never serves the demand of a
-model that no longer exists.
+The interface opens on a homepage offering three ways in: **Create a new project**, **Open a
+project**, and **Try it on a real village** — Samionta or Gbowele, the two surveyed
+communities the behavioural archetypes were calibrated on, whose households, enterprises and
+meteorological series ship with the tool.
 
-To size your own community, choose *New community*, place the point on the map, state how
-many households and how many productive uses you expect, then fetch the meteorological
-series for that point.
+A study then runs as four pages, and the button at the bottom right moves between them.
+
+1. **A new project** — name the study, name the community, place it on the map, and state
+   the households by type and the productive activities by class, as the field survey
+   recorded them. The time zone is taken from the longitude rather than asked for.
+2. **Uses and archetypes** — the consumption behaviours the demand is built on, with their
+   provenance, editable where local knowledge contradicts them.
+3. **Assumptions** — prices, service lives, the grid and the cost of everything beyond the
+   plant. Every value carries the source of its default.
+4. **The decision** — what to build this year.
+
+There is one action and one answer. The tool exists to settle a single question — what a
+community should buy now, before knowing which way its demand will go — so the scenario tree
+and the certified reference year are two halves of that one answer rather than two studies
+to arbitrate between. The tree returns the year-0 plant; the reference year, certified by
+exhaustion, is where the tariff, the return and the hour-by-hour dispatch are computed. The
+page says plainly which of the two is proven optimal: the reference year is, and the year-0
+decision over the whole tree is the root of a coordinated descent on which no bound has yet
+been closed.
+
+Expect ten minutes or so on a fresh clone and a few minutes afterwards: a community's demand
+is simulated appliance by appliance and then cached. The cache is keyed on the calibration
+tables, on the code that reads them and on the appliance library, so it rebuilds when any of
+those change and never serves the demand of a model that no longer exists.
 
 The interface is in English. The picker in the top right switches it to French, and the
 choice is remembered — including in the printable report and in the CSV exports, whose

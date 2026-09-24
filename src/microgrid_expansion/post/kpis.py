@@ -30,6 +30,10 @@ def node_kpis(plans: dict, node: int, tree: ScenarioTree, simulated: dict) -> di
     return {
         "node": node,
         "stage": tree.stage[node],
+        # Which node this one grew out of. A list of nodes is not a tree: without the
+        # parent, a reader is handed the plants of twenty-four futures and no way to see
+        # which branch leads to which, which is the only thing a plan is read for.
+        "parent": tree.parent.get(node),
         "probability": tree.prob[node],
         "pv_kw": plan.pv_kw,
         "pv_ac_kw": getattr(plan, "pv_ac_kw", 0.0),

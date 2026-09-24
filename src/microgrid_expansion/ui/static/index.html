@@ -9,35 +9,75 @@
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
-<div class="shell">
-  <aside class="rail">
-    <div class="brand">
+
+<!-- ======================================================================= the front door
+     A tool that answers one question should say which one before it asks anything. The
+     homepage states it, shows the kind of answer that comes back, and offers the three ways
+     in: a community you describe, a study you saved, a village already surveyed. -->
+<div class="home" id="home">
+  <div class="home-lang"><select id="lang-home"></select></div>
+
+  <header class="hero">
+    <div class="hero-words">
       <img src="/brand/microgridspy.png" alt="MicroGridsPy" class="wordmark">
-      <p data-t="app.tagline"></p>
+      <h1 data-t="home.title"></h1>
+      <p class="lead" data-t="home.lead"></p>
     </div>
-    <nav class="nav">
-      <button data-view="lieu" aria-current="true"><span class="dot"></span><span data-t="nav.community"></span></button>
-      <button data-view="usages"><span class="dot"></span><span data-t="nav.uses"></span></button>
-      <button data-view="site"><span class="dot"></span><span data-t="nav.assumptions"></span></button>
-      <button data-view="result"><span class="dot"></span><span data-t="nav.sizing"></span></button>
-      <button data-view="plan"><span class="dot"></span><span data-t="nav.plan"></span></button>
-    </nav>
-    <div class="langpick">
-      <select id="lang"></select>
+    <div class="hero-art" id="hero-art"></div>
+  </header>
+
+  <div class="doors">
+    <button class="door primary" id="door-new">
+      <span class="door-icon" id="icon-new"></span>
+      <span class="door-title" data-t="home.new"></span>
+      <span class="door-hint" data-t="home.new.hint"></span>
+      <span class="door-foot" data-t="home.new.asks"></span>
+    </button>
+    <div class="door" id="door-open">
+      <span class="door-icon" id="icon-open"></span>
+      <span class="door-title" data-t="home.open"></span>
+      <span class="door-hint" data-t="home.open.hint"></span>
+      <div class="door-foot" id="home-projects"></div>
     </div>
-  </aside>
+    <div class="door" id="door-test">
+      <span class="door-icon" id="icon-test"></span>
+      <span class="door-title" data-t="home.test"></span>
+      <span class="door-hint" data-t="home.test.hint"></span>
+      <div class="door-foot" id="home-examples"></div>
+    </div>
+  </div>
+
+  <section class="samples">
+    <h2 data-t="home.sample.title"></h2>
+    <div class="sample-grid" id="samples"></div>
+    <p class="note" data-t="home.sample.note"></p>
+  </section>
+
+  <footer class="home-foot"><span data-t="home.credit"></span></footer>
+</div>
+
+<!-- ============================================================================ the study
+     One page at a time, in the order the work is done: the community, the behaviours its
+     demand is built on, the assumptions the money rests on, and then the decision. -->
+<div class="shell hidden" id="study">
+  <header class="topbar">
+    <button class="btn link" id="go-home"><span data-t="wiz.home"></span></button>
+    <img src="/brand/logo-square.png" alt="" class="mark">
+    <ol class="steps" id="steps"></ol>
+    <div class="spacer"></div>
+    <select id="lang"></select>
+  </header>
 
   <main class="main">
-    <section class="page" data-page="lieu">
+    <section class="page" data-page="project">
       <div class="page-head">
-        <h2 data-t="page.community.title"></h2>
-        <p data-t="page.community.lead"></p>
+        <h2 data-t="page.project.title"></h2>
+        <p data-t="page.project.lead"></p>
       </div>
-      <div class="projectbar" id="projects"></div>
       <div id="lieu"></div>
     </section>
 
-    <section class="page hidden" data-page="usages">
+    <section class="page hidden" data-page="uses">
       <div class="page-head">
         <h2 data-t="page.uses.title"></h2>
         <p data-t="page.uses.lead"></p>
@@ -45,7 +85,7 @@
       <div id="usages"></div>
     </section>
 
-    <section class="page hidden" data-page="site">
+    <section class="page hidden" data-page="assumptions">
       <div class="page-head">
         <h2 data-t="page.assumptions.title"></h2>
         <p data-t="page.assumptions.lead"></p>
@@ -53,33 +93,25 @@
       <div id="form"></div>
     </section>
 
-    <section class="page hidden" data-page="result">
+    <section class="page hidden" data-page="sizing">
       <div class="page-head">
         <h2 data-t="page.sizing.title"></h2>
         <p data-t="page.sizing.lead"></p>
       </div>
-      <div id="result"></div>
-    </section>
-
-    <section class="page hidden" data-page="plan">
-      <div class="page-head">
-        <h2 data-t="page.plan.title"></h2>
-        <p data-t="page.plan.lead"></p>
-      </div>
-      <div id="plan"></div>
+      <div id="sizing"></div>
     </section>
   </main>
-</div>
 
-<div class="runbar">
-  <div style="min-width:280px">
-    <div class="state" id="state"></div>
-    <div class="track hidden" id="track"><i style="width:0"></i></div>
+  <div class="runbar">
+    <div class="runbar-state">
+      <div class="state" id="state"></div>
+      <div class="track hidden" id="track"><i style="width:0"></i></div>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn quiet hidden" id="cancel" data-t="action.stop"></button>
+    <button class="btn quiet" id="back" data-t="wiz.back"></button>
+    <button class="btn primary" id="next" data-t="wiz.next"></button>
   </div>
-  <div class="spacer"></div>
-  <button class="btn quiet hidden" id="cancel" data-t="action.stop"></button>
-  <button class="btn quiet" id="run-plan" data-t="action.plan"></button>
-  <button class="btn primary" id="run-size" data-t="action.size"></button>
 </div>
 
 <script src="/vendor/leaflet.js"></script>

@@ -1,8 +1,12 @@
 """The local server behind the interface.
 
-Routes are deliberately thin: they translate between HTTP and the two engine calls, and hold
-no modelling logic of their own. Nothing is exposed beyond the loopback address, and no state
+Routes are deliberately thin: they translate between HTTP and the engine calls, and hold no
+modelling logic of their own. Nothing is exposed beyond the loopback address, and no state
 outlives the process — the interface is a window onto the library, not a service.
+
+One route does the work the tool exists for. ``/api/size`` answers what a community should
+build this year; the rest describe a site, fetch its weather, list its archetypes, or carry a
+study to and from disk.
 """
 from __future__ import annotations
 
@@ -31,7 +35,7 @@ class SaveRequest(BaseModel):
 
 
 class ExportRequest(BaseModel):
-    kind: str
+    #: There is one kind of result to export, so there is no kind to declare.
     result: dict[str, Any] = Field(default_factory=dict)
     lang: str = i18n.DEFAULT
 
@@ -42,7 +46,11 @@ class SiteRequest(BaseModel):
     longitude: float | None = None
     census: dict[str, int] = Field(default_factory=dict)
     productive_units: int | None = None
-    utc_offset_hours: int = 1
+    productive_mix: dict[str, int] = Field(default_factory=dict)
+    #: Omitted by the interface, which reads it off the longitude: an hour's displacement
+    #: between sun and load is the error a storage sizing is most sensitive to, and asking
+    #: a developer to state it invites exactly that error.
+    utc_offset_hours: int | None = None
 
 
 class ArchetypeRequest(BaseModel):
@@ -73,19 +81,27 @@ def create_app() -> FastAPI:
 
     @app.post("/api/size")
     def size(request: RunRequest) -> dict:
+        """The one question the tool answers: what to build this year.
+
+        Sizing a reference year and planning an expansion were two buttons, and the
+        separation put a choice to the developer that is not theirs to make: a plant is
+        built once, under an uncertain future, and the year-0 decision of the scenario
+        tree *is* the sizing. The tree is therefore what runs, and the reference-year
+        certificate is reported beside it as the corroboration it always was.
+        """
         overrides = request.overrides
         site = overrides.get("site", "?")
         job = registry.start("size", "job.size",
-                             lambda j: engine.size_site(j, overrides), site=site)
+                             lambda j: engine.size(j, overrides), site=site)
         return job.to_dict()
 
-    @app.post("/api/plan")
-    def plan(request: RunRequest) -> dict:
-        overrides = request.overrides
-        site = overrides.get("site", "?")
-        job = registry.start("plan", "job.plan",
-                             lambda j: engine.plan_expansion(j, overrides), site=site)
-        return job.to_dict()
+    @app.get("/api/productive-classes")
+    def productive_classes(lang: str = i18n.DEFAULT) -> list[dict]:
+        """The activity classes the demand model knows, named for a reader."""
+        from ..demand.productive import CLASSES
+
+        return [{"key": c, "label": i18n.t(f"pue.{c}", lang),
+                 "hint": i18n.t(f"pue.{c}.hint", lang)} for c in CLASSES]
 
     @app.get("/api/job/{job_id}")
     def job_state(job_id: str) -> dict:
@@ -116,12 +132,16 @@ def create_app() -> FastAPI:
 
     @app.post("/api/sites")
     def site_save(request: SiteRequest) -> dict:
-        from ..sites import Site, save_site, to_record
+        from ..sites import Site, save_site, standard_offset, to_record
         census = {k: int(v) for k, v in request.census.items() if int(v) >= 0}
+        roster = {k: int(v) for k, v in request.productive_mix.items() if int(v) > 0}
+        offset = (request.utc_offset_hours if request.utc_offset_hours is not None
+                  else standard_offset(request.longitude))
         site = Site(name=request.name.strip(), census=census or {"HH1": 0},
                     latitude=request.latitude, longitude=request.longitude,
-                    productive_units=request.productive_units,
-                    utc_offset_hours=request.utc_offset_hours, origin="user")
+                    productive_units=request.productive_units or (sum(roster.values()) or None),
+                    productive_mix=roster or None,
+                    utc_offset_hours=offset, origin="user")
         if not site.name:
             raise HTTPException(status_code=400, detail="the site needs a name")
         save_site(site)
@@ -181,8 +201,8 @@ def create_app() -> FastAPI:
     # ------------------------------------------------------------------- export
     @app.post("/api/export.csv")
     def export_csv(request: ExportRequest) -> Response:
-        body = projects.as_csv(request.result, request.kind, request.lang)
-        stem = "sizing" if request.kind == "size" else "expansion-plan"
+        body = projects.as_csv(request.result, request.lang)
+        stem = "sizing"
         site = str(request.result.get("site", "")).lower() or "site"
         # A byte-order mark so a spreadsheet opens the accents right without being asked.
         return Response("\ufeff" + body, media_type="text/csv; charset=utf-8",
@@ -192,7 +212,7 @@ def create_app() -> FastAPI:
     @app.post("/api/export.json")
     def export_json(request: ExportRequest) -> Response:
         import json as _json
-        stem = "sizing" if request.kind == "size" else "expansion-plan"
+        stem = "sizing"
         site = str(request.result.get("site", "")).lower() or "site"
         return Response(_json.dumps(request.result, indent=2, ensure_ascii=False,
                                     default=float),

@@ -88,63 +88,28 @@ def listing() -> list[dict]:
         out.append({"name": record.get("name", path.stem), "slug": path.stem,
                     "saved_at": record.get("saved_at", ""),
                     "site": record.get("overrides", {}).get("site"),
-                    "has_size": bool(size.get("size")),
-                    "has_plan": bool(size.get("plan"))})
+                    "has_result": bool(size.get("size"))})
     return sorted(out, key=lambda r: r["saved_at"], reverse=True)
 
 
 # ------------------------------------------------------------------------- export
-def as_csv(result: dict, kind: str, lang: str = DEFAULT_LANG) -> str:
+def as_csv(result: dict, lang: str = DEFAULT_LANG) -> str:
     """One flat table a spreadsheet opens without asking questions.
 
     The headers follow the language the interface is being read in: an export is a document
     someone hands to a colleague, and it should speak the language they were reading.
-    """
-    rows: list[tuple[str, Any]] = []
-    if kind == "size":
-        d = result.get("design", {})
-        rows += [(t("csv.site", lang), result.get("site")),
-                 (t("csv.trajectory", lang), result.get("trajectory")),
-                 (t("csv.coupling", lang), result.get("architecture")),
-                 (t("csv.pv_dc", lang), d.get("pv_kw")),
-                 (t("csv.pv_ac", lang), d.get("pv_ac_kw")),
-                 (t("csv.storage", lang), d.get("battery_kwh")),
-                 (t("csv.inverter", lang), d.get("inverter_kw")),
-                 (t("csv.generator", lang), d.get("generator_kw")),
-                 (t("csv.z_rule", lang), result.get("z_rule_usd_yr")),
-                 (t("csv.z_opt", lang),
-                  result.get("z_opt_usd_yr")),
-                 (t("csv.gap", lang), result.get("price_rel_pct")),
-                 (t("csv.lcoe", lang), result.get("lcoe_usd_kwh")),
-                 (t("csv.npc", lang), result.get("npc_usd")),
-                 (t("csv.subsidy", lang), result.get("subsidy_fraction")),
-                 (t("csv.served", lang), result.get("energy_served_kwh")),
-                 (t("csv.unserved", lang), result.get("unserved_kwh")),
-                 (t("csv.proven", lang), result.get("proven")),
-                 (t("csv.lattice", lang), result.get("lattice_size")),
-                 (t("csv.pruned", lang), result.get("pruned_points")),
-                 (t("csv.evaluated", lang), result.get("enumerated_points")),
-                 (t("csv.seconds", lang), result.get("seconds"))]
-    else:
-        p = result.get("root_plan", {})
-        e = result.get("expected", {})
-        rows += [(t("csv.site", lang), result.get("site")),
-                 (t("csv.coupling", lang), result.get("architecture")),
-                 (t("csv.nodes", lang), result.get("nodes")),
-                 (t("csv.leaves", lang), result.get("leaves")),
-                 (t("csv.pv_dc", lang), p.get("pv_kw")),
-                 (t("csv.pv_ac", lang), p.get("pv_ac_kw")),
-                 (t("csv.storage", lang), p.get("battery_kwh")),
-                 (t("csv.inverter", lang), p.get("inverter_kw")),
-                 (t("csv.generator", lang), p.get("generator_kw")),
-                 (t("csv.exp_lcoe", lang), e.get("expected_lcoe_usd_kwh")),
-                 (t("csv.exp_cost", lang), e.get("expected_rule_cost_usd")),
-                 (t("csv.gap", lang), e.get("price_of_heuristic_pct"))]
 
+    A sizing carries both halves of its answer, so it exports as two sections under one
+    heading each: what to build this year, and the certified reference year it rests on.
+    The two halves keep the same row labels, which is why they are separated rather than
+    run together -- a file with two lines called "storage" and no way to tell them apart
+    would be worse than no file.
+    """
+    rows = _headline_rows(result, lang)
     lines = [f'{t("csv.quantity", lang)};{t("csv.value", lang)}']
     lines += [f"{k};{'' if v is None else v}" for k, v in rows]
 
-    per_node = result.get("per_node")
+    per_node = (result.get("tree") or {}).get("per_node")
     if per_node:
         lines += ["", ";".join(t(f"csv.node.{c}", lang) for c in
                                ("node", "stage", "probability", "pv_dc", "pv_ac",
@@ -155,3 +120,54 @@ def as_csv(result: dict, kind: str, lang: str = DEFAULT_LANG) -> str:
                                    "battery_kwh", "inverter_kw", "energy_served_kwh",
                                    "unserved_kwh")))
     return "\r\n".join(lines) + "\r\n"
+
+
+def _headline_rows(result: dict, lang: str) -> list[tuple[str, Any]]:
+    """The year-0 purchase, then the certified year it is read against."""
+    p = result.get("plant", {})
+    e = result.get("expected", {})
+    tree = result.get("tree", {})
+    proven = result.get("proven", {})
+    return [(t("csv.section.sizing", lang), ""),
+            (t("csv.site", lang), result.get("site")),
+            (t("csv.coupling", lang), result.get("architecture")),
+            (t("csv.nodes", lang), tree.get("nodes")),
+            (t("csv.leaves", lang), tree.get("leaves")),
+            (t("csv.pv_dc", lang), p.get("pv_kw")),
+            (t("csv.pv_ac", lang), p.get("pv_ac_kw")),
+            (t("csv.storage", lang), p.get("battery_kwh")),
+            (t("csv.inverter", lang), p.get("inverter_kw")),
+            (t("csv.generator", lang), p.get("generator_kw")),
+            (t("csv.exp_lcoe", lang), e.get("expected_lcoe_usd_kwh")),
+            (t("csv.exp_cost", lang), e.get("expected_rule_cost_usd")),
+            (t("csv.gap", lang), e.get("price_of_heuristic_pct")),
+            (t("csv.proven", lang), proven.get("first_stage")),
+            ("", ""),
+            (t("csv.section.reference", lang), "")] \
+        + _certificate_rows(result.get("reference", {}), lang)
+
+
+def _certificate_rows(result: dict, lang: str) -> list[tuple[str, Any]]:
+    d = result.get("design", {})
+    return [(t("csv.site", lang), result.get("site")),
+            (t("csv.trajectory", lang), result.get("trajectory")),
+            (t("csv.coupling", lang), result.get("architecture")),
+            (t("csv.pv_dc", lang), d.get("pv_kw")),
+            (t("csv.pv_ac", lang), d.get("pv_ac_kw")),
+            (t("csv.storage", lang), d.get("battery_kwh")),
+            (t("csv.inverter", lang), d.get("inverter_kw")),
+            (t("csv.generator", lang), d.get("generator_kw")),
+            (t("csv.z_rule", lang), result.get("z_rule_usd_yr")),
+            (t("csv.z_opt", lang),
+             result.get("z_opt_usd_yr")),
+            (t("csv.gap", lang), result.get("price_rel_pct")),
+            (t("csv.lcoe", lang), result.get("lcoe_usd_kwh")),
+            (t("csv.npc", lang), result.get("npc_usd")),
+            (t("csv.subsidy", lang), result.get("subsidy_fraction")),
+            (t("csv.served", lang), result.get("energy_served_kwh")),
+            (t("csv.unserved", lang), result.get("unserved_kwh")),
+            (t("csv.proven", lang), result.get("proven")),
+            (t("csv.lattice", lang), result.get("lattice_size")),
+            (t("csv.pruned", lang), result.get("pruned_points")),
+            (t("csv.evaluated", lang), result.get("enumerated_points")),
+            (t("csv.seconds", lang), result.get("seconds"))]

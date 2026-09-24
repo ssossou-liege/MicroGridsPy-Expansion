@@ -18,21 +18,9 @@ DEFAULT = "en"
 STRINGS: dict[str, dict[str, str]] = {
     # ---------------------------------------------------------------- chrome
     "app.tagline": {"en": "Certified sizing", "fr": "Dimensionnement certifié"},
-    "nav.community": {"en": "Community", "fr": "La communauté"},
     "nav.uses": {"en": "Uses and archetypes", "fr": "Usages et archétypes"},
     "nav.assumptions": {"en": "Assumptions", "fr": "Hypothèses"},
-    "nav.sizing": {"en": "Sizing", "fr": "Dimensionnement"},
-    "nav.plan": {"en": "Expansion plan", "fr": "Plan d'extension"},
 
-    "page.community.title": {"en": "The community", "fr": "La communauté"},
-    "page.community.lead": {
-        "en": "Describe the village to be sized: where it is, how many households it has, "
-              "how many productive uses you expect. No meter record is needed — the mix of "
-              "uses follows from the age of the connection.",
-        "fr": "Décrivez le village à dimensionner : où il se trouve, combien de foyers il "
-              "compte, combien d'activités productives on y attend. Aucun relevé de compteur "
-              "n'est nécessaire — la composition des usages se déduit de l'ancienneté du "
-              "raccordement."},
     "page.uses.title": {"en": "Uses and archetypes", "fr": "Usages et archétypes"},
     "page.uses.lead": {
         "en": "The consumption behaviours the demand is built on. Check them against what "
@@ -46,24 +34,9 @@ STRINGS: dict[str, dict[str, str]] = {
               "is shown, and which you may change.",
         "fr": "Prix, durées de vie et conduite. Tout porte une valeur par défaut dont la "
               "source est indiquée, et que vous pouvez modifier."},
-    "page.sizing.title": {"en": "Sizing", "fr": "Dimensionnement"},
-    "page.sizing.lead": {
-        "en": "The cheapest plant over a reference year, under the controller that will "
-              "actually be installed.",
-        "fr": "Le parc le moins coûteux sur une année de référence, sous l'automate qui sera "
-              "réellement embarqué."},
-    "page.plan.title": {"en": "Expansion plan", "fr": "Plan d'extension"},
-    "page.plan.lead": {
-        "en": "What to commit today, knowing demand and prices will move, and what you keep "
-              "the option of adding depending on the branch taken.",
-        "fr": "Ce qu'il faut engager aujourd'hui, sachant que la demande et les prix "
-              "bougeront, et ce qu'on se réserve d'ajouter selon la branche empruntée."},
 
     # ---------------------------------------------------------------- actions
-    "action.size": {"en": "Size the plant", "fr": "Dimensionner"},
-    "action.plan": {"en": "Plan the expansion", "fr": "Planifier l'extension"},
     "action.stop": {"en": "Stop", "fr": "Arrêter"},
-    "action.save": {"en": "Save", "fr": "Enregistrer"},
     "action.delete": {"en": "Delete", "fr": "Supprimer"},
     "action.open": {"en": "Open…", "fr": "Ouvrir…"},
     "action.export_csv": {"en": "Export as CSV", "fr": "Exporter en CSV"},
@@ -82,46 +55,34 @@ STRINGS: dict[str, dict[str, str]] = {
                             "compte."},
 
     # ---------------------------------------------------------------- community
-    "site.estimated": {"en": "estimated", "fr": "estimé"},
     "site.new.name": {"en": "New community", "fr": "Nouvelle communauté"},
     "state.site_failed": {"en": "The site could not be saved.",
                           "fr": "Le site n'a pas pu être enregistré."},
-    "site.picker": {"en": "Site to size", "fr": "Site à dimensionner"},
-    "site.picker.hint": {
-        "en": "The first two ship as worked examples: they are the villages the archetypes "
-              "were calibrated on.",
-        "fr": "Les deux premiers sont livrés comme exemples travaillés : ce sont les villages "
-              "sur lesquels les archétypes ont été calibrés."},
-    "site.new": {"en": "＋ New community…", "fr": "＋ Nouvelle communauté…"},
-    "site.example": {"en": " (example)", "fr": " (exemple)"},
-    "site.name": {"en": "Name", "fr": "Nom"},
+    "state.need_name": {"en": "The community needs a name.",
+                        "fr": "La communauté a besoin d'un nom."},
+    "state.need_point": {
+        "en": "Place the community on the map, or type its coordinates.",
+        "fr": "Posez la communauté sur la carte, ou saisissez ses coordonnées."},
+    "state.need_households": {
+        "en": "No households to connect: enter the count from the field survey.",
+        "fr": "Aucun foyer à raccorder : saisissez le nombre relevé à l'enquête."},
+    "site.name": {"en": "Community name", "fr": "Nom de la communauté"},
     "site.households": {"en": "Households to connect", "fr": "Foyers à raccorder"},
     "site.households.hint": {
-        "en": "The census of the whole community, not of a sample, split by subscription "
-              "class. The class explains little of the behaviour — measured consumption "
-              "overlaps widely from one class to the next — and moves the demand by only a "
-              "few per cent; it is the age of the connection that governs.",
-        "fr": "Le recensement de la communauté entière, pas d'un échantillon, réparti par "
-              "classe d'abonnement. La classe explique peu du comportement — les "
-              "consommations mesurées se recouvrent largement d'une classe à l'autre — et "
-              "elle ne déplace la demande que de quelques pour cent ; c'est l'ancienneté du "
-              "raccordement qui la gouverne."},
-    "site.productive": {"en": "Productive uses expected",
-                        "fr": "Activités productives attendues"},
+        "en": "The household count by type, as the field survey recorded it. Count the whole "
+              "community and not a sample.",
+        "fr": "Le nombre de foyers par type, tel que l'enquête de terrain l'a relevé. "
+              "Comptez la communauté entière et non un échantillon."},
+    "site.productive": {"en": "Productive uses", "fr": "Activités productives"},
     "site.productive.hint": {
-        "en": "Mills, welders, workshops. They decide whether the plant is daytime-heavy or "
-              "evening-heavy. Leave empty if you do not know: the number is then estimated "
-              "from the reference villages. Zero means none.",
-        "fr": "Moulins, soudeurs, ateliers. Ce sont elles qui décident si la centrale est "
-              "diurne ou vespérale. Laissez vide si vous ne savez pas : le nombre sera "
-              "estimé d'après les villages de référence. Zéro veut dire aucune."},
+        "en": "Which activities the community has, and how many of each. They decide whether "
+              "the plant is daytime-heavy or evening-heavy. Leave every count at zero if you "
+              "do not know: the mix is then drawn from the reference villages.",
+        "fr": "Quelles activités la communauté abrite, et combien de chacune. Ce sont elles "
+              "qui décident si la centrale est diurne ou vespérale. Laissez tous les "
+              "comptes à zéro si vous ne savez pas : la composition sera alors tirée des "
+              "villages de référence."},
     "site.utc": {"en": "Offset from universal time", "fr": "Décalage horaire"},
-    "site.utc.hint": {
-        "en": "Hours from UTC. An hour's error here displaces generation against consumption "
-              "by an hour, which is what a storage sizing is most sensitive to.",
-        "fr": "Heures d'écart avec le temps universel. Une heure d'erreur ici déplace la "
-              "production d'une heure par rapport à la consommation, ce à quoi un "
-              "dimensionnement de stockage est le plus sensible."},
     "site.where": {"en": "Where it is", "fr": "Où se trouve-t-il"},
     "site.latitude": {"en": "Latitude", "fr": "Latitude"},
     "site.longitude": {"en": "Longitude", "fr": "Longitude"},
@@ -131,7 +92,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "fr": "Cliquez sur la carte pour poser le point, ou saisissez les coordonnées et "
               "vérifiez qu'elles tombent bien sur votre site. Le fond de carte demande une "
               "connexion ; les coordonnées se saisissent sans."},
-    "site.solar_noon": {"en": "solar noon ≈ UTC", "fr": "midi solaire ≈ UTC"},
     "site.series.have": {"en": "Series available", "fr": "Série disponible"},
     "site.series.none": {"en": "No series", "fr": "Aucune série"},
     "site.series.hint": {
@@ -175,7 +135,6 @@ STRINGS: dict[str, dict[str, str]] = {
 
     # ---------------------------------------------------------------- results
     "res.plant": {"en": "Certified plant", "fr": "Parc certifié"},
-    "res.growth": {"en": "growth", "fr": "croissance"},
     "res.pv": {"en": "Photovoltaic", "fr": "Photovoltaïque"},
     "res.storage": {"en": "Storage", "fr": "Stockage"},
     "res.conversion": {"en": "Conversion", "fr": "Conversion"},
@@ -220,12 +179,6 @@ STRINGS: dict[str, dict[str, str]] = {
               "validity is proven. None was left aside.",
         "fr": "Chaque dimensionnement de l'ensemble a été soit évalué, soit écarté par une "
               "borne dont la validité est démontrée. Aucun n'a été laissé de côté."},
-    "res.none.title": {"en": "Nothing to show yet", "fr": "Rien à montrer pour l'instant"},
-    "res.none.body": {
-        "en": "Start a sizing from the bar below. It takes twenty seconds to two minutes "
-              "depending on the site.",
-        "fr": "Lancez un dimensionnement depuis la barre du bas. Il faut de vingt secondes à "
-              "deux minutes selon la localité."},
 
     # ---------------------------------------------------------------- finance
     "fin.title": {"en": "What the project returns", "fr": "Ce que le projet rend"},
@@ -283,7 +236,6 @@ STRINGS: dict[str, dict[str, str]] = {
     "fin.years": {"en": "years", "fr": "ans"},
 
     # ---------------------------------------------------------------- plan
-    "plan.commit": {"en": "To commit today", "fr": "À engager aujourd'hui"},
     "plan.future": {"en": "What the future will decide", "fr": "Ce que l'avenir décidera"},
     "plan.branch": {"en": "Branch at year", "fr": "Branche à l'année"},
     "plan.probability": {"en": "Probability", "fr": "Probabilité"},
@@ -307,12 +259,6 @@ STRINGS: dict[str, dict[str, str]] = {
               "from a certification by exhaustion.",
         "fr": "Cet écart est un majorant : sur l'arbre, le plan provient d'une descente et "
               "non d'une certification par épuisement."},
-    "plan.none.title": {"en": "No plan computed", "fr": "Aucun plan calculé"},
-    "plan.none.body": {
-        "en": "The expansion plan builds a scenario tree and solves it. Allow five to nine "
-              "minutes; you can read the rest meanwhile.",
-        "fr": "Le plan d'extension construit un arbre de scénarios et le résout. Comptez de "
-              "cinq à neuf minutes ; vous pouvez consulter le reste pendant ce temps."},
 
     # ---------------------------------------------------------------- projects
     # ---------------------------------------------------------- printed report
@@ -324,7 +270,235 @@ STRINGS: dict[str, dict[str, str]] = {
                             "fr": "archétypes ajustés pour ce site."},
     "print.arch.shipped": {"en": "archetypes as shipped, not adjusted.",
                            "fr": "archétypes livrés, non ajustés."},
-    "proj.label": {"en": "Project", "fr": "Projet"},
+
+    # ---------------------------------------------------------------- the front door
+    "home.title": {"en": "What should this community build?",
+                   "fr": "Que faut-il construire pour cette communauté ?"},
+    "home.lead": {
+        "en": "Describe a village, and the tool returns the plant to buy this year — array, "
+              "storage, conversion, generating set — sized for every way its demand may "
+              "grow, with the tariff that plant implies and proof that no cheaper one exists.",
+        "fr": "Décrivez un village : l'outil renvoie la centrale à acheter cette année — "
+              "champ, stockage, conversion, groupe électrogène — dimensionnée pour toutes "
+              "les manières dont sa demande peut croître, avec le tarif qu'elle implique et "
+              "la preuve qu'il n'en existe pas de moins chère."},
+    "home.new": {"en": "Create a new project", "fr": "Créer un nouveau projet"},
+    "home.new.hint": {"en": "Start from a community you describe yourself.",
+                      "fr": "Partir d'une communauté que vous décrivez vous-même."},
+    "home.new.asks": {
+        "en": "A name, a point on the map, the households and the productive uses. Four "
+              "pages, and the last one is the answer.",
+        "fr": "Un nom, un point sur la carte, les foyers et les activités productives. "
+              "Quatre pages, dont la dernière est la réponse."},
+    "home.households": {"en": "households", "fr": "foyers"},
+    "home.open": {"en": "Open a project", "fr": "Ouvrir un projet"},
+    "home.open.hint": {"en": "Pick up a study saved on this machine.",
+                       "fr": "Reprendre une étude enregistrée sur cette machine."},
+    "home.open.none": {"en": "Nothing saved yet.", "fr": "Rien d'enregistré pour l'instant."},
+    "home.open.answered": {"en": "answered", "fr": "répondue"},
+    "home.test": {"en": "Try it on a real village", "fr": "L'essayer sur un vrai village"},
+    "home.test.hint": {
+        "en": "Two surveyed communities in northern Benin, shipped whole — households, "
+              "enterprises and weather. A study runs on them with no network.",
+        "fr": "Deux communautés enquêtées du nord du Bénin, livrées entières — foyers, "
+              "entreprises et météorologie. Une étude s'y déroule sans connexion."},
+    "home.sample.title": {"en": "What comes back", "fr": "Ce que l'outil renvoie"},
+    "home.sample.note": {
+        "en": "Shown here as an illustration. The figures on your project are computed from "
+              "your own description.",
+        "fr": "Montré ici à titre d'illustration. Les chiffres de votre projet sont calculés "
+              "à partir de votre propre description."},
+    "home.sample.plant": {"en": "The plant to build", "fr": "La centrale à construire"},
+    "home.sample.dispatch": {"en": "How it runs, hour by hour",
+                             "fr": "Sa conduite, heure par heure"},
+    "home.sample.tariff": {"en": "What it costs a customer",
+                           "fr": "Ce qu'elle coûte à un abonné"},
+    "home.art.alt": {"en": "A solar mini-grid at the edge of a village",
+                     "fr": "Un mini-réseau solaire en lisière de village"},
+    "home.credit": {
+        "en": "Built on MicroGridsPy. Archetypes calibrated on metered consumption in "
+              "northern Benin.",
+        "fr": "Bâti sur MicroGridsPy. Archétypes calibrés sur des consommations relevées au "
+              "compteur dans le nord du Bénin."},
+
+    # ---------------------------------------------------------------- moving through the pages
+    "wiz.next": {"en": "Next page", "fr": "Page suivante"},
+    "wiz.back": {"en": "Previous page", "fr": "Page précédente"},
+    "wiz.step": {"en": "Step {n} of {total}", "fr": "Étape {n} sur {total}"},
+    "wiz.home": {"en": "Home", "fr": "Accueil"},
+    "wiz.info": {"en": "What this is", "fr": "De quoi il s'agit"},
+
+    # ---------------------------------------------------------------- the new project page
+    "page.project.title": {"en": "A new project", "fr": "Un nouveau projet"},
+    "page.project.lead": {
+        "en": "Name the study, then describe the community it is for. Everything here comes "
+              "from a field survey; nothing has to be guessed at a desk.",
+        "fr": "Nommez l'étude, puis décrivez la communauté qu'elle vise. Tout ce qui est "
+              "demandé ici provient d'une enquête de terrain ; rien ne se devine au bureau."},
+    "proj.name": {"en": "Project name", "fr": "Nom du projet"},
+    "proj.name.hint": {
+        "en": "How this study will be listed when you come back to it. One community may "
+              "carry several, under different assumptions.",
+        "fr": "Sous quel nom cette étude sera listée à votre retour. Une même communauté "
+              "peut en porter plusieurs, sous des hypothèses différentes."},
+    "site.name.hint": {
+        "en": "The village or hamlet to be electrified, as it is known locally.",
+        "fr": "Le village ou le hameau à électrifier, sous son nom d'usage local."},
+    "site.utc.derived": {
+        "en": "Time zone taken from the longitude: UTC{offset}, where solar noon falls at "
+              "{solar} local time.",
+        "fr": "Fuseau horaire déduit de la longitude : UTC{offset}, où le midi solaire tombe "
+              "à {solar} heure locale."},
+    "site.utc.adjust": {"en": "Adjust", "fr": "Corriger"},
+    "site.utc.adjust.hint": {
+        "en": "Several countries keep a zone an hour or more from their sun, and an hour's "
+              "error here displaces generation against consumption by an hour — which is "
+              "what a storage sizing is most sensitive to.",
+        "fr": "Plusieurs pays gardent un fuseau éloigné d'une heure ou plus de leur soleil, "
+              "et une heure d'erreur ici décale la production d'une heure par rapport à la "
+              "consommation — ce à quoi un dimensionnement de stockage est le plus sensible."},
+    "pue.count": {"en": "how many", "fr": "combien"},
+    "pue.none": {
+        "en": "No activity selected: the mix will be drawn from the reference villages.",
+        "fr": "Aucune activité sélectionnée : la composition sera tirée des villages de "
+              "référence."},
+    "pue.total": {"en": "{n} productive customers in all",
+                  "fr": "{n} clients productifs au total"},
+
+    # ---------------------------------------------------------------- activity classes
+    "pue.refrigeration": {"en": "Refrigeration and ice",
+                          "fr": "Réfrigération et glace"},
+    "pue.refrigeration.hint": {
+        "en": "Ice makers, drink coolers, fishmongers, anything held cold. It runs around "
+              "the clock, which is why it weighs on storage more than its power suggests.",
+        "fr": "Fabriques de glace, réfrigérateurs à boissons, poissonneries, tout ce qui se "
+              "garde au froid. Cela tourne jour et nuit, et pèse donc sur le stockage plus "
+              "que sa puissance ne le laisse croire."},
+    "pue.milling": {"en": "Milling", "fr": "Mouture"},
+    "pue.milling.hint": {
+        "en": "Maize and cassava mills. Several kilowatts in short bursts, concentrated in "
+              "the morning and on market days.",
+        "fr": "Moulins à maïs et à manioc. Plusieurs kilowatts par à-coups brefs, "
+              "concentrés le matin et les jours de marché."},
+    "pue.incubation": {"en": "Egg incubation", "fr": "Incubation d'œufs"},
+    "pue.incubation.hint": {
+        "en": "Incubators and brooders. A modest load that cannot be interrupted, held for "
+              "weeks at a time, day and night.",
+        "fr": "Couveuses et éleveuses. Une charge modeste mais qu'on ne peut interrompre, "
+              "maintenue des semaines durant, jour et nuit."},
+    "pue.tailoring": {"en": "Tailoring", "fr": "Couture"},
+    "pue.tailoring.hint": {
+        "en": "Sewing and embroidery workshops. Daylight hours, modest power, and usually "
+              "several of them in a village.",
+        "fr": "Ateliers de couture et de broderie. Aux heures du jour, puissance modeste, et "
+              "généralement plusieurs par village."},
+    "pue.sawmill": {"en": "Sawmill", "fr": "Scierie"},
+    "pue.sawmill.hint": {
+        "en": "Powered sawing. The heaviest single load a village grid carries, and the one "
+              "that usually sets its peak; it takes three phases.",
+        "fr": "Sciage mécanisé. La charge unitaire la plus lourde d'un réseau villageois, "
+              "et celle qui en fixe généralement la pointe ; elle demande le triphasé."},
+    "pue.small_trade": {"en": "Shops and small trade", "fr": "Boutiques et petit commerce"},
+    "pue.small_trade.hint": {
+        "en": "Shops, phone charging, bars, hairdressers. Small one by one, and together the "
+              "evening peak; the survey passed over them in favour of the large consumers, "
+              "so their profile is measured as a class rather than one by one.",
+        "fr": "Boutiques, recharge de téléphones, buvettes, coiffure. Faibles une à une, "
+              "elles forment ensemble la pointe du soir ; l'enquête les a laissées de côté "
+              "au profit des gros consommateurs, et leur profil est donc mesuré en classe "
+              "et non un à un."},
+
+    # ---------------------------------------------------------------- the sizing
+    "action.size": {"en": "Size the plant", "fr": "Dimensionner la centrale"},
+    "job.size": {"en": "Sizing — {site}", "fr": "Dimensionnement — {site}"},
+    "page.sizing.title": {"en": "The sizing", "fr": "Le dimensionnement"},
+    "page.sizing.lead": {
+        "en": "What to buy this year, sized over every trajectory the demand may take, and "
+              "what that plant costs to own and to run.",
+        "fr": "Ce qu'il faut acheter cette année, dimensionné sur toutes les trajectoires "
+              "que la demande peut suivre, et ce que cette centrale coûte à posséder et à "
+              "faire tourner."},
+    # ---------------------------------------------------------------- the tree drawn
+    "tree.title": {"en": "The plan over every future",
+                   "fr": "Le plan sur tous les avenirs"},
+    "tree.alt": {
+        "en": "The scenario tree, one column per milestone year, with the plant held at "
+              "each node",
+        "fr": "L'arbre de scénarios, une colonne par année jalon, avec la centrale tenue "
+              "à chaque nœud"},
+    "tree.lead": {
+        "en": "Only the leftmost plant is bought now. Everything to the right of it is a "
+              "future the plan is ready for, and what is added there is added only if that "
+              "future arrives. The thicker the line, the likelier the branch.",
+        "fr": "Seule la centrale la plus à gauche s'achète maintenant. Tout ce qui est à sa "
+              "droite est un avenir auquel le plan est prêt, et ce qui s'y ajoute ne "
+              "s'ajoute que si cet avenir survient. Plus le trait est épais, plus la "
+              "branche est probable."},
+    "tree.grows": {"en": "grows on the previous milestone",
+                   "fr": "s'agrandit par rapport à l'échéance précédente"},
+    "tree.holds": {"en": "adds nothing", "fr": "n'ajoute rien"},
+    "tree.year": {"en": "Year", "fr": "Année"},
+    "tree.stage": {"en": "Stage", "fr": "Étape"},
+    "tree.node": {"en": "Node", "fr": "Nœud"},
+    "tree.error": {
+        "en": "Mean compression error of each milestone: {list}. It measures what the "
+              "reduction to representative futures has lost.",
+        "fr": "Erreur moyenne de compression de chaque échéance : {list}. Elle mesure ce "
+              "que la réduction en avenirs représentatifs a perdu."},
+
+    "sizing.build": {"en": "Build this year", "fr": "À construire cette année"},
+    "sizing.over_tree": {
+        "en": "Chosen over {leaves} demand trajectories on {nodes} decision points.",
+        "fr": "Choisie sur {leaves} trajectoires de demande et {nodes} points de décision."},
+    "sizing.reference": {"en": "Against the demand as it is today",
+                           "fr": "Face à la demande d'aujourd'hui"},
+    "sizing.reference.hint": {
+        "en": "The cheapest plant for the first year alone, found by examining every "
+              "admissible design. It is sized for the demand as it stands; the plant above "
+              "is sized knowing that demand will move and that more can be added at the "
+              "next milestone. Where the plant above is larger, the difference is what "
+              "providing for growth costs; where it is smaller, the difference is what the "
+              "option to expand is worth — capacity that need not be bought until the "
+              "uncertainty has lifted.",
+        "fr": "La centrale la moins chère pour la seule première année, trouvée en "
+              "examinant tous les dimensionnements admissibles. Elle est dimensionnée pour "
+              "la demande telle quelle ; la précédente l'est en sachant que la demande "
+              "bougera et qu'on pourra ajouter à la prochaine échéance. Là où la "
+              "précédente est plus grande, l'écart est le prix de la croissance anticipée ; "
+              "là où elle est plus petite, l'écart est ce que vaut l'option d'étendre — une "
+              "capacité qu'il est inutile d'acheter avant que l'incertitude ne se lève."},
+    "sizing.proven.yes": {"en": "Proven optimal", "fr": "Optimalité prouvée"},
+    "sizing.proven.no": {"en": "Best found, not yet proven",
+                           "fr": "Meilleure trouvée, non encore prouvée"},
+    "sizing.proven.hint": {
+        "en": "The first year is certified by examining every design the bounds admit. The "
+              "year-0 decision over the whole tree comes from a coordinated descent, which "
+              "no bound has yet closed — it is the best found and not the proven best.",
+        "fr": "La première année est certifiée en examinant tous les dimensionnements que "
+              "les bornes admettent. La décision d'année zéro sur l'arbre entier provient "
+              "d'une descente coordonnée, qu'aucune borne n'a encore refermée — c'est la "
+              "meilleure trouvée et non la meilleure prouvée."},
+
+    "csv.section.sizing": {"en": "BUILD THIS YEAR", "fr": "À CONSTRUIRE CETTE ANNÉE"},
+    "csv.section.reference": {"en": "REFERENCE YEAR, CERTIFIED",
+                              "fr": "ANNÉE DE RÉFÉRENCE, CERTIFIÉE"},
+
+    "sizing.difference": {"en": "Difference", "fr": "Écart"},
+    "sizing.same": {"en": "the same plant", "fr": "la même centrale"},
+    "sizing.none.title": {"en": "Nothing sized yet",
+                          "fr": "Rien de dimensionné pour l'instant"},
+    "sizing.none.body": {
+        "en": "Describe the community, check the behaviours its demand is built on, look "
+              "over the assumptions, and the tool will return the plant to build.",
+        "fr": "Décrivez la communauté, vérifiez les comportements sur lesquels sa demande "
+              "est bâtie, parcourez les hypothèses, et l'outil renverra la centrale à "
+              "construire."},
+    "sizing.again": {"en": "Compute it again", "fr": "Recalculer"},
+
+    # One letter, and each language has its own: the axis of a week reads "D1" in English
+    # and "J1" in French, and hard-coding either printed the other language's label.
+    "chart.day": {"en": "D", "fr": "J"},
+
     "proj.placeholder": {"en": "Study name", "fr": "Nom de l'étude"},
     "proj.opened": {"en": "Project “{name}” opened.", "fr": "Projet « {name} » ouvert."},
     # ------------------------------------------------------- background work
@@ -375,8 +549,6 @@ STRINGS: dict[str, dict[str, str]] = {
     "csv.node.served": {"en": "Energy served (kWh)", "fr": "Énergie servie (kWh)"},
     "csv.node.unserved": {"en": "Unserved (kWh)", "fr": "Non distribuée (kWh)"},
 
-    "job.size": {"en": "Sizing — {site}", "fr": "Dimensionnement — {site}"},
-    "job.plan": {"en": "Expansion plan — {site}", "fr": "Plan d'extension — {site}"},
     "job.resource": {"en": "Weather series — {site}", "fr": "Série météorologique — {site}"},
     "job.starting": {"en": "starting", "fr": "démarrage"},
     "job.build": {"en": "building demand and resource",

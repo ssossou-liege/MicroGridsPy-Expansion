@@ -87,8 +87,9 @@ def test_a_field_without_a_hint_shows_nothing_rather_than_its_key() -> None:
 
 @pytest.mark.parametrize("lang", ["en", "fr"])
 def test_exports_follow_the_language(lang: str) -> None:
-    result = {"site": "Samionta", "design": {"pv_kw": 32.5}, "lcoe_usd_kwh": 0.246}
-    body = projects.as_csv(result, "size", lang)
+    result = {"site": "Samionta", "plant": {"pv_kw": 32.5},
+              "reference": {"site": "Samionta", "lcoe_usd_kwh": 0.246}}
+    body = projects.as_csv(result, lang)
     header = body.splitlines()[0]
     assert not header.startswith("csv."), header
     assert header == ("Quantity;Value" if lang == "en" else "Grandeur;Valeur")
@@ -104,12 +105,12 @@ def test_the_two_languages_are_actually_different() -> None:
 
 def test_the_default_is_english() -> None:
     assert i18n.DEFAULT == "en"
-    assert i18n.t("nav.community") == i18n.t("nav.community", "en")
-    assert i18n.t("nav.community", "fr") != i18n.t("nav.community", "en")
+    assert i18n.t("page.project.title") == i18n.t("page.project.title", "en")
+    assert i18n.t("page.project.title", "fr") != i18n.t("page.project.title", "en")
 
 
 def test_an_unknown_language_falls_back_rather_than_failing() -> None:
-    assert i18n.t("nav.community", "de") == i18n.t("nav.community", "en")
+    assert i18n.t("page.project.title", "de") == i18n.t("page.project.title", "en")
 
 
 def test_an_unknown_key_is_returned_as_itself() -> None:
@@ -217,8 +218,15 @@ def test_the_script_calls_nothing_it_never_declares() -> None:
 
 
 def test_the_page_and_the_script_agree_on_the_language_picker() -> None:
+    """There are two pickers, one on the homepage and one in the study, and both must work.
+
+    A reader who changes the language on the front door and finds the study still in the
+    other one has been told the setting did not take.
+    """
     markup = (STATIC / "index.html").read_text(encoding="utf-8")
     script = (STATIC / "app.js").read_text(encoding="utf-8")
-    assert 'id="lang"' in markup, "the page has no language picker"
-    assert '$("#lang")' in script, "the script never wires the picker up"
+    for element in ('id="lang"', 'id="lang-home"'):
+        assert element in markup, f"the page has no {element} picker"
+        ident = element.split('"')[1]
+        assert f'"#{ident}"' in script, f"the script never wires #{ident} up"
     assert "setLanguage" in script

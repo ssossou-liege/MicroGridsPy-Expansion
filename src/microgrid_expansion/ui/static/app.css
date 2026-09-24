@@ -54,31 +54,51 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* ---------------------------------------------------------------- chrome */
-.shell { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; }
+/* ---------------------------------------------------------------- chrome
+   The study is one page at a time, so the chrome is a bar across the top rather than a rail
+   down the side: a reader moving through four pages in order needs to know which one they
+   are on, not a list of places to jump to. */
+.shell { display: flex; flex-direction: column; min-height: 100vh; }
 
-.rail {
-  background: var(--surface-sunk);
-  border-right: 1px solid var(--line);
-  padding: 26px 14px;
-  display: flex; flex-direction: column; gap: 26px;
-  position: sticky; top: 0; height: 100vh;
+.topbar {
+  position: sticky; top: 0; z-index: 25;
+  display: flex; align-items: center; gap: 16px;
+  padding: 10px 28px;
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 1px solid var(--line);
 }
-.brand { padding: 0 10px; }
-.brand h1 { font-size: 15px; font-weight: 600; margin: 0; letter-spacing: -.01em; }
-.brand p  { font-size: 12px; color: var(--ink-soft); margin: 3px 0 0; }
+.topbar .mark { height: 26px; width: auto; border-radius: 6px; }
+.topbar .spacer { flex: 1; }
+.topbar select { width: auto; font-size: 12.5px; padding: 6px 9px; }
 
-.nav { display: flex; flex-direction: column; gap: 2px; }
-.nav button {
-  all: unset; cursor: pointer; display: flex; align-items: center; gap: 10px;
-  padding: 8px 10px; border-radius: var(--radius-sm); font-size: 13.5px;
-  color: var(--ink-soft); transition: background .18s var(--ease), color .18s var(--ease);
+/* The numbered steps double as a place indicator and as a way back to a page already
+   filled in. A page not yet reached is not a link: offering it would invite a reader to
+   run a decision on a community that has no coordinates. */
+.steps { display: flex; align-items: center; gap: 4px; list-style: none; margin: 0; padding: 0; }
+.steps li { display: flex; align-items: center; gap: 4px; }
+.steps li::after { content: ""; width: 16px; height: 1px; background: var(--line); }
+.steps li:last-child::after { display: none; }
+.steps button {
+  all: unset; cursor: pointer; display: flex; align-items: center; gap: 7px;
+  padding: 5px 11px; border-radius: 980px; font-size: 13px; color: var(--ink-soft);
+  transition: background .18s var(--ease), color .18s var(--ease);
 }
-.nav button:hover { background: var(--line); color: var(--ink); }
-.nav button[aria-current="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 550; }
-.nav .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .55; }
+.steps button:hover:not([disabled]) { background: var(--line); color: var(--ink); }
+.steps button[disabled] { cursor: default; color: var(--ink-faint); }
+.steps button[aria-current="true"] { background: var(--accent-soft); color: var(--accent);
+                                     font-weight: 550; }
+.steps .n {
+  display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%;
+  border: 1.5px solid currentColor; font-size: 11px; font-weight: 650; line-height: 1;
+}
+.steps button[aria-current="true"] .n { background: var(--accent); color: #fff;
+                                        border-color: var(--accent); }
+@media (max-width: 1000px) { .steps button .lbl { display: none; } }
 
-.main { padding: 40px 48px 140px; max-width: 1080px; }
+/* Centred, now that the rail no longer holds it off the left edge. */
+.main { padding: 40px 48px 140px; max-width: 1080px; margin: 0 auto; width: 100%; }
 .page-head { margin-bottom: 30px; }
 .page-head h2 { font-size: 30px; font-weight: 620; letter-spacing: -.022em; margin: 0; }
 .page-head p  { color: var(--ink-soft); margin: 7px 0 0; max-width: 60ch; font-size: 14.5px; }
@@ -135,7 +155,7 @@ input:focus, select:focus {
 
 /* ---------------------------------------------------------------- run bar */
 .runbar {
-  position: fixed; left: 232px; right: 0; bottom: 0; z-index: 20;
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
   background: color-mix(in srgb, var(--surface) 86%, transparent);
   backdrop-filter: saturate(180%) blur(20px);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
@@ -143,6 +163,7 @@ input:focus, select:focus {
   padding: 14px 48px; display: flex; align-items: center; gap: 18px;
 }
 .runbar .spacer { flex: 1; }
+.runbar-state { min-width: 280px; }
 .runbar .state { font-size: 13px; color: var(--ink-soft); min-height: 20px; }
 .runbar .state b { color: var(--ink); font-weight: 550; }
 .track { height: 4px; background: var(--line); border-radius: 4px; overflow: hidden; margin-top: 7px; }
@@ -181,10 +202,8 @@ th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em;
 @keyframes rise { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
 
 @media (max-width: 900px) {
-  .shell { grid-template-columns: 1fr; }
-  .rail { position: static; height: auto; flex-direction: row; align-items: center; }
-  .nav { flex-direction: row; }
-  .runbar { left: 0; padding: 14px 20px; }
+  .topbar { padding: 10px 16px; gap: 10px; }
+  .runbar { padding: 14px 20px; }
   .main { padding: 28px 20px 150px; }
   .field { grid-template-columns: 1fr; }
 }
@@ -201,17 +220,6 @@ th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em;
                color: var(--ink-soft); }
 .legend i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
 .legend i.line { height: 2px; border-radius: 2px; width: 15px; }
-
-/* ---------------------------------------------------------------- project bar */
-.projectbar {
-  display: flex; align-items: center; gap: 10px; margin-bottom: 22px;
-  background: var(--surface); border-radius: var(--radius); padding: 12px 16px;
-  box-shadow: var(--shadow);
-}
-.projectbar input { width: auto; flex: 1; max-width: 320px; }
-.projectbar .name { font-weight: 550; }
-.projectbar .spacer { flex: 1; }
-.projectbar select { width: auto; min-width: 190px; }
 
 /* ---------------------------------------------------------------- map */
 #map { height: 380px; border-radius: var(--radius-sm); overflow: hidden;
@@ -242,7 +250,7 @@ th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em;
 @media print {
   :root { --bg: #fff; --surface: #fff; --line: #d8dce3; --ink: #000; --ink-soft: #444;
           --shadow: none; }
-  .rail, .runbar, .projectbar, .btn, .nav { display: none !important; }
+  .topbar, .runbar, .btn, .home, .info { display: none !important; }
   .main { padding: 0; max-width: none; }
   .page.hidden { display: block !important; }        /* every view goes on the sheet */
   .card { break-inside: avoid; box-shadow: none; border: 1px solid var(--line);
@@ -258,13 +266,190 @@ th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em;
 }
 .print-only { display: none; }
 
-/* ---------------------------------------------------------------- brand */
-.brand .wordmark { width: 100%; max-width: 168px; height: auto; display: block; }
-.brand p { font-size: 12px; color: var(--ink-soft); margin: 8px 0 0; }
-@media (prefers-color-scheme: dark) { .brand .wordmark { filter: brightness(1.06); } }
-.langpick { margin-top: auto; padding: 0 6px; }
-.langpick select { font-size: 12.5px; padding: 6px 9px; }
 
 /* A caution the reader has to see: the plant is priced and the project is not. It is a
    sentence, not a badge, because what is missing takes a sentence to say. */
 .hint.warn { color: var(--warn); }
+
+/* ================================================================= the front door
+   The homepage is the one screen that is allowed to be wide, quiet and mostly picture. It
+   exists to say what the tool answers and what an answer looks like, so that a developer
+   opening it for the first time knows within a few seconds whether it is the tool they
+   need. Everything on it is drawn or computed here: no photograph is shipped, so the page
+   renders identically in a field office with no network. */
+.home { max-width: 1180px; margin: 0 auto; padding: 22px 32px 60px; position: relative; }
+.home-lang { display: flex; justify-content: flex-end; }
+.home-lang select { width: auto; font-size: 12.5px; padding: 6px 9px; }
+
+.hero { display: grid; grid-template-columns: 1fr 1fr; gap: 44px; align-items: center;
+        padding: 26px 0 44px; }
+.hero-words .wordmark { width: 100%; max-width: 210px; height: auto; display: block;
+                        margin-bottom: 26px; }
+@media (prefers-color-scheme: dark) { .hero-words .wordmark { filter: brightness(1.06); } }
+.hero h1 { font-size: 42px; line-height: 1.08; font-weight: 650; letter-spacing: -.03em;
+           margin: 0; }
+.hero .lead { color: var(--ink-soft); font-size: 16px; margin: 16px 0 0; max-width: 46ch; }
+.hero-art { border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-lift); }
+.hero-art svg { display: block; width: 100%; height: auto; }
+
+/* The three ways in. The first is a button because it is one action; the other two hold a
+   list, so they are panels with an action inside. */
+.doors { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.door {
+  all: unset; display: flex; flex-direction: column; gap: 7px; text-align: left;
+  background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 24px 24px 22px; transition: transform .18s var(--ease), box-shadow .18s var(--ease);
+}
+button.door { cursor: pointer; }
+button.door:hover { transform: translateY(-2px); box-shadow: var(--shadow-lift); }
+button.door:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.door.primary { background: var(--accent); color: #fff; }
+.door.primary .door-hint, .door.primary .door-foot { color: rgba(255,255,255,.82); }
+.door.primary .door-foot { font-size: 13px; }
+.door-icon svg { display: block; width: 34px; height: 34px; }
+.door-title { font-size: 17px; font-weight: 600; letter-spacing: -.015em; }
+.door-hint { color: var(--ink-soft); font-size: 13px; }
+.door-foot { margin-top: auto; padding-top: 14px; display: flex;
+             flex-direction: column; gap: 7px; }
+/* Only the first door is a button, and its footer is a sentence rather than a list, so it
+   follows the text it belongs to instead of being pushed to the bottom of the card. */
+button.door .door-foot { margin-top: 8px; padding-top: 0; }
+.door-foot select { font-size: 13px; }
+.door-foot .none { color: var(--ink-faint); font-size: 12.5px; }
+.door-foot .btn { text-align: left; padding: 9px 14px; font-size: 13.5px;
+                  background: var(--surface-sunk); border: 1px solid var(--line); }
+.door-foot .btn:hover { background: var(--line); }
+.door-foot .btn .sub { display: block; font-weight: 400; font-size: 12px;
+                       color: var(--ink-soft); margin-top: 2px; }
+
+/* What comes back, shown before anything is asked. Marked as an illustration in words
+   underneath, because a plausible number on a homepage is otherwise read as a result. */
+.samples { margin-top: 46px; }
+.samples h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .07em;
+              color: var(--ink-faint); font-weight: 600; margin: 0 0 16px; }
+.sample-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.sample { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow);
+          padding: 20px 22px; }
+.sample h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
+             color: var(--ink-faint); font-weight: 600; margin: 0 0 14px; }
+.sample .rows { display: grid; gap: 9px; }
+.sample .row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.sample .row span { color: var(--ink-soft); font-size: 13px; }
+.sample .row b { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.sample .big { font-size: 34px; font-weight: 650; letter-spacing: -.025em;
+               font-variant-numeric: tabular-nums; }
+.sample .big small { font-size: 14px; font-weight: 500; color: var(--ink-soft);
+                     margin-left: 4px; }
+.sample .under { color: var(--ink-soft); font-size: 12.5px; margin-top: 8px; }
+.samples .note { color: var(--ink-faint); font-size: 12.5px; margin: 14px 0 0; }
+.home-foot { margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--line);
+             color: var(--ink-faint); font-size: 12.5px; }
+
+@media (max-width: 960px) {
+  .hero { grid-template-columns: 1fr; gap: 26px; padding-bottom: 30px; }
+  .hero h1 { font-size: 32px; }
+  .doors, .sample-grid { grid-template-columns: 1fr; }
+  .home { padding: 18px 18px 40px; }
+}
+
+/* ================================================================= the info button
+   A description under every box turns a form into an essay and buries the boxes. The note
+   is kept, but folded behind a marker beside the label, so the page shows the questions and
+   the reader asks for the reason. Hover and keyboard focus both open it, since a form filled
+   from a keyboard must not be one where half the page is unreachable. */
+.info {
+  all: unset; cursor: help; display: inline-grid; place-items: center;
+  width: 16px; height: 16px; border-radius: 50%; margin-left: 6px;
+  border: 1px solid var(--ink-faint); color: var(--ink-faint);
+  font-size: 10.5px; font-weight: 700; font-style: italic; line-height: 1;
+  vertical-align: middle; position: relative;
+  transition: color .16s var(--ease), border-color .16s var(--ease);
+}
+.info:hover, .info:focus-visible { color: var(--accent); border-color: var(--accent); }
+.info::after {
+  content: attr(data-tip); position: absolute; left: 0; top: calc(100% + 8px); z-index: 40;
+  width: max-content; max-width: 40ch; padding: 11px 13px;
+  background: var(--ink); color: var(--bg); border-radius: var(--radius-sm);
+  font: 400 12.5px/1.45 inherit; font-style: normal; text-align: left;
+  box-shadow: var(--shadow-lift); opacity: 0; visibility: hidden;
+  transform: translateY(-3px); transition: opacity .16s var(--ease),
+  transform .16s var(--ease), visibility .16s;
+}
+.info:hover::after, .info:focus-visible::after { opacity: 1; visibility: visible; transform: none; }
+/* In the right-hand column of a two-column grid the panel would run off the page, so
+   there it hangs from the right edge of the marker instead. */
+.roster .pue:nth-child(even) .info::after { left: auto; right: 0; }
+
+/* ================================================================= the activity roster
+   Which activities the community has, and how many of each. A checkbox alone would say
+   present or absent, and a village with one mill and a village with six are not the same
+   plant. */
+.roster { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.pue {
+  display: grid; grid-template-columns: 22px 1fr 78px; gap: 10px; align-items: center;
+  padding: 11px 13px; border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--surface-sunk); transition: border-color .16s var(--ease),
+  background .16s var(--ease);
+}
+.pue.on { border-color: var(--accent); background: var(--accent-soft); }
+.pue input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent);
+                            margin: 0; padding: 0; }
+.pue .lbl { font-size: 13.5px; font-weight: 500; }
+.pue input[type=number] { text-align: right; padding: 6px 9px; font-size: 13px; }
+.pue input[type=number][disabled] { opacity: .35; }
+.roster-foot { margin-top: 12px; color: var(--ink-soft); font-size: 12.5px; }
+@media (max-width: 900px) { .roster { grid-template-columns: 1fr; } }
+
+/* A field whose control is wide enough to need the whole row rather than the 190px column. */
+.field.wide { grid-template-columns: 1fr; }
+.field.wide .control { display: block; }
+
+/* ================================================================= the decision
+   The answer is one plant, and the page says so before it says anything else. */
+.verdict {
+  background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow-lift);
+  padding: 26px 28px; margin-bottom: 20px;
+  border-top: 3px solid var(--accent);
+}
+.verdict-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+                margin-bottom: 18px; }
+.verdict-head h3 { font-size: 19px; font-weight: 620; letter-spacing: -.02em; margin: 0; }
+.verdict-head .where { color: var(--ink-soft); font-size: 13px; }
+.compare td.gap   { color: var(--warn); font-weight: 550; }
+.compare td.same  { color: var(--ink-faint); }
+
+/* A saved study and the way to be rid of it. The delete sits outside the button that opens
+   it, so an absent-minded click opens a study rather than losing one. */
+.saved { display: flex; align-items: stretch; gap: 6px; }
+.saved .btn { flex: 1; }
+.saved .drop {
+  all: unset; cursor: pointer; display: grid; place-items: center; width: 30px;
+  border-radius: var(--radius-sm); color: var(--ink-faint); font-size: 17px; line-height: 1;
+  transition: background .16s var(--ease), color .16s var(--ease);
+}
+.saved .drop:hover { background: color-mix(in srgb, var(--bad) 14%, transparent);
+                     color: var(--bad); }
+.saved .drop:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ================================================================= the tree drawn
+   Forty-six plants over five milestones. Wide rather than tall would not fit a page, so it
+   is tall and scrolls sideways on a narrow screen; the columns stay where they are. */
+.tree-scroll { overflow-x: auto; padding-bottom: 4px; }
+.tree { width: 100%; height: auto; display: block; }
+.tree .thead { font-size: 11px; font-weight: 600; fill: var(--ink-faint);
+               text-transform: uppercase; letter-spacing: .05em; }
+.tree .branch { fill: none; stroke-linecap: round;
+                stroke: color-mix(in srgb, var(--ink-soft) 42%, transparent); }
+.tree .tnode text { font-size: 10.5px; fill: var(--ink-soft);
+                    font-variant-numeric: tabular-nums; }
+.tree .tnode rect { fill: var(--surface-sunk); stroke: var(--line); stroke-width: 1; }
+/* A node larger than the one it grew from is where the plan spends again. Marked, because
+   that is the whole of what an expansion plan says. */
+.tree .tnode.grow rect { fill: var(--accent-soft); stroke: var(--accent); }
+.tree .tnode.grow text { fill: var(--accent); font-weight: 600; }
+.tree .gridmark { fill: var(--good); }
+
+.legend .swatch { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+.legend .swatch.hold { background: var(--surface-sunk); border: 1px solid var(--line); }
+.legend .swatch.grow { background: var(--accent-soft); border: 1px solid var(--accent); }
+.legend .swatch.gridmark { background: var(--good); border-radius: 50%; }

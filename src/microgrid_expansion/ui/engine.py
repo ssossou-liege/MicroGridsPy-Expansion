@@ -1,7 +1,12 @@
 """What the interface asks the engine to do, and what it gets back.
 
 Kept apart from the routes so that the work is testable without a server, and so that the
-routes stay a thin translation between HTTP and these two calls.
+routes stay a thin translation between HTTP and these calls.
+
+The interface asks one question of the engine -- what should this community build now -- and
+``size`` answers it. The two halves of that answer, the scenario tree and the certified
+reference year, remain separate functions because they are separately testable and because
+the command line still runs them one at a time.
 """
 from __future__ import annotations
 
@@ -16,27 +21,32 @@ def settings_from(overrides: dict[str, Any]) -> ProjectSettings:
     return schema.apply(default_settings(), dict(overrides or {}))
 
 
-def size_site(job: Job, overrides: dict[str, Any]) -> dict:
-    """Certify the sizing of one site over a reference year."""
+def size_site(job: Job, overrides: dict[str, Any],
+              step: int = 0, total_steps: int = 3) -> dict:
+    """Certify the sizing of one site over a reference year.
+
+    ``step`` and ``total_steps`` let this run as part of a longer piece of work without the
+    progress it reports jumping back to zero halfway through.
+    """
     from ..exact.certify import Lattice, certify_exhaustive
     from ..instances import build_site_year
 
     settings = settings_from(overrides)
-    job.total = 3
+    job.total = total_steps
 
     job.announce("job.build")
     instance = build_site_year(settings.site, settings.year,
                                trajectory=settings.demand_trajectory,
                                maturity_months=settings.maturity_months)
-    job.done = 1
+    job.done = step + 1
 
     job.announce("job.lattice")
     lattice = Lattice.around(instance, settings)
-    job.done = 2
+    job.done = step + 2
 
     job.announce("job.certify", n=f"{lattice.size:,}".replace(",", "\u202f"))
     result = certify_exhaustive(instance, lattice, settings, verbose=False)
-    job.done = 3
+    job.done = step + 3
 
     # The certificate settles which plant is cheapest; what it costs a customer is a second
     # question, answered by running the certified design once more and pricing its life.
@@ -102,8 +112,12 @@ def size_site(job: Job, overrides: dict[str, Any]) -> dict:
     }
 
 
-def plan_expansion(job: Job, overrides: dict[str, Any]) -> dict:
-    """Build the scenario tree and descend to the expansion plan."""
+def plan_expansion(job: Job, overrides: dict[str, Any],
+                   step: int = 0, total_steps: int = 4) -> dict:
+    """Build the scenario tree and descend to the expansion plan.
+
+    ``step`` and ``total_steps`` place its four stages inside a longer run, as above.
+    """
     from ..config import ModelConfig
     from ..exact.tree_certify import certify_tree
     from ..model import build_model
@@ -116,16 +130,16 @@ def plan_expansion(job: Job, overrides: dict[str, Any]) -> dict:
 
     settings = settings_from(overrides)
     cfg = ModelConfig(solver=settings.solver.name)
-    job.total = 4
+    job.total = total_steps
 
     job.announce("job.sample")
     tree = build_tree(sample_scenario_paths(cfg), cfg)
-    job.done = 1
+    job.done = step + 1
 
     job.announce("job.reduce", n=len(tree.nodes))
     rep = {n: reduce_to_rep_days(_NodeInstance(tree.node_data[n], settings), cfg.n_rep_days)
            for n in tree.nodes}
-    job.done = 2
+    job.done = step + 2
 
     architecture = settings.coupling.architectures()[0]
     job.announce("job.solve")
@@ -134,7 +148,7 @@ def plan_expansion(job: Job, overrides: dict[str, Any]) -> dict:
     if solved.objective == float("inf"):
         raise RuntimeError("no feasible plan under these settings")
     plans = extract_solution(programme, cfg)
-    job.done = 3
+    job.done = step + 3
 
     job.announce("job.descend")
     certificate = certify_tree(plans, tree, rep, solved.objective,
@@ -154,7 +168,7 @@ def plan_expansion(job: Job, overrides: dict[str, Any]) -> dict:
         / max(solved.objective, 1.0),
         "search_evaluations": certificate.evaluations,
     })
-    job.done = 4
+    job.done = step + 4
 
     root = certificate.plans[0]
     return {
@@ -173,6 +187,62 @@ def plan_expansion(job: Job, overrides: dict[str, Any]) -> dict:
         "rule_usd": certificate.z_rule,
         "per_node": [node_kpis(certificate.plans, n, tree, traces)
                      for n in tree.nodes],
+    }
+
+
+def size(job: Job, overrides: dict[str, Any]) -> dict:
+    """What this community should build now, and what that commits it to.
+
+    A developer has one decision to make and has to make it this year: how much array, how
+    much storage, how much conversion and what generating set to buy, before knowing which
+    way the demand will go. Everything else the tool computes exists to inform that one
+    purchase, which is why it is answered once rather than offered as two studies between
+    which the reader is left to arbitrate.
+
+    Two pieces of work answer it, and they answer different halves.
+
+    The scenario tree gives the decision itself. It carries every trajectory the demand may
+    take, costs each of them under the plant that would be bought at its root, and returns
+    the root that the whole tree agrees on. That root is the answer: it is sized for the
+    futures the community may have and not for the one that happens to be drawn.
+
+    The reference year gives the decision its standing. It is certified by exhaustion, so it
+    is the only part of the answer proven optimal, and it is where the tariff, the return and
+    the hour-by-hour dispatch are computed -- a year has hours, a tree has representative
+    days. Read together they say what to build and what it will cost to run.
+
+    The two designs need not coincide, and where they part it is worth reading. The tree
+    sizes for a demand that grows; the reference year sizes for the demand as it is. A tree
+    root materially above the certified plant is the cost of the growth being provided for.
+    """
+    plan = plan_expansion(job, overrides, step=0, total_steps=7)
+    certificate = size_site(job, overrides, step=4, total_steps=7)
+
+    root, certified = plan["root_plan"], certificate["design"]
+    parts = ("pv_kw", "battery_kwh", "inverter_kw", "generator_kw")
+    agreement = {k: {"first_stage": round(float(root.get(k, 0.0)), 3),
+                     "reference_year": round(float(certified.get(k, 0.0)), 3),
+                     "difference": round(float(root.get(k, 0.0))
+                                         - float(certified.get(k, 0.0)), 3)}
+                 for k in parts}
+
+    return {
+        "site": plan["site"],
+        "currency": plan["currency"],
+        "architecture": plan["architecture"],
+        "plant": root,
+        # Said plainly, because it is the standing of the answer and not a detail of it: the
+        # reference year is optimal among every design the lattice holds, by exhaustion; the
+        # year-0 decision is the root of a coordinated descent over the tree, and no bound
+        # has been closed on it. Certifying it is the open piece of this work.
+        "proven": {"reference_year": bool(certificate["proven"]), "first_stage": False},
+        "expected": plan["expected"],
+        "tree": {"nodes": plan["nodes"], "leaves": plan["leaves"],
+                 "stages": plan["stages"], "reduction_error": plan["reduction_error"],
+                 "bound_usd": plan["bound_usd"], "rule_usd": plan["rule_usd"],
+                 "per_node": plan["per_node"]},
+        "reference": certificate,
+        "agreement": agreement,
     }
 
 

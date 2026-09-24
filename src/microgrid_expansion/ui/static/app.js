@@ -5,8 +5,9 @@ const $  = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
 const state = { groups: [], overrides: {}, defaults: {}, job: null, timer: null,
-                results: { size: null, plan: null }, projects: [], projectName: "",
-                sites: [], site: null, arch: null, lang: "en" };
+                result: null, projects: [], projectName: "",
+                sites: [], site: null, arch: null, classes: [], lang: "en",
+                page: "project", reached: 1 };
 
 /* ------------------------------------------------------------------ language
    Every sentence on this page comes from the catalogue the server hands over at boot. The
@@ -34,7 +35,6 @@ const nf = (v, d = 0) => v === null || v === undefined || Number.isNaN(v)
   ? "—" : v.toLocaleString(state.lang === "fr" ? "fr-FR" : "en-GB",
                            { minimumFractionDigits: d, maximumFractionDigits: d });
 const pct = (v, d = 1) => v === null || v === undefined ? "—" : nf(v, d) + " %";
-const money = v => v === null || v === undefined ? "—" : nf(Math.round(v));
 
 /* Amounts arrive in dollars and are shown in the currency of the country. The conversion
    happens here and nowhere else, so nothing stored or exported depends on today's rate. */
@@ -44,10 +44,24 @@ const amount = (v, d = 0) => v === null || v === undefined ? "—"
   : nf(toLocal(v), currency.per_usd > 50 ? 0 : d);
 const perKwh = v => v === null || v === undefined ? "—"
   : nf(toLocal(v), currency.per_usd > 50 ? 0 : 4);
-const unit = suffixe => `${currency.code}${suffixe}`;
+const unit = suffix => `${currency.code}${suffix}`;
 // "per year" is a word, not punctuation. Each language abbreviates it its own way, and
 // hard-coding one of them printed it on the other language's page.
 const perYear = () => unit(T("unit.per_year"));
+
+/* Text on its way into markup. A village called Kpali"ba, or an activity note with a
+   quotation mark in it, would otherwise close the attribute it sits in and drop the rest of
+   the element on the floor. */
+const esc = v => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
+                                .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+/* The note that used to sit under every box, folded behind a marker beside its label. A
+   form whose every question carries a paragraph reads as an essay with boxes in it; the
+   reasons are worth keeping, but worth keeping out of the way. Focus opens it as hover
+   does, so a form filled from the keyboard is not one with half its content unreachable.
+   Near the right edge the panel is hung from the right, or it would run off the page. */
+const info = key => `<button class="info" type="button"
+   aria-label="${esc(T("wiz.info"))}" data-tip="${esc(T(key))}">i</button>`;
 
 function figure(k, v, u, note) {
   return `<div class="figure"><div class="k">${k}</div>
@@ -86,8 +100,8 @@ function chartWeek(d) {
     { values: d.discharge, color: COLOURS.discharge },
     { values: d.generator, color: COLOURS.generator },
   ];
-  const amount = d.demand.map((_, i) => series.reduce((a, s) => a + s.values[i], 0));
-  const ymax = Math.max(...somme, ...d.demand) * 1.12 || 1;
+  const supply = d.demand.map((_, i) => series.reduce((a, s) => a + s.values[i], 0));
+  const ymax = Math.max(...supply, ...d.demand) * 1.12 || 1;
   const x = i => L + (i / Math.max(n - 1, 1)) * (W - L - R);
   const y = v => H - B - (v / ymax) * (H - TOP - B);
   const socMax = d.soc_max_kwh || 1;
@@ -96,7 +110,7 @@ function chartWeek(d) {
   const days = [];
   for (let i = 0; i < n; i += 24)
     days.push(`<line class="axis" x1="${x(i)}" y1="${TOP}" x2="${x(i)}" y2="${H - B}"/>
-      <text x="${x(i) + 4}" y="${H - 9}">J${Math.floor(i / 24) + 1}</text>`);
+      <text x="${x(i) + 4}" y="${H - 9}">${T("chart.day")}${Math.floor(i / 24) + 1}</text>`);
 
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img"
      aria-label="${T("chart.week.alt")}">
@@ -128,7 +142,7 @@ function chartMonths(m) {
     { values: m.generator, color: COLOURS.generator },
   ];
   const totals = months.map((_, i) => series.reduce((a, s) => a + s.values[i], 0));
-  const ymax = Math.max(...totaux) * 1.12 || 1;
+  const ymax = Math.max(...totals) * 1.12 || 1;
   const bw = (W - L - R) / 12 * .62;
   let out = "";
   months.forEach((name, i) => {
@@ -150,6 +164,109 @@ function chartMonths(m) {
     <text x="4" y="${H - B}">0</text>
   </svg>`;
 }
+
+/* ------------------------------------------------------------------ the tree
+   A plan over a scenario tree is forty-six plants, and a table of forty-six rows is not a
+   plan: what a developer needs to see is which branch leads where, and at which milestone
+   the plant has to grow. So it is drawn. Stages run left to right at their milestone years,
+   futures run top to bottom, every node carries the plant it holds, and a node that is
+   larger than the one it grew from is marked -- those marks are the expansion plan, and
+   everything unmarked is capacity already bought at year zero.
+
+   The line into a node is as thick as that future is likely, so the eye follows the branch
+   the money should follow. */
+function chartTree(tree) {
+  const nodes = tree.per_node || [];
+  const root = nodes.find(n => n.parent === null || n.parent === undefined);
+  if (!nodes.length || !root) return "";
+
+  const by = new Map(nodes.map(n => [n.node, n]));
+  const kids = new Map();
+  for (const n of nodes) {
+    if (n.parent === null || n.parent === undefined) continue;
+    if (!kids.has(n.parent)) kids.set(n.parent, []);
+    kids.get(n.parent).push(n.node);
+  }
+
+  // Leaves take consecutive rows in depth-first order; a branch sits at the mean of the
+  // futures below it, so it is drawn beside what it leads to rather than above it.
+  const row = new Map();
+  let nextRow = 0;
+  const place = id => {
+    const children = kids.get(id) || [];
+    if (!children.length) { row.set(id, nextRow++); return nextRow - 1; }
+    const ys = children.map(place);
+    const y = (Math.min(...ys) + Math.max(...ys)) / 2;
+    row.set(id, y);
+    return y;
+  };
+  place(root.node);
+
+  const stages = [...new Set(nodes.map(n => n.stage))].sort((a, b) => a - b);
+  const years = Object.keys(tree.reduction_error || {}).map(Number).sort((a, b) => a - b);
+  const BOX = 132, RH = 26, L = 8, R = 8, TOP = 34, BOT = 10;
+  const W = 1000, H = TOP + nextRow * RH + BOT;
+  const span = stages.length > 1 ? (W - L - R - BOX) / (stages.length - 1) : 0;
+  const x = stage => L + stages.indexOf(stage) * span;
+  const y = id => TOP + (row.get(id) + 0.5) * RH;
+
+  const total = n => n.pv_kw + (n.pv_ac_kw || 0);
+  const grows = n => {
+    const up = by.get(n.parent);
+    return up && (total(n) > total(up) + 1e-6 || n.battery_kwh > up.battery_kwh + 1e-6);
+  };
+
+  // Probability sets the weight of a line. A branch carrying half the mass and one
+  // carrying a twentieth are not the same advice, and drawn alike they read as though
+  // they were.
+  const pmax = Math.max(...nodes.map(n => n.probability));
+  const edges = nodes.filter(n => by.has(n.parent)).map(n => {
+    const up = by.get(n.parent);
+    const x0 = x(up.stage) + BOX, x1 = x(n.stage), mid = (x0 + x1) / 2;
+    const w = 0.7 + 2.3 * Math.sqrt(n.probability / pmax);
+    return `<path d="M${x0} ${y(up.node)} C${mid} ${y(up.node)}, ${mid} ${y(n.node)},
+             ${x1} ${y(n.node)}" class="branch" stroke-width="${w.toFixed(2)}"/>`;
+  }).join("");
+
+  const boxes = nodes.map(n => {
+    const top = y(n.node) - RH / 2 + 2, klass = grows(n) ? "grow" : "hold";
+    const detail = [
+      `${T("tree.node")} ${n.node}`,
+      `${T("plan.probability")}: ${pct(n.probability * 100, 1)}`,
+      `${T("res.pv")}: ${nf(total(n), 1)} kW`,
+      `${T("res.storage")}: ${nf(n.battery_kwh)} kWh`,
+      `${T("res.conversion")}: ${nf(n.inverter_kw, 1)} kW`,
+      `${T("res.generator")}: ${nf(n.generator_kw)} kW`,
+      `${T("plan.energy")}: ${nf(n.energy_served_kwh / 1000, 1)} MWh`,
+      n.grid_connected ? T("plan.grid_here") : "",
+    ].filter(Boolean).join("\n");
+    return `<g class="tnode ${klass}">
+      <title>${esc(detail)}</title>
+      <rect x="${x(n.stage)}" y="${top}" width="${BOX}" height="${RH - 4}" rx="5"/>
+      <text x="${x(n.stage) + 8}" y="${top + 15}">${nf(total(n), 1)} kW · ${
+        nf(n.battery_kwh)} kWh</text>
+      ${n.grid_connected ? `<circle cx="${x(n.stage) + BOX - 9}" cy="${top + 11}" r="3.2"
+        class="gridmark"/>` : ""}
+    </g>`;
+  }).join("");
+
+  const heads = stages.map(s => {
+    const label = years[stages.indexOf(s)];
+    return `<text x="${x(s)}" y="18" class="thead">${label === undefined
+      ? `${T("tree.stage")} ${s}` : `${T("tree.year")} ${label}`}</text>`;
+  }).join("");
+
+  return `<svg class="tree" viewBox="0 0 ${W} ${H}" role="img"
+      aria-label="${esc(T("tree.alt"))}" style="min-width:760px">
+      ${heads}${edges}${boxes}
+    </svg>
+    <div class="legend" style="margin-top:14px">
+      <span><i class="swatch grow"></i>${T("tree.grows")}</span>
+      <span><i class="swatch hold"></i>${T("tree.holds")}</span>
+      <span><i class="swatch gridmark"></i>${T("plan.grid_here")}</span>
+    </div>`;
+}
+
 
 /* ------------------------------------------------------------------ the form */
 function renderForm() {
@@ -225,99 +342,160 @@ function fieldRow(f) {
     </div>`;
 }
 
-/* ------------------------------------------------------------------ results */
-function renderSize(r) {
+/* ------------------------------------------------------------------ the sizing
+   One answer, and everything that stands behind it, on one page. The plant to buy comes
+   first and alone, because that is the whole purpose of the exercise and a reader who
+   stops after the first card has still got what they came for. Under it: what it costs,
+   what the futures it was sized for will ask of it, what the certified reference year says
+   about it, how it runs, and what it earns. */
+function renderSizing(r) {
   if (r && r.currency) currency = r.currency;
+  const host = $("#sizing");
   if (!r) {
-    $("#result").innerHTML = `<div class="card empty"><h4>${T("res.none.title")}</h4>
-      <p>${T("res.none.body")}</p></div>`;
+    host.innerHTML = `<div class="card empty"><h4>${T("sizing.none.title")}</h4>
+      <p>${T("sizing.none.body")}</p></div>`;
     return;
   }
-  const d = r.design, total = d.pv_kw + (d.pv_ac_kw || 0);
-  const sub = r.subsidy_fraction;
-  const badge = r.proven
-    ? `<span class="badge ok">${T("res.proven")}</span>`
-    : `<span class="badge warn">${T("res.unproven")}</span>`;
-  $("#result").innerHTML = `
-    <div class="card">
-      <h3>${T("res.plant")} — ${r.site}, ${T("res.growth")} ${r.trajectory}</h3>
+
+  const d = r.plant, ref = r.reference || {}, e = r.expected || {}, tree = r.tree || {};
+  const total = d.pv_kw + (d.pv_ac_kw || 0);
+  const proven = r.proven || {};
+
+  const sub = ref.subsidy_fraction;
+  const rows = [["res.pv", "pv_kw", 1, "kW"], ["res.storage", "battery_kwh", 0, "kWh"],
+                ["res.conversion", "inverter_kw", 1, "kW"],
+                ["res.generator", "generator_kw", 0, "kW"]];
+
+  host.innerHTML = `
+    <div class="verdict">
+      <div class="verdict-head">
+        <h3>${T("sizing.build")}</h3>
+        <span class="where">${esc(r.site)}${tree.leaves
+          ? ` · ${T("sizing.over_tree", { leaves: nf(tree.leaves), nodes: nf(tree.nodes) })}`
+          : ""}</span>
+      </div>
       <div class="figures">
-        ${figure(T("res.pv"), nf(total, 1), "kW",
-                 d.pv_ac_kw ? `${nf(d.pv_kw,1)} ${T("res.battery_bus")} · ${nf(d.pv_ac_kw,1)} ${T("res.load_bus")}` : null)}
-        ${figure(T("res.storage"), nf(d.battery_kwh), "kWh",
-                 r.battery_life_years ? T("res.battery_life",
-                    { n: nf(r.battery_life_years, 1) }) : null)}
+        ${figure(T("res.pv"), nf(total, 1), "kW", d.pv_ac_kw
+            ? `${nf(d.pv_kw, 1)} ${T("res.battery_bus")} · ${nf(d.pv_ac_kw, 1)} ${T("res.load_bus")}`
+            : null)}
+        ${figure(T("res.storage"), nf(d.battery_kwh), "kWh", ref.battery_life_years
+            ? T("res.battery_life", { n: nf(ref.battery_life_years, 1) }) : null)}
         ${figure(T("res.conversion"), nf(d.inverter_kw, 1), "kW")}
         ${figure(T("res.generator"), nf(d.generator_kw), "kW")}
       </div>
-      <p style="margin:16px 0 0">${badge}</p>
-      ${(r.binding_ceilings || []).length ? `<p class="hint" style="margin-top:10px">${
-          T("res.ceiling_binds", {
-            which: r.binding_ceilings.map(c => T(`res.ceiling.${c}`)).join(", ") })}</p>` : ""}
+      <p style="margin:16px 0 0">
+        <span class="badge ${proven.first_stage ? "ok" : "warn"}">${
+          proven.first_stage ? T("sizing.proven.yes") : T("sizing.proven.no")}</span>
+        ${info("sizing.proven.hint")}
+      </p>
     </div>
 
     <div class="card">
-      <h3>${T("res.cost_title")}</h3>
+      <h3>${T("plan.cost")}</h3>
       <div class="figures">
-        ${figure(T("res.lcoe"), perKwh(r.lcoe_usd_kwh), unit("/kWh"),
-                 `${T("res.target")} ${perKwh(r.tariff_target_usd_kwh)}`)}
-        ${figure(T("res.annual"), amount(r.z_rule_usd_yr), perYear())}
+        ${figure(T("plan.expected_lcoe"), perKwh(e.expected_lcoe_usd_kwh), unit("/kWh"),
+                 `${T("res.target")} ${perKwh(ref.tariff_target_usd_kwh)}`)}
+        ${figure(T("plan.expected_cost"), amount(e.expected_rule_cost_usd), currency.code)}
         ${figure(T("res.subsidy"), sub ? pct(sub * 100) : T("res.subsidy.none"), "",
-                 sub ? T("res.subsidy", { n: `${amount(r.subsidy_usd)} ${currency.code}` })
+                 sub ? T("res.subsidy", { n: `${amount(ref.subsidy_usd)} ${currency.code}` })
                      : T("res.subsidy.met"))}
-        ${figure(T("res.gap"), pct(r.price_rel_pct), "",
-                 `${amount(r.price_abs_usd_yr)} ${perYear()}`)}
+        ${figure(T("plan.gap"), pct(e.price_of_heuristic_pct), "")}
       </div>
+      <p class="hint" style="margin-top:12px">${T("plan.upper")}</p>
     </div>
 
-    ${r.dispatch ? `
+    ${(tree.per_node || []).length ? `
+    <div class="card">
+      <h3>${T("tree.title")}</h3>
+      <p class="hint" style="margin-bottom:16px">${T("tree.lead")}</p>
+      <div class="tree-scroll">${chartTree(tree)}</div>
+      <p class="hint" style="margin-top:14px">${
+        T("plan.tree", { nodes: nf(tree.nodes), leaves: nf(tree.leaves) })}</p>
+      ${Object.keys(tree.reduction_error || {}).length ? `<p class="hint"
+        style="margin-top:6px">${T("tree.error", { list: Object.entries(tree.reduction_error)
+          .sort((a, b) => a[0] - b[0])
+          .map(([year, e]) => `${year} — ${pct(e * 100, 1)}`).join(" · ") })}</p>` : ""}
+    </div>` : ""}
+
+    ${r.agreement ? `
+    <div class="card">
+      <h3>${T("sizing.reference")}</h3>
+      <table class="compare">
+        <tr><th>${T("res.quantity")}</th><th>${T("sizing.build")}</th>
+            <th>${T("sizing.reference")}</th><th>${T("sizing.difference")}</th></tr>
+        ${rows.map(([key, k, dp, u]) => {
+          const a = r.agreement[k];
+          if (!a) return "";
+          const same = Math.abs(a.difference) < 1e-6;
+          return `<tr><td>${T(key)}</td>
+            <td>${nf(a.first_stage, dp)} ${u}</td>
+            <td>${nf(a.reference_year, dp)} ${u}</td>
+            <td class="${same ? "same" : "gap"}">${same ? "—"
+              : `${a.difference > 0 ? "+" : ""}${nf(a.difference, dp)} ${u}`}</td></tr>`;
+        }).join("")}
+      </table>
+      <p style="margin:14px 0 0">
+        <span class="badge ${proven.reference_year ? "ok" : "warn"}">${
+          proven.reference_year ? T("res.proven") : T("res.unproven")}</span>
+      </p>
+      <p class="hint" style="margin-top:10px">${T("sizing.reference.hint")}</p>
+      ${(ref.binding_ceilings || []).length ? `<p class="hint" style="margin-top:8px">${
+        T("res.ceiling_binds", {
+          which: ref.binding_ceilings.map(c => T(`res.ceiling.${c}`)).join(", ") })}</p>` : ""}
+    </div>` : ""}
+
+    ${ref.dispatch ? `
     <div class="card">
       <h3>${T("res.week")}</h3>
-      ${chartWeek(r.dispatch)}
+      ${chartWeek(ref.dispatch)}
       <p class="hint" style="margin-top:14px">${T("res.week.hint")}</p>
     </div>
     <div class="card">
       <h3>${T("res.year")}</h3>
-      ${chartMonths(r.dispatch.monthly)}
+      ${chartMonths(ref.dispatch.monthly)}
     </div>` : ""}
 
-    ${r.finance ? `
+    ${ref.finance ? `
     <div class="card">
       <h3>${T("fin.title")}</h3>
       <div class="figures">
-        ${figure(T("fin.irr"), r.finance.irr === null ? T("fin.irr.none")
-                 : pct(r.finance.irr * 100), "",
-                 r.finance.irr === null ? T("fin.irr.never")
-                 : (r.finance.irr_without_salvage === null || r.finance.irr_without_salvage === undefined
-                    ? T("fin.at_tariff", { tariff: `${perKwh(r.tariff_target_usd_kwh)} ${unit("/kWh")}` })
-                    : T("fin.bare_irr", { rate: pct(r.finance.irr_without_salvage * 100) })))}
+        ${figure(T("fin.irr"), ref.finance.irr === null ? T("fin.irr.none")
+                 : pct(ref.finance.irr * 100), "",
+                 ref.finance.irr === null ? T("fin.irr.never")
+                 : (ref.finance.irr_without_salvage === null
+                    || ref.finance.irr_without_salvage === undefined
+                    ? T("fin.at_tariff", {
+                        tariff: `${perKwh(ref.tariff_target_usd_kwh)} ${unit("/kWh")}` })
+                    : T("fin.bare_irr", { rate: pct(ref.finance.irr_without_salvage * 100) })))}
         ${figure(T("fin.payback"),
-                 r.finance.payback_years === null ? T("fin.payback.never")
-                 : nf(r.finance.payback_years, 1), r.finance.payback_years === null ? "" : T("fin.years"),
-                 r.finance.discounted_payback_years === null ? T("fin.disc_never")
-                 : T("fin.disc", { n: nf(r.finance.discounted_payback_years, 1) }))}
-        ${figure(T("fin.npv"), amount(r.finance.net_present_value_usd), currency.code)}
-        ${figure(T("fin.capital"), amount(r.finance.initial_capital_usd), currency.code,
-                 r.finance.subsidy_usd ? T("fin.of_which", { n: amount(r.finance.subsidy_usd) }) : null)}
+                 ref.finance.payback_years === null ? T("fin.payback.never")
+                 : nf(ref.finance.payback_years, 1),
+                 ref.finance.payback_years === null ? "" : T("fin.years"),
+                 ref.finance.discounted_payback_years === null ? T("fin.disc_never")
+                 : T("fin.disc", { n: nf(ref.finance.discounted_payback_years, 1) }))}
+        ${figure(T("fin.npv"), amount(ref.finance.net_present_value_usd), currency.code)}
+        ${figure(T("fin.capital"), amount(ref.finance.initial_capital_usd), currency.code,
+                 ref.finance.subsidy_usd
+                   ? T("fin.of_which", { n: amount(ref.finance.subsidy_usd) }) : null)}
       </div>
       <table style="margin-top:18px">
         <tr><th>${T("fin.year")}</th><th>${T("fin.investment")}</th><th>${T("fin.operating")}</th>
             <th>${T("fin.revenue")}</th><th>${T("fin.salvage")}</th><th>${T("fin.net")}</th></tr>
-        ${r.finance.cash_flows.filter(c => c.year <= 3 || c.capital > 0 ||
-            c.year === r.finance.cash_flows.length - 1).slice(0, 9).map(c => `<tr>
+        ${ref.finance.cash_flows.filter(c => c.year <= 3 || c.capital > 0 ||
+            c.year === ref.finance.cash_flows.length - 1).slice(0, 9).map(c => `<tr>
           <td>${c.year}</td><td>${c.capital ? amount(c.capital) : "—"}</td>
           <td>${c.operating ? amount(c.operating) : "—"}</td>
           <td>${c.revenue ? amount(c.revenue) : "—"}</td>
           <td>${c.salvage ? amount(c.salvage) : "—"}</td>
           <td><b>${amount(c.net)}</b></td></tr>`).join("")}
       </table>
-      ${r.infrastructure_usd ? `<p class="hint" style="margin-top:10px">${
-          T("fin.beyond_plant", { n: `${amount(r.infrastructure_usd)} ${currency.code}` })}</p>`
+      ${ref.infrastructure_usd ? `<p class="hint" style="margin-top:10px">${
+          T("fin.beyond_plant", { n: `${amount(ref.infrastructure_usd)} ${currency.code}` })}</p>`
         : `<p class="hint warn" style="margin-top:10px">${T("fin.plant_only")}</p>`}
       <p class="hint" style="margin-top:12px">${T("fin.hint")}
-         ${r.finance_unsubsidised && r.finance.subsidy_usd
-           ? T("fin.unsubsidised", { rate: r.finance_unsubsidised.irr === null
-               ? T("fin.irr.none") : pct(r.finance_unsubsidised.irr * 100) }) : ""}
+         ${ref.finance_unsubsidised && ref.finance.subsidy_usd
+           ? T("fin.unsubsidised", { rate: ref.finance_unsubsidised.irr === null
+               ? T("fin.irr.none") : pct(ref.finance_unsubsidised.irr * 100) }) : ""}
          ${T("fin.replacements")}</p>
     </div>` : ""}
 
@@ -325,133 +503,48 @@ function renderSize(r) {
       <h3>${T("res.how")}</h3>
       <table>
         <tr><th>${T("res.quantity")}</th><th>${T("res.value")}</th></tr>
-        <tr><td>${T("res.lattice")}</td><td>${nf(r.lattice_size)}</td></tr>
-        <tr><td>${T("res.pruned")}</td><td>${nf(r.pruned_points)}</td></tr>
-        <tr><td>${T("res.simulated")}</td><td>${nf(r.enumerated_points)}</td></tr>
-        <tr><td>${T("res.relaxations")}</td><td>${nf(r.relaxations)}</td></tr>
-        <tr><td>${T("res.seconds")}</td><td>${nf(r.seconds, 1)} s</td></tr>
+        <tr><td>${T("res.lattice")}</td><td>${nf(ref.lattice_size)}</td></tr>
+        <tr><td>${T("res.pruned")}</td><td>${nf(ref.pruned_points)}</td></tr>
+        <tr><td>${T("res.simulated")}</td><td>${nf(ref.enumerated_points)}</td></tr>
+        <tr><td>${T("res.relaxations")}</td><td>${nf(ref.relaxations)}</td></tr>
+        <tr><td>${T("plan.evaluations")}</td><td>${nf(e.search_evaluations)}</td></tr>
+        <tr><td>${T("res.seconds")}</td><td>${nf(ref.seconds, 1)} s</td></tr>
       </table>
       <p class="hint" style="margin-top:12px">${T("res.coverage")}</p>
-      <div style="margin-top:16px;display:flex;gap:10px">
-        <button class="btn quiet" onclick="exportResult('size','csv')">${T("action.export_csv")}</button>
-        <button class="btn quiet" onclick="exportResult('size','json')">${T("action.export_json")}</button>
-        <button class="btn quiet" onclick="printReport()">${T("action.print")}</button>
-      </div>
-    </div>`;
-}
-
-function renderPlan(r) {
-  if (r && r.currency) currency = r.currency;
-  if (!r) {
-    $("#plan").innerHTML = `<div class="card empty"><h4>${T("plan.none.title")}</h4>
-      <p>${T("plan.none.body")}</p></div>`;
-    return;
-  }
-  const p = r.root_plan, e = r.expected, total = p.pv_kw + (p.pv_ac_kw || 0);
-  // Milestone years live in the reduction record, keyed by year; r.stages holds indices,
-  // and reading a year out of it labelled the first branch "year 1" instead of "year 5".
-  const milestones = Object.keys(r.reduction_error || {}).map(Number).sort((a, b) => a - b);
-  const branchYear = milestones[1] ?? "suivante";
-  const stage1 = (r.per_node || []).filter(n => n.stage === 1)
-    .sort((a, b) => b.probability - a.probability);
-  $("#plan").innerHTML = `
-    <div class="card">
-      <h3>${T("plan.commit")} — ${r.site}</h3>
-      <div class="figures">
-        ${figure(T("res.pv"), nf(total, 1), "kW",
-                 p.pv_ac_kw ? `${nf(p.pv_kw,1)} ${T("res.battery_bus")} · ${nf(p.pv_ac_kw,1)} ${T("res.load_bus")}` : null)}
-        ${figure("Stockage", nf(p.battery_kwh), "kWh")}
-        ${figure("Conversion", nf(p.inverter_kw, 1), "kW")}
-        ${figure("Groupe", nf(p.generator_kw), "kW")}
-      </div>
-    </div>
-
-    <div class="card">
-      <h3>${T("plan.future")}</h3>
-      <table>
-        <tr><th>${T("plan.branch")} ${branchYear}</th><th>${T("plan.probability")}</th>
-            <th>${T("plan.energy")}</th><th>${T("res.pv")}</th><th>${T("res.storage")}</th></tr>
-        ${stage1.map((n, i) => {
-          const array = n.pv_kw + (n.pv_ac_kw || 0);
-          const grows = array > total + 1e-6 || n.battery_kwh > p.battery_kwh + 1e-6;
-          return `<tr>
-            <td>${i + 1}<span style="color:var(--ink-soft)"> — ${grows ? T("plan.enlarge") : T("plan.hold")}${
-              n.grid_connected ? `, ${T("plan.grid_here")}` : ""}</span></td>
-            <td>${pct(n.probability * 100, 0)}</td>
-            <td>${nf(n.energy_served_kwh / 1000, 1)} MWh</td>
-            <td>${nf(array, 1)} kW</td>
-            <td>${nf(n.battery_kwh)} kWh</td></tr>`;
-        }).join("")}
-      </table>
-      <p class="hint" style="margin-top:12px">${T("plan.tree", { nodes: nf(r.nodes), leaves: nf(r.leaves) })}</p>
-    </div>
-
-    <div class="card">
-      <h3>${T("plan.cost")}</h3>
-      <div class="figures">
-        ${figure(T("plan.expected_lcoe"), perKwh(e.expected_lcoe_usd_kwh), unit("/kWh"))}
-        ${figure(T("plan.expected_cost"), amount(e.expected_rule_cost_usd), currency.code)}
-        ${figure(T("plan.gap"), pct(e.price_of_heuristic_pct), "")}
-        ${figure(T("plan.evaluations"), nf(e.search_evaluations), "")}
-      </div>
-      <p class="hint" style="margin-top:12px">${T("plan.upper")}</p>
-      <div style="margin-top:16px;display:flex;gap:10px">
-        <button class="btn quiet" onclick="exportResult('plan','csv')">${T("action.export_csv")}</button>
-        <button class="btn quiet" onclick="exportResult('plan','json')">${T("action.export_json")}</button>
+      <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn quiet" onclick="exportResult('csv')">${T("action.export_csv")}</button>
+        <button class="btn quiet" onclick="exportResult('json')">${T("action.export_json")}</button>
         <button class="btn quiet" onclick="printReport()">${T("action.print")}</button>
       </div>
     </div>`;
 }
 
 
-/* ------------------------------------------------------------------ community */
-let map = null, marqueur = null;
+/* ------------------------------------------------------------------ the new project page
+   Everything asked for here comes off a field survey: a name, a point on a map, a count of
+   households by type and a roster of the enterprises the village runs. Nothing on this page
+   has to be guessed at a desk, and nothing that can be derived is asked for -- the time zone
+   follows from the longitude, and the interface reads it there rather than inviting an hour
+   of error into the one place a storage sizing is least able to absorb it. */
+let map = null, pin = null;
 
 function renderCommunity() {
   const s = state.site || {};
   const tpl = s.origin === "template";
+  const roster = s.productive_mix || {};
+  const lock = tpl ? " disabled" : "";
+
   $("#lieu").innerHTML = `
     <div class="card">
-      <h3>${T("site.card")}</h3>
       <div class="field">
-        <div><label for="site-pick">${T("site.picker")}</label>
-          <div class="hint">${T("site.picker.hint")}</div></div>
-        <div class="control">
-          <select id="site-pick">${state.sites.map(x =>
-            `<option value="${x.name}"${x.name === s.name ? " selected" : ""}>${x.name}${
-              x.origin === "template" ? T("site.example") : ""}</option>`).join("")}
-            <option value="__new__">${T("site.new")}</option>
-          </select>
-        </div>
+        <div><label for="project-name">${T("proj.name")}</label>${info("proj.name.hint")}</div>
+        <div class="control"><input id="project-name" type="text"
+             placeholder="${esc(T("proj.placeholder"))}" value="${esc(state.projectName)}"></div>
       </div>
       <div class="field">
-        <div><label for="site-name">${T("site.name")}</label></div>
-        <div class="control"><input id="site-name" type="text" value="${s.name ?? ""}"
-             ${tpl ? "disabled" : ""}></div>
-      </div>
-      <div class="field">
-        <div><label for="hh1">${T("site.households")}</label>
-          <div class="hint">${T("site.households.hint")}</div></div>
-        <div class="control" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
-          ${["HH1", "HH2", "HH3"].map(t => `<div>
-             <label for="${t.toLowerCase()}" style="font-size:11.5px;color:var(--ink-faint)">${t}</label>
-             <input id="${t.toLowerCase()}" type="number" min="0" step="1"
-               value="${(s.census || {})[t] ?? 0}" ${tpl ? "disabled" : ""}></div>`).join("")}
-        </div>
-      </div>
-      <div class="field">
-        <div><label for="pue">${T("site.productive")}</label>
-          <div class="hint">${T("site.productive.hint")}</div></div>
-        <div class="control"><input id="pue" type="number" min="0" step="1"
-             placeholder="${T("site.estimated")}" value="${s.productive_units ?? ""}"
-             ${tpl ? "disabled" : ""}></div>
-      </div>
-      <div class="field">
-        <div><label for="utc">${T("site.utc")}</label>
-          <div class="hint">${T("site.utc.hint")}</div></div>
-        <div class="control"><input id="utc" type="number" min="-12" max="14" step="1"
-             value="${s.utc_offset_hours ?? 1}" ${tpl ? "disabled" : ""}>
-          <span class="unit" id="utc-hint"></span></div>
+        <div><label for="site-name">${T("site.name")}</label>${info("site.name.hint")}</div>
+        <div class="control"><input id="site-name" type="text"
+             value="${esc(s.name ?? "")}"${lock}></div>
       </div>
     </div>
 
@@ -465,59 +558,124 @@ function renderCommunity() {
           <input id="lon" type="number" step="0.0001" value="${s.longitude ?? ""}"></div>
       </div>
       <p class="hint" style="margin-top:12px">${T("site.map.hint")}</p>
+      <p class="hint" id="utc-derived" style="margin-top:6px"></p>
+      <div class="hidden" id="utc-fix" style="margin-top:8px;display:flex;gap:8px;
+           align-items:center;max-width:280px">
+        <label for="utc" style="font-size:12.5px;color:var(--ink-soft)">${T("site.utc")}</label>
+        <input id="utc" type="number" min="-12" max="14" step="1" style="width:84px">
+      </div>
       <div style="margin-top:16px;display:flex;gap:10px;align-items:center">
-        ${tpl ? "" : `<button class="btn primary" id="site-save">${T("action.save_site")}</button>`}
         <button class="btn quiet" id="get-resource"
           ${s.latitude == null ? "disabled" : ""}>${T("action.fetch_resource")}</button>
         ${s.has_resource ? `<span class="badge ok">${T("site.series.have")}</span>`
                          : `<span class="badge warn">${T("site.series.none")}</span>`}
-        ${tpl ? "" : `<div class="spacer" style="flex:1"></div>
+        ${tpl || !state.sites.some(x => x.name === s.name) ? "" : `
+          <div class="spacer" style="flex:1"></div>
           <button class="btn link" id="site-drop">${T("action.delete")}</button>`}
       </div>
       ${s.has_resource ? "" : `<p class="hint" style="margin-top:10px">${T("site.series.hint")}</p>`}
+    </div>
+
+    <div class="card">
+      <div class="field wide">
+        <div><label for="hh1">${T("site.households")}</label>${info("site.households.hint")}</div>
+        <div class="control" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+          ${["HH1", "HH2", "HH3"].map(k => `<div>
+             <label for="${k.toLowerCase()}"
+               style="font-size:11.5px;color:var(--ink-faint)">${k}</label>
+             <input id="${k.toLowerCase()}" type="number" min="0" step="1"
+               value="${(s.census || {})[k] ?? 0}"${lock}></div>`).join("")}
+        </div>
+      </div>
+      <div class="field wide">
+        <div><label>${T("site.productive")}</label>${info("site.productive.hint")}</div>
+        <div class="control">
+          <div class="roster">
+            ${state.classes.map(c => {
+              const n = roster[c.key] || 0;
+              return `<label class="pue${n ? " on" : ""}" data-class="${esc(c.key)}">
+                <input type="checkbox" data-pue="${esc(c.key)}"${n ? " checked" : ""}${lock}>
+                <span class="lbl">${esc(c.label)}${info(`pue.${c.key}.hint`)}</span>
+                <input type="number" min="0" step="1" data-count="${esc(c.key)}"
+                  aria-label="${esc(c.label)} — ${esc(T("pue.count"))}"
+                  value="${n || ""}" placeholder="0"${n ? "" : " disabled"}${lock}>
+              </label>`;
+            }).join("")}
+          </div>
+          <div class="roster-foot" id="pue-total"></div>
+        </div>
+      </div>
     </div>`;
 
-  $("#site-pick").onchange = e => {
-    if (e.target.value === "__new__") {
-      state.site = { name: T("site.new.name"), origin: "user",
-                     census: { HH1: 120, HH2: 0, HH3: 0 }, n_households: 120,
-                     productive_units: null, latitude: null, longitude: null,
-                     utc_offset_hours: 1 };
-    } else {
-      state.site = state.sites.find(x => x.name === e.target.value);
-      state.overrides["site"] = state.site.name;
-      const array = $("#f-site");
-      if (array) array.value = state.site.name;
-    }
-    renderCommunity(); loadArchetypes();
-  };
-  const save = $("#site-save");
-  if (save) save.onclick = saveSite;
+  $("#project-name").oninput = e => state.projectName = e.target.value;
+
   const drop = $("#site-drop");
   if (drop) drop.onclick = async () => {
     await fetch(`/api/sites/${encodeURIComponent(state.site.name)}`, { method: "DELETE" });
+    state.site = null;
     await refreshSites();
+    openHome();
   };
   $("#get-resource").onclick = async () => {
-    if (!state.site.has_resource && state.site.origin === "user") await saveSite();
+    if (!state.site.has_resource && state.site.origin === "user" && !(await saveSite())) return;
     const r = await fetch(`/api/sites/${encodeURIComponent(state.site.name)}/resource`,
                           { method: "POST" });
     state.job = await r.json();
     buttons(false); $("#cancel").classList.remove("hidden"); poll();
   };
-  ["lat", "lon"].forEach(id => $("#" + id).addEventListener("change", () => {
-    const latitude = parseFloat($("#lat").value), longitude = parseFloat($("#lon").value);
-    if (Number.isFinite(latitude) && Number.isFinite(longitude)) place(latitude, longitude, true);
-  }));
-  suggestTimezone();
-  $("#lon").addEventListener("change", suggestTimezone);
 
+  ["lat", "lon"].forEach(id => $("#" + id).addEventListener("change", () => {
+    const lat = parseFloat($("#lat").value), lon = parseFloat($("#lon").value);
+    if (Number.isFinite(lat) && Number.isFinite(lon)) place(lat, lon, true);
+    showTimezone();
+  }));
+
+  $$("#lieu input[data-pue]").forEach(box => box.onchange = e => {
+    const key = e.target.dataset.pue;
+    const count = $(`#lieu input[data-count="${key}"]`);
+    count.disabled = !e.target.checked;
+    if (e.target.checked && !count.value) count.value = 1;
+    if (!e.target.checked) count.value = "";
+    e.target.closest(".pue").classList.toggle("on", e.target.checked);
+    readRoster();
+  });
+  $$("#lieu input[data-count]").forEach(box => box.oninput = readRoster);
+
+  readRoster();
+  showTimezone();
   mountMap(s.latitude, s.longitude);
+}
+
+/* The roster the reader has ticked, kept on the site as it is typed so that a page rebuilt
+   in another language, or returned to from the next step, still holds it. */
+function readRoster() {
+  const mix = {};
+  $$("#lieu input[data-count]").forEach(box => {
+    const n = parseInt(box.value || "0", 10);
+    if (Number.isFinite(n) && n > 0) mix[box.dataset.count] = n;
+  });
+  if (state.site) state.site.productive_mix = mix;
+  const total = Object.values(mix).reduce((a, b) => a + b, 0);
+  const foot = $("#pue-total");
+  if (foot) foot.textContent = total ? T("pue.total", { n: nf(total) }) : T("pue.none");
 }
 
 function mountMap(lat, lon) {
   const host = $("#map");
-  if (!host || typeof L === "undefined") return;
+  if (!host) return;
+  // The page is rebuilt on every language change and on every move between communities,
+  // and each rebuild is a new container. The old map and the old marker have to go with the
+  // old container: keeping the marker meant a point placed afterwards was moved on a map
+  // that had already been thrown away, and the new one showed nothing.
+  if (map) { try { map.remove(); } catch { /* already detached with its container */ } }
+  map = null; pin = null;
+  // Leaflet is vendored, but its tiles are not: with no network the map is a grey box, and
+  // a grey box with nothing written in it reads as a broken page rather than as a missing
+  // connection. The coordinates below remain the authority either way.
+  if (typeof L === "undefined") {
+    host.outerHTML = `<div class="offline" id="map">${T("site.map.hint")}</div>`;
+    return;
+  }
   map = L.map(host, { attributionControl: true })
            .setView([lat ?? 9.5, lon ?? 2.3], lat == null ? 5 : 13);
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
@@ -528,67 +686,107 @@ function mountMap(lat, lon) {
   if (lat != null && lon != null) place(lat, lon, false);
 }
 
-function place(lat, lon, recentrer) {
+function place(lat, lon, recentre) {
   if (!state.site) return;
   state.site.latitude = Math.round(lat * 1e6) / 1e6;
   state.site.longitude = Math.round(lon * 1e6) / 1e6;
   $("#lat").value = state.site.latitude;
   $("#lon").value = state.site.longitude;
   $("#get-resource").disabled = false;
+  showTimezone();
   if (!map) return;
-  if (marqueur) marqueur.setLatLng([lat, lon]);
-  else marqueur = L.marker([lat, lon], { draggable: true }).addTo(map)
-                   .on("dragend", ev => {
-                     const p = ev.target.getLatLng(); place(p.lat, p.lng, false);
-                   });
-  if (recentrer) map.setView([lat, lon], Math.max(map.getZoom(), 13));
+  if (pin) pin.setLatLng([lat, lon]);
+  else pin = L.marker([lat, lon], { draggable: true }).addTo(map)
+               .on("dragend", ev => { const p = ev.target.getLatLng(); place(p.lat, p.lng, false); });
+  if (recentre) map.setView([lat, lon], Math.max(map.getZoom(), 13));
 }
 
-function suggestTimezone() {
-  // The sun, not the state: solar noon follows longitude, and the zone a country keeps is
-  // often an hour or more away from it. The suggestion is a starting point the developer
-  // corrects, not an answer -- which is why it is shown beside the box and not written into it.
-  const longitude = parseFloat($("#lon")?.value);
-  const array = $("#utc-hint");
-  if (!array) return;
-  if (!Number.isFinite(longitude)) { array.textContent = ""; return; }
-  const solar = Math.round(longitude / 15);
-  const typed = parseInt($("#utc")?.value ?? "1", 10);
-  array.textContent = typed === solar ? `h` : `h · ${T("site.solar_noon")}${solar >= 0 ? "+" : ""}${solar}`;
+/* Not a question any more, an observation. Solar noon follows longitude at fifteen degrees
+   an hour and the zone a country keeps is usually the nearest whole hour to it; the server
+   derives the same figure from the same coordinate, and this only says what it will be, and
+   where to correct it for the countries that keep another. */
+function showTimezone() {
+  const line = $("#utc-derived");
+  if (!line) return;
+  const lon = parseFloat($("#lon")?.value);
+  if (!Number.isFinite(lon)) { line.textContent = ""; return; }
+  const derived = Math.round(lon / 15);
+  const minutes = Math.round((derived - lon / 15) * 60);
+  const solar = minutes >= 0 ? `12:${String(minutes).padStart(2, "0")}`
+                             : `11:${String(60 + minutes).padStart(2, "0")}`;
+  const box = $("#utc");
+  const chosen = state.site?.utc_offset_hours;
+  if (box && box.value === "") box.value = chosen ?? derived;
+  line.innerHTML = `${esc(T("site.utc.derived",
+      { offset: `${derived >= 0 ? "+" : ""}${derived}`, solar }))}
+    <button class="btn link" type="button" id="utc-show"
+      style="font-size:12.5px">${T("site.utc.adjust")}</button>${info("site.utc.adjust.hint")}`;
+  $("#utc-show").onclick = () => $("#utc-fix").classList.toggle("hidden");
+  if (box) box.oninput = () => {
+    const v = parseInt(box.value, 10);
+    if (state.site) state.site.utc_offset_hours = Number.isFinite(v) ? v : null;
+  };
+}
+
+function fail(key) {
+  setState(`<b>${T("state.failed")}</b> ${T(key)}`, null);
+  return false;
 }
 
 async function saveSite() {
   const s = state.site;
-  const pue = $("#pue").value.trim();
+  if (!s || s.origin === "template") return true;
+  const name = ($("#site-name")?.value || s.name || "").trim();
+  const lat = parseFloat($("#lat").value), lon = parseFloat($("#lon").value);
+  readRoster();
+  const census = Object.fromEntries(["HH1", "HH2", "HH3"].map(
+    k => [k, parseInt($("#" + k.toLowerCase()).value || 0, 10)]));
+  const households = Object.values(census).reduce((a, b) => a + b, 0);
+  // Said before the request rather than after it: a name, a point and somebody to connect
+  // are what the rest of the study is built on, and a run that fails a minute in for want
+  // of one of them is a worse way to find out.
+  if (!name) return fail("state.need_name");
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return fail("state.need_point");
+  if (households <= 0) return fail("state.need_households");
   const body = {
-    name: ($("#site-name")?.value || s.name).trim(),
-    latitude: parseFloat($("#lat").value), longitude: parseFloat($("#lon").value),
-    census: Object.fromEntries(["HH1", "HH2", "HH3"].map(
-      t => [t, parseInt($("#" + t.toLowerCase()).value || 0, 10)])),
-    productive_units: pue === "" ? null : parseInt(pue, 10),
-    utc_offset_hours: parseInt($("#utc").value || 1, 10),
+    name, latitude: lat, longitude: lon, census,
+    productive_mix: state.site.productive_mix || {},
   };
+  const offset = parseInt($("#utc")?.value ?? "", 10);
+  if (Number.isFinite(offset) && offset !== Math.round(lon / 15)) body.utc_offset_hours = offset;
   const r = await fetch("/api/sites", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
   });
-  if (!r.ok) { setState(T("state.site_failed"), null); return; }
+  if (!r.ok) { setState(T("state.site_failed"), null); return false; }
   state.overrides["site"] = body.name;
   await refreshSites(body.name);
+  await saveProject();
   setState(T("state.site_saved", { name: body.name }), null);
+  return true;
 }
 
 async function refreshSites(select) {
   state.sites = await (await fetch("/api/sites")).json();
   const name = select || state.overrides["site"];
   state.site = state.sites.find(x => x.name === name) || state.sites[0];
-  const array = $("#f-site");
-  if (array) {
-    array.innerHTML = state.sites.map(
-      x => `<option value="${x.name}"${x.name === state.site.name ? " selected" : ""}>${x.name}</option>`).join("");
-  }
   state.overrides["site"] = state.site.name;
-  renderCommunity(); await loadArchetypes();
+  renderCommunity();
+  await loadArchetypes();
+}
+
+/* The study is saved as the reader moves through it rather than behind a button they have
+   to remember. A project that exists only in a window is one lost to a closed window. */
+async function saveProject() {
+  const name = (state.projectName || state.site?.name || "").trim();
+  if (!name) return;
+  state.projectName = name;
+  const r = await fetch("/api/projects", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, overrides: state.overrides,
+                           results: { size: state.result } })
+  });
+  if (r.ok) state.projects = await (await fetch("/api/projects")).json();
 }
 
 /* ------------------------------------------------------------------ archetypes */
@@ -618,7 +816,7 @@ function renderArchetypes() {
       ${a.archetypes.map(x => `
         <div class="arch">
           <div class="who"><b>${x.label}</b>
-            <span>${x.share_pct} % ${T("arch.share")} · ${x.n_observations} ${T("arch.records")}
+            <span>${nf(x.share_pct, 1)} ${T("arch.share")} · ${nf(x.n_observations)} ${T("arch.records")}
               ${x.well_supported ? "" : ` · <b>${T("arch.weak")}</b>`}</span></div>
           <div><input type="number" step="0.001" data-c="${x.cluster}" data-k="mean_daily_kwh"
                value="${x.mean_daily_kwh}"></div>
@@ -680,12 +878,12 @@ function printReport() {
   setTimeout(() => header.remove(), 500);
 }
 
-async function exportResult(kind, format) {
-  const result = state.results[kind];
+async function exportResult(format) {
+  const result = state.result;
   if (!result) return;
   const r = await fetch(`/api/export.${format}`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ kind, result, lang: state.lang })
+    body: JSON.stringify({ result, lang: state.lang })
   });
   const blob = await r.blob();
   const name = (r.headers.get("Content-Disposition") || "").match(/filename="([^"]+)"/);
@@ -696,56 +894,331 @@ async function exportResult(kind, format) {
   URL.revokeObjectURL(a.href);
 }
 
-function renderProjects() {
-  const options = state.projects.map(
-    p => `<option value="${p.slug}">${p.name}${p.site ? ` — ${p.site}` : ""}</option>`).join("");
-  $("#projects").innerHTML = `
-    <span class="name">${T("proj.label")}</span>
-    <input id="project-name" placeholder="${T("proj.placeholder")}" value="${state.projectName}">
-    <button class="btn quiet" id="save">${T("action.save")}</button>
-    <div class="spacer"></div>
-    ${state.projects.length ? `<select id="open"><option value="">${T("action.open")}</option>${options}</select>
-       <button class="btn link" id="drop">${T("action.delete")}</button>` : ""}`;
+/* ------------------------------------------------------------------ the front door
+   Drawn, not photographed. A picture of a rural mini-grid would have to be licensed,
+   shipped and kept, and would show one village while the tool is for any; a drawing costs
+   nothing to carry and renders in a field office with no network. */
 
-  $("#project-name").oninput = e => state.projectName = e.target.value;
-  $("#save").onclick = async () => {
-    const r = await fetch("/api/projects", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: state.projectName || "Sans name",
-                             overrides: state.overrides, results: state.results })
-    });
-    if (r.ok) { await refreshProjects(); setState(T("state.saved"), null); }
-  };
-  const open = $("#open");
-  if (open) open.onchange = async e => {
-    if (!e.target.value) return;
-    const p = await (await fetch(`/api/projects/${e.target.value}`)).json();
-    state.overrides = { ...state.overrides, ...p.overrides };
-    state.projectName = p.name;
-    state.results = p.results || { size: null, plan: null };
-    for (const g of state.groups) for (const f of g.fields)
-      if (p.overrides[f.path] !== undefined) f.value = p.overrides[f.path];
-    renderForm(); renderProjects();
-    renderSize(state.results.size); renderPlan(state.results.plan);
-    setState(T("proj.opened", { name: p.name }), null);
-  };
-  const drop = $("#drop");
-  if (drop) drop.onclick = async () => {
-    const slug = $("#open").value;
-    if (!slug) return;
-    await fetch(`/api/projects/${slug}`, { method: "DELETE" });
-    await refreshProjects();
-  };
+function heroArt() {
+  return `<svg viewBox="0 0 640 380" role="img" aria-label="${esc(T("home.art.alt"))}">
+    <defs>
+      <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#8ec5e8"/><stop offset=".58" stop-color="#ffdcb0"/>
+        <stop offset="1" stop-color="#ffc58a"/>
+      </linearGradient>
+      <linearGradient id="soil" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#dcb888"/><stop offset="1" stop-color="#b98d55"/>
+      </linearGradient>
+      <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#2d5075"/><stop offset="1" stop-color="#1a3151"/>
+      </linearGradient>
+    </defs>
+
+    <rect width="640" height="380" fill="url(#sky)"/>
+    <circle cx="512" cy="96" r="70" fill="#ffd166" opacity=".2"/>
+    <circle cx="512" cy="96" r="40" fill="#ffd166"/>
+
+    <!-- the far bush, flat so that it reads as distance and not as detail -->
+    <path d="M0 214 Q76 190 148 210 T292 204 Q372 182 448 206 T596 200 Q620 194 640 208
+             L640 246 L0 246 Z" fill="#9db77c" opacity=".5"/>
+    <rect y="230" width="640" height="150" fill="url(#soil)"/>
+
+    <!-- an acacia, because a savannah with no tree in it reads as a car park -->
+    <g>
+      <path d="M52 272 L52 224" stroke="#6b4f2f" stroke-width="4.5" fill="none"/>
+      <ellipse cx="52" cy="220" rx="34" ry="10" fill="#7ca055"/>
+      <path d="M22 222 Q52 202 82 222 Q52 212 22 222 Z" fill="#6f8f4e"/>
+    </g>
+
+    <!-- the village: round earth walls, conical thatch -->
+    <g>
+      <ellipse cx="146" cy="292" rx="54" ry="9" fill="#000" opacity=".08"/>
+      <rect x="114" y="248" width="64" height="44" rx="4" fill="#c9a279"/>
+      <path d="M102 250 L146 206 L190 250 Z" fill="#a8763f"/>
+      <path d="M112 248 L146 212 M128 248 L146 214 M164 248 L146 214 M180 248 L146 212"
+            stroke="#8d6134" stroke-width="1.4" opacity=".55"/>
+      <rect x="137" y="266" width="18" height="26" rx="2" fill="#7a5a3c"/>
+      <circle cx="166" cy="242" r="3" fill="#ffd166"/>
+    </g>
+    <g>
+      <ellipse cx="238" cy="286" rx="40" ry="7" fill="#000" opacity=".08"/>
+      <rect x="214" y="254" width="48" height="32" rx="4" fill="#d0aa83"/>
+      <path d="M204 256 L238 224 L272 256 Z" fill="#b5834a"/>
+      <rect x="232" y="268" width="13" height="18" rx="2" fill="#7a5a3c"/>
+      <circle cx="254" cy="248" r="2.6" fill="#ffd166"/>
+    </g>
+
+    <!-- the power house: the plant the tool sizes, and the room its storage sits in -->
+    <g>
+      <ellipse cx="338" cy="292" rx="46" ry="8" fill="#000" opacity=".07"/>
+      <rect x="306" y="252" width="66" height="40" rx="3" fill="#ece8e0"/>
+      <path d="M300 252 L339 232 L378 252 Z" fill="#949aa3"/>
+      <rect x="332" y="272" width="15" height="20" rx="1.5" fill="#6f7681"/>
+      <rect x="313" y="260" width="13" height="9" rx="1.5" fill="#9fc4de"/>
+      <rect x="354" y="260" width="13" height="9" rx="1.5" fill="#9fc4de"/>
+    </g>
+
+    <!-- the array, tilted south, on its frames -->
+    <g>
+      <ellipse cx="500" cy="312" rx="122" ry="11" fill="#000" opacity=".07"/>
+      ${[[398, 268], [472, 282], [546, 268]].map(([x, y]) => `
+        <g transform="translate(${x} ${y})">
+          <path d="M0 0 L86 0 L73 -34 L-13 -34 Z" fill="url(#glass)"/>
+          <path d="M-13 -34 L73 -34 L86 0 L0 0 Z" fill="none" stroke="#16293f"
+                stroke-width="1.6"/>
+          <path d="M8 0 L-5 -34 M30 0 L17 -34 M52 0 L39 -34 M73 0 L60 -34"
+                stroke="#4f7ba6" stroke-width=".9" opacity=".65"/>
+          <path d="M-6 -17 L79 -17" stroke="#4f7ba6" stroke-width=".9" opacity=".65"/>
+          <rect x="15" y="0" width="5" height="24" fill="#7d7f85"/>
+          <rect x="58" y="0" width="5" height="17" fill="#7d7f85"/>
+        </g>`).join("")}
+    </g>
+
+    <!-- the low-voltage line: what the plant is worth nothing without, and what the tool
+         now prices alongside it -->
+    <g stroke="#6b6f76" stroke-width="2.2" fill="none">
+      <path d="M96 292 L96 196"/><path d="M204 288 L204 204"/><path d="M296 292 L296 212"/>
+      <path d="M96 202 Q150 218 204 210" stroke-width="1.4"/>
+      <path d="M204 210 Q252 224 296 218" stroke-width="1.4"/>
+      <path d="M86 204 L106 204"/><path d="M194 212 L214 212"/>
+    </g>
+    <circle cx="96" cy="194" r="3.4" fill="#ffd166"/>
+    <circle cx="204" cy="202" r="3.4" fill="#ffd166"/>
+  </svg>`;
 }
 
-async function refreshProjects() {
-  state.projects = await (await fetch("/api/projects")).json();
-  renderProjects();
+
+const ICONS = {
+  new: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 3h9l5 5v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/>
+          <path d="M14 3v5h5"/><path d="M12 11v7"/><path d="M8.5 14.5h7"/></svg>`,
+  open: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+           stroke-linecap="round" stroke-linejoin="round">
+           <path d="M3 7a1 1 0 0 1 1-1h5l2 2.5h8a1 1 0 0 1 1 1V19a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z"/>
+           <path d="M3 11h18"/></svg>`,
+  test: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+           stroke-linecap="round" stroke-linejoin="round">
+           <path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z"/>
+           <path d="M12 3c-3 3.4-3 14.6 0 18"/><path d="M12 3c3 3.4 3 14.6 0 18"/>
+           <path d="M3.5 9.5h17"/><path d="M3.5 14.5h17"/></svg>`,
+};
+
+/* A drawn day, not a computed one: the shape of a plant running on its array by day, on
+   its storage in the evening and on its generating set at the tail of a bad night. */
+function sparkDay() {
+  const W = 260, H = 96, n = 24;
+  const pv   = [0,0,0,0,0,0,.6,3.4,7.2,10.4,12.6,13.4,13.1,12.2,10.2,7.1,3.6,.9,0,0,0,0,0,0];
+  const bat  = [1.2,1,.9,.8,.8,1,1.4,.6,0,0,0,0,0,0,0,0,2.6,6.4,8.2,7.4,5.6,4,2.6,1.7];
+  const gen  = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1.6,2.4,1.2,0,0,0];
+  const load = pv.map((v, i) => Math.min(v, 9) + bat[i] + gen[i]);
+  const ymax = Math.max(...load, ...pv) * 1.12;
+  const x = i => (i / (n - 1)) * W;
+  const y = v => H - (v / ymax) * H;
+  const band = (values, base, colour) => {
+    const top = values.map((v, i) => base[i] + v);
+    const pts = top.map((v, i) => `${x(i)},${y(v)}`).join(" ");
+    const back = base.map((v, i) => `${x(i)},${y(v)}`).reverse().join(" ");
+    return { poly: `<polygon points="${pts} ${back}" fill="${colour}" fill-opacity=".9"/>`,
+             top };
+  };
+  const zero = new Array(n).fill(0);
+  const a = band(pv.map(v => Math.min(v, 9)), zero, COLOURS.pv_load);
+  const b = band(bat, a.top, COLOURS.discharge);
+  const c = band(gen, b.top, COLOURS.generator);
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img"
+      aria-label="${esc(T("home.sample.dispatch"))}" style="height:96px">
+      ${a.poly}${b.poly}${c.poly}
+      <polyline points="${load.map((v, i) => `${x(i)},${y(v)}`).join(" ")}"
+        fill="none" stroke="var(--ink)" stroke-width="1.4"/>
+    </svg>
+    <div class="legend" style="margin-top:10px">
+      <span><i style="background:${COLOURS.pv_load}"></i>${T("chart.pv_load")}</span>
+      <span><i style="background:${COLOURS.discharge}"></i>${T("chart.discharge")}</span>
+      <span><i style="background:${COLOURS.generator}"></i>${T("chart.generator")}</span>
+    </div>`;
 }
+
+/* The sample is the published certificate for Samionta under mixed coupling, not invented
+   numbers: a homepage that shows a plausible plant and a plausible tariff is read as a
+   result whatever the caption says, so the figures shown are ones the tool has produced. */
+const SAMPLE = { pv_kw: 57.5, battery_kwh: 135, inverter_kw: 25, generator_kw: 8,
+                 lcoe: 0.2104, tariff: 0.263 };
+
+function renderHome() {
+  $("#hero-art").innerHTML = heroArt();
+  $("#icon-new").innerHTML = ICONS.new;
+  $("#icon-open").innerHTML = ICONS.open;
+  $("#icon-test").innerHTML = ICONS.test;
+
+  const row = (k, v, u) => `<div class="row"><span>${k}</span><b>${v}<small
+      style="font-weight:500;color:var(--ink-soft)"> ${u}</small></b></div>`;
+  $("#samples").innerHTML = `
+    <div class="sample">
+      <h3>${T("home.sample.plant")}</h3>
+      <div class="rows">
+        ${row(T("res.pv"), nf(SAMPLE.pv_kw, 1), "kW")}
+        ${row(T("res.storage"), nf(SAMPLE.battery_kwh), "kWh")}
+        ${row(T("res.conversion"), nf(SAMPLE.inverter_kw), "kW")}
+        ${row(T("res.generator"), nf(SAMPLE.generator_kw), "kW")}
+      </div>
+    </div>
+    <div class="sample">
+      <h3>${T("home.sample.dispatch")}</h3>
+      ${sparkDay()}
+    </div>
+    <div class="sample">
+      <h3>${T("home.sample.tariff")}</h3>
+      <div class="big">${nf(SAMPLE.lcoe, 3)}<small>USD/kWh</small></div>
+      <p class="under">${T("res.target")} ${nf(SAMPLE.tariff, 3)} USD/kWh · ${
+        T("res.subsidy.met")}</p>
+    </div>`;
+
+  // Saved studies and shipped villages, each opening straight onto the page it belongs on.
+  // Listed rather than folded into a drop-down: a developer coming back to a village wants
+  // to see which studies they have of it, not to search for one by name.
+  const saved = $("#home-projects");
+  saved.innerHTML = state.projects.length
+    ? state.projects.map(p => `<div class="saved">
+        <button class="btn" data-open="${esc(p.slug)}">${esc(p.name)}
+          <span class="sub">${esc(p.site || "")}${p.has_result
+            ? ` · ${T("home.open.answered")}` : ""}</span></button>
+        <button class="drop" data-drop="${esc(p.slug)}"
+          aria-label="${esc(T("action.delete"))}">×</button>
+      </div>`).join("")
+    : `<span class="none">${T("home.open.none")}</span>`;
+  $$("#home-projects [data-open]").forEach(b => b.onclick = () => openProject(b.dataset.open));
+  $$("#home-projects [data-drop]").forEach(b => b.onclick = async () => {
+    await fetch(`/api/projects/${b.dataset.drop}`, { method: "DELETE" });
+    state.projects = await (await fetch("/api/projects")).json();
+    renderHome();
+  });
+
+  $("#home-examples").innerHTML = state.sites.filter(x => x.origin === "template")
+    .map(x => `<button class="btn" data-example="${esc(x.name)}">${esc(x.name)}
+        <span class="sub">${nf(x.n_households)} ${T("home.households")}</span>
+      </button>`).join("");
+  $$("#home-examples .btn").forEach(b => b.onclick = () => openExample(b.dataset.example));
+
+  $("#door-new").onclick = startNewProject;
+}
+
+function openHome() {
+  $("#home").classList.remove("hidden");
+  $("#study").classList.add("hidden");
+  window.scrollTo(0, 0);
+}
+
+function openStudy(page) {
+  $("#home").classList.add("hidden");
+  $("#study").classList.remove("hidden");
+  show(page || "project");
+}
+
+function startNewProject() {
+  state.projectName = "";
+  state.result = null;
+  state.reached = 1;
+  state.site = { name: T("site.new.name"), origin: "user",
+                 census: { HH1: 0, HH2: 0, HH3: 0 }, n_households: 0,
+                 productive_units: null, productive_mix: {},
+                 latitude: null, longitude: null };
+  renderCommunity();
+  renderSizing(null);
+  openStudy("project");
+  loadArchetypes();
+}
+
+async function openProject(slug) {
+  const p = await (await fetch(`/api/projects/${slug}`)).json();
+  state.overrides = { ...state.overrides, ...p.overrides };
+  state.projectName = p.name;
+  state.result = (p.results || {}).size || null;
+  state.reached = state.result ? PAGES.length : PAGES.length - 1;
+  for (const g of state.groups) for (const f of g.fields)
+    if (p.overrides[f.path] !== undefined) f.value = p.overrides[f.path];
+  await refreshSites(p.overrides.site);
+  renderForm();
+  renderSizing(state.result);
+  openStudy(state.result ? "sizing" : "project");
+  setState(T("proj.opened", { name: p.name }), null);
+}
+
+async function openExample(name) {
+  state.projectName = name;
+  state.result = null;
+  state.reached = PAGES.length - 1;
+  state.overrides["site"] = name;
+  await refreshSites(name);
+  renderSizing(null);
+  openStudy("project");
+}
+
+/* ------------------------------------------------------------------ moving through the pages
+   Four pages in the order the work is done. A page not yet reached is closed, because the
+   decision at the end rests on the three before it: a study launched from a community with
+   no coordinates fails a minute in, which is a worse way to learn it than a step that has
+   not opened yet. */
+const PAGES = [
+  { id: "project",     label: "page.project.title" },
+  { id: "uses",        label: "nav.uses" },
+  { id: "assumptions", label: "nav.assumptions" },
+  { id: "sizing",      label: "page.sizing.title" },
+];
+
+const pageIndex = id => Math.max(0, PAGES.findIndex(p => p.id === id));
+
+function renderSteps() {
+  const here = pageIndex(state.page);
+  $("#steps").innerHTML = PAGES.map((p, i) => `
+    <li><button data-view="${p.id}" ${i < state.reached ? "" : "disabled"}
+        aria-current="${i === here}">
+      <span class="n">${i + 1}</span>
+      <span class="lbl">${T(p.label)}</span>
+    </button></li>`).join("");
+  $$("#steps button").forEach(b => b.onclick = () => show(b.dataset.view));
+
+  // The last page is where the decision is read, so the button that reaches it is the one
+  // that computes it: one button, one action, in the place the eye already is. On the
+  // decision itself it recomputes, which is what a reader who has just changed an
+  // assumption and come back wants it to do.
+  const last = PAGES.length - 1;
+  $("#next").textContent = here < last - 1 ? T("wiz.next")
+    : (here === last && state.result ? T("sizing.again") : T("action.size"));
+  $("#back").classList.toggle("hidden", here === 0);
+}
+
+function show(view) {
+  state.page = view;
+  state.reached = Math.max(state.reached, pageIndex(view) + 1);
+  $$(".page").forEach(p => p.classList.toggle("hidden", p.dataset.page !== view));
+  renderSteps();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  // The map draws itself against a container of zero height while its page is hidden, and
+  // stays that way until it is told the container has grown.
+  if (view === "project" && map) setTimeout(() => map.invalidateSize(), 60);
+}
+
+async function goNext() {
+  if (state.page === "project") {
+    // The community is saved on the way out rather than behind a button of its own: what
+    // was typed is what the next page reads, and a study run against a half-saved village
+    // is the kind of error that only shows up in its results.
+    if (state.site && state.site.origin !== "template" && !(await saveSite())) return;
+    show("uses");
+    return;
+  }
+  if (state.page === "uses") { show("assumptions"); return; }
+  if (state.page === "assumptions") show("sizing");   // the run fills it as it arrives
+  launch();
+}
+
+const goBack = () => show(PAGES[Math.max(0, pageIndex(state.page) - 1)].id);
+
 
 /* ------------------------------------------------------------------ running */
-async function launch(kind) {
-  const r = await fetch(`/api/${kind}`, {
+async function launch() {
+  const r = await fetch("/api/size", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ overrides: state.overrides })
   });
@@ -763,20 +1236,28 @@ function poll() {
     if (!state.job) return;
     const job = await (await fetch(`/api/job/${state.job.id}`)).json();
     state.job = job;
-    setState(`<b>${T(job.label, job.label_args)}</b> — ${T(job.stage, job.stage_args)}`, job.fraction);
+    setState(`<b>${T(job.label, job.label_args)}</b> — ${T(job.stage, job.stage_args)}`,
+             job.fraction);
     if (job.status === "running") return;
 
     clearInterval(state.timer);
     $("#cancel").classList.add("hidden");
     buttons(true);
-    if (job.status === "done") {
-      state.results[job.kind] = job.result;
-      job.kind === "size" ? renderSize(job.result) : renderPlan(job.result);
-      show(job.kind === "size" ? "result" : "plan");
-      setState(`<b>${T(job.label, job.label_args)}</b> — ${T("job.done")}.`, 1);
-    } else {
-      setState(`<b>${T(job.label, job.label_args)}</b> — ${T("job." + job.status)}. ${job.error ?? ""}`, null);
+    if (job.status !== "done") {
+      setState(`<b>${T(job.label, job.label_args)}</b> — ${T("job." + job.status)}. ${
+        job.error ?? ""}`, null);
+      return;
     }
+    setState(`<b>${T(job.label, job.label_args)}</b> — ${T("job.done")}.`, 1);
+    // A weather series is fetched from the same bar as a decision, and answers with a site
+    // rather than with a result. Telling them apart by what was asked for, rather than by
+    // the shape of what came back, is what keeps an empty result page from appearing.
+    if (job.kind === "resource") { await refreshSites(state.site?.name); return; }
+    state.result = job.result;
+    state.reached = PAGES.length;
+    renderSizing(job.result);
+    show("sizing");
+    saveProject();
   }, 700);
 }
 
@@ -788,12 +1269,8 @@ function setState(html, fraction) {
     track.firstElementChild.style.width = `${Math.round(fraction * 100)}%`;
 }
 
-const buttons = on => $$("#run-size, #run-plan").forEach(b => b.disabled = !on);
+const buttons = on => $$("#next, #back").forEach(b => b.disabled = !on);
 
-function show(view) {
-  $$(".page").forEach(p => p.classList.toggle("hidden", p.dataset.page !== view));
-  $$(".nav button").forEach(b => b.setAttribute("aria-current", String(b.dataset.view === view)));
-}
 
 /* ------------------------------------------------------------------ start */
 function refreshCurrency() {
@@ -824,11 +1301,13 @@ async function boot(lang) {
   state.lang = b.lang;
   document.documentElement.lang = b.lang;
   paintStatic();
-  const picker = $("#lang");
-  picker.innerHTML = Object.entries(b.languages || {})
-    .map(([code, name]) => `<option value="${code}"${code === b.lang ? " selected" : ""}>${name}</option>`)
-    .join("");
-  picker.onchange = e => setLanguage(e.target.value);
+  for (const id of ["#lang", "#lang-home"]) {
+    const picker = $(id);
+    picker.innerHTML = Object.entries(b.languages || {})
+      .map(([code, name]) => `<option value="${code}"${
+        code === b.lang ? " selected" : ""}>${name}</option>`).join("");
+    picker.onchange = e => setLanguage(e.target.value);
+  }
   // On the first boot the server's values are the study; on a language change they are only
   // labels arriving in another language, and the reader's own values must survive them.
   const first = state.groups.length === 0;
@@ -840,15 +1319,20 @@ async function boot(lang) {
   }
   state.projects = b.projects || [];
   state.sites = b.sites || [];
-  state.site = state.sites.find(x => x.name === state.overrides["site"]) || state.sites[0];
-  refreshCurrency();
-  renderProjects();
-  renderSize(state.results.size); renderPlan(state.results.plan);
-  renderCommunity(); await loadArchetypes();
+  if (first || !state.site || state.site.origin === "template")
+    state.site = state.sites.find(x => x.name === state.overrides["site"]) || state.sites[0];
+  state.classes = await (await fetch(`/api/productive-classes?lang=${b.lang}`)).json();
 
-  $$(".nav button").forEach(b => b.onclick = () => show(b.dataset.view));
-  $("#run-size").onclick = () => launch("size");
-  $("#run-plan").onclick = () => launch("plan");
+  refreshCurrency();
+  renderHome();
+  renderCommunity();
+  renderSizing(state.result);
+  await loadArchetypes();
+  renderSteps();
+
+  $("#go-home").onclick = openHome;
+  $("#next").onclick = goNext;
+  $("#back").onclick = goBack;
   $("#cancel").onclick = async () => {
     if (state.job) await fetch(`/api/job/${state.job.id}/cancel`, { method: "POST" });
   };

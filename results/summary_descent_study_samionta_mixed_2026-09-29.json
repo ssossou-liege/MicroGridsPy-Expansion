@@ -1,0 +1,138 @@
+{
+  "study": "how much of the tree dispatch gap is the descent's own slack",
+  "date": "2026-09-29",
+  "site": "Samionta",
+  "architecture": "mixed",
+  "commit_at_run": "424a09b64a21352f1939c44af1fa28da49c4eb58",
+  "programme_dual_bound_usd": 153054.0,
+  "neighbourhood_variants": [
+    {
+      "name": "original descent, as it stood on 28 September",
+      "scales": [
+        1
+      ],
+      "max_rounds": 6,
+      "generator_free": false,
+      "admission_repair": false,
+      "z_rule_usd": 167381.0,
+      "gap_pct": 9.36,
+      "evaluations": 2214,
+      "seconds": 17
+    },
+    {
+      "name": "one module, six rounds, generator free, conversion repaired",
+      "scales": [
+        1
+      ],
+      "max_rounds": 6,
+      "generator_free": true,
+      "admission_repair": true,
+      "z_rule_usd": 167381.0,
+      "gap_pct": 9.36,
+      "evaluations": 2766,
+      "seconds": 23
+    },
+    {
+      "name": "coarse-to-fine, generator free, conversion repaired",
+      "scales": [
+        8,
+        4,
+        2,
+        1
+      ],
+      "max_rounds": 12,
+      "generator_free": true,
+      "admission_repair": true,
+      "z_rule_usd": 167381.0,
+      "gap_pct": 9.36,
+      "evaluations": 11983,
+      "seconds": 71
+    }
+  ],
+  "neighbourhood_finding": "Enlarging the neighbourhood changed nothing: four scales, the generating set as a coordinate, and conversion following the array through its admission ceiling all return the same plan to the dollar. 167 381 USD is a strong local optimum.",
+  "restarts": [
+    {
+      "start": "the programme's own plan",
+      "storage_factor": 1.0,
+      "array_factor": 1.0,
+      "z_rule_usd": 167381.0,
+      "gap_pct": 9.36,
+      "seconds": 69,
+      "root": {
+        "pv_kw": 26.0,
+        "pv_ac_kw": 20.0,
+        "battery_kwh": 130.0,
+        "inverter_kw": 20.0,
+        "generator_kw": 8.0
+      }
+    },
+    {
+      "start": "storage +15 %",
+      "storage_factor": 1.15,
+      "array_factor": 1.0,
+      "z_rule_usd": 166165.0,
+      "gap_pct": 8.57,
+      "seconds": 76,
+      "root": {
+        "pv_kw": 29.0,
+        "pv_ac_kw": 22.5,
+        "battery_kwh": 130.0,
+        "inverter_kw": 22.5,
+        "generator_kw": 8.0
+      }
+    },
+    {
+      "start": "storage +30 %",
+      "storage_factor": 1.3,
+      "array_factor": 1.0,
+      "z_rule_usd": 167381.0,
+      "gap_pct": 9.36,
+      "seconds": 68
+    },
+    {
+      "start": "storage -15 %",
+      "storage_factor": 0.85,
+      "array_factor": 1.0,
+      "z_rule_usd": 167381.0,
+      "gap_pct": 9.36,
+      "seconds": 40
+    },
+    {
+      "start": "array +20 %",
+      "storage_factor": 1.0,
+      "array_factor": 1.2,
+      "z_rule_usd": 167913.0,
+      "gap_pct": 9.71,
+      "seconds": 118
+    },
+    {
+      "start": "array -15 %",
+      "storage_factor": 1.0,
+      "array_factor": 0.85,
+      "z_rule_usd": 167020.0,
+      "gap_pct": 9.13,
+      "seconds": 101
+    },
+    {
+      "start": "both +15 %",
+      "storage_factor": 1.15,
+      "array_factor": 1.15,
+      "z_rule_usd": 167356.0,
+      "gap_pct": 9.34,
+      "seconds": 91
+    }
+  ],
+  "restart_finding": "Restarting does what enlarging did not. The best plan found is 166 165 USD from a start with storage raised fifteen per cent, against 167 381 from the programme's own plan: 1 216 USD, and the reported dispatch gap falls from 9.36 to 8.57 per cent. The spread across seven starts is 1 747 USD, or 1.05 per cent, which is the size of the descent's dependence on where it begins.",
+  "best": {
+    "z_rule_usd": 166165.0,
+    "gap_pct": 8.57,
+    "root": {
+      "pv_kw": 29.0,
+      "pv_ac_kw": 22.5,
+      "battery_kwh": 130.0,
+      "inverter_kw": 22.5,
+      "generator_kw": 8.0
+    }
+  },
+  "supersedes": "The 9.36 per cent tree dispatch gap, and the 167 381 USD plan, wherever they are cited. The first-stage record of 28 September rests on the superseded incumbent and its 5.00 per cent is to be read against it."
+}

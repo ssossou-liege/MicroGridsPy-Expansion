@@ -468,6 +468,71 @@ certification.
 
 ## L5 — Theory hardening & the open question (P1, ongoing)
 
+- [~] **Certify the first stage.** The reference year is certified by exhaustion; the plan
+  over the tree is not, and has been reported from a coordinated descent. But the plan is
+  not what is decided — only the root is bought — so the object to certify is a single
+  design, which is a problem the size of the reference year's. The scheme is Corollary 1
+  with the box taken in *root coordinates alone*: the lower oracle is the
+  deterministic-equivalent programme with the root confined to a box and every descendant
+  left free, which by Proposition 1 minorises the rule-based cost of every plan rooted in
+  that box; the upper oracle is the descent with the root pinned, which returns a buildable
+  plan. `exact/first_stage.py`, `model.build_model(root_box=…)`,
+  `tree_certify.certify_tree(fixed_nodes=…)`.
+  *Measured on Samionta (46 nodes, mixed coupling, 2026-09-28).* Branching on the root
+  alone took the certified gap from **9.36 % to 5.00 %** — lower bound 153 054 → 159 009 $
+  against an incumbent of 167 381 $ — in **nine programmes and one hour**, about 6.6 min a
+  box. The incumbent never moved: the descent's root (26.0 + 20.0 kW, 130 kWh, 20 kW,
+  8 kW) survived every box opened. So the bound converges and the scheme is sound; what it
+  needs is more of the same, and each box costs a tree programme.
+
+  Two things the run settled. The costless bound pruned **nothing** here, and the reason is
+  structural rather than a defect: best-first always pops the box of *least* bound, which
+  is the box holding the cheapest corners, and that is exactly where a capital floor is
+  weakest. Its measured strength — 66.3 % of the 674 928 admissible roots removed by the
+  floor, 77.9 % with an energy minorant at the root — is a statement about *points*, and
+  the points it removes are the dear ones a best-first search visits last. It will earn its
+  place on a depth-first or a bounded-budget pass, not on this one.
+
+  And the limit is the descent, not the branching. When a box narrows to a single plant the
+  descent bounds the best plan rooted there only from *above*, so a plant whose programme
+  bound sits below the incumbent cannot be excluded; the search carries these and reports
+  them rather than rounding them away. A first-stage proof therefore needs the descent tight
+  enough to exclude each survivor.
+  *Done when* a run returns `proven=True`, or the gap it stops at is tabulated with the
+  budget that produced it.
+- [x] **What tightens the descent is restarting it, not enlarging it** (2026-09-29,
+  `results/summary_descent_study_samionta_mixed_2026-09-29.json`). Three restrictions were
+  found and all three lifted: the descent moved one module at a time with a hard stop at six
+  rounds, so it could not cross the seven to fifteen per cent of extra storage the
+  rule-based optimum is known to carry; the generating set was frozen at whatever the
+  programme chose, under the very dispatch whose preferences the descent exists to correct;
+  and the array could not grow at all, because every certified optimum sits *exactly* on its
+  admission ceiling — 1.300 of a maximum 1.3 on the battery's bus, 1.000 of 1.0 on the
+  load's — from which one more module of array is inadmissible and one more of conversion
+  admits nothing yet, so the pair is improving and neither half of it is. The descent is now
+  coarse-to-fine over four scales, the set is a coordinate stepping between catalogue
+  ratings, and conversion follows the array through the ceiling rather than the pairs being
+  enumerated.
+
+  None of it moved the answer. Four scales, a free generating set and repaired admission
+  return 167 381 USD to the dollar, on four times the evaluations. What did move it was
+  starting somewhere else: of seven starts, one with storage raised fifteen per cent reaches
+  166 165 USD, and the reported tree dispatch gap falls from 9.36 to **8.57 per cent**. The
+  spread across starts is 1 747 USD, or 1.05 per cent, which is the size of the descent's
+  dependence on where it begins. So the enlarged neighbourhood is kept — it costs seventy
+  seconds against the programme's six minutes and removes restrictions that were real — but
+  the slack was never in the neighbourhood, and a descent reported without restarts is
+  reporting its starting point as much as its search. Restarts belong in `certify_tree`
+  itself, which is the next piece of work here.
+- [x] **A mixed-integer incumbent is not a lower bound.** `solve()` returned
+  `model.objective.value` — the best feasible plan the solver reached before stopping at
+  its tolerance, which is an *upper* bound on the programme's own optimum. Used to prune a
+  box, or to report the dispatch gap, it is the wrong number: on this tree the two differ
+  by of the order of a hundredth of a per cent, small enough to pass unnoticed and large
+  enough to discard the box the optimum was in. `Solution` now carries `dual_bound` and
+  `bound`, taken from the solver's own guaranteed bound (`ObjBound` / `mip_dual_bound`) and
+  falling back to the incumbent only when no such bound exists — which is the honest
+  degradation for a pure linear programme, where there is no gap to report.
 - [ ] **Prove Assumption 1 for the uGrid controller** rigorously (feasibility within
   `F(x)`); enumerate and dispatch edge cases. *Done when* a lemma and proof are in model.tex.
 - [ ] **Tighten / accelerate the bound.** Monotonicity-based pruning (operating cost

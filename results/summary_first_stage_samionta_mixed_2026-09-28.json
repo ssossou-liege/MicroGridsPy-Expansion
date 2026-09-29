@@ -1,0 +1,67 @@
+{
+  "study": "first-stage certification",
+  "question": "Is the year-0 plant of the expansion plan provably the cheapest one, under the controller that will actually run it?",
+  "date": "2026-09-28",
+  "site": "Samionta",
+  "architecture": "mixed",
+  "commit_at_run": "424a09b64a21352f1939c44af1fa28da49c4eb58",
+  "instance": {
+    "nodes": 46,
+    "leaves": 24,
+    "milestone_years": [
+      0,
+      5,
+      10,
+      15,
+      20
+    ],
+    "representative_days": 64,
+    "root_lattice_admissible_plants": 674928
+  },
+  "programme": {
+    "incumbent_usd": 153068.0,
+    "dual_bound_usd": 153054.0,
+    "mip_gap_pct": 0.0097,
+    "seconds": 385,
+    "note": "the dual bound is what a box may be discarded on; the incumbent is an upper bound on the programme's own optimum and would prune the box the optimum was in"
+  },
+  "descent_before_branching": {
+    "from_usd": 170437.0,
+    "to_usd": 167381.0,
+    "evaluations": 2214,
+    "seconds": 17
+  },
+  "branch_and_bound": {
+    "lower_bound_start_usd": 153054.0,
+    "lower_bound_reached_usd": 159008.67,
+    "incumbent_usd": 167380.76,
+    "gap_start_pct": 9.36,
+    "gap_reached_pct": 5.0,
+    "boxes_opened": 9,
+    "programmes_solved": 9,
+    "descents": 0,
+    "boxes_pruned_by_costless_bound": 0,
+    "unresolved_plants": 0,
+    "proven": false,
+    "seconds": 3589,
+    "budget": {
+      "max_programmes": 10,
+      "max_seconds": 3300
+    },
+    "root_unchanged_throughout": {
+      "pv_kw": 26.0,
+      "pv_ac_kw": 20.0,
+      "battery_kwh": 130.0,
+      "inverter_kw": 20.0,
+      "generator_kw": 8.0
+    }
+  },
+  "costless_bound": {
+    "root_capital_share_of_plan_cost_pct": 85.5,
+    "weighted_node_years": 13.368,
+    "admissible_roots_removed_by_capital_floor_pct": 66.3,
+    "admissible_roots_removed_with_energy_minorant_pct": 77.9,
+    "note": "strong over designs, but it pruned no box here: best-first opens the box of least bound, which is the box of cheapest corners, and that is where a capital floor is weakest"
+  },
+  "open": "A proof needs the descent tight enough to exclude each surviving plant; the descent bounds a rooted plan from above only."
+}

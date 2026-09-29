@@ -18,14 +18,38 @@ from .coords import Coords
 
 
 def add_investment_constraints(m: linopy.Model, v: dict, c: Coords,
-                               cfg: ModelConfig, architecture: str = "dc") -> None:
-    """Capacity recursions, the generator state, and the array-to-converter ceiling."""
+                               cfg: ModelConfig, architecture: str = "dc",
+                               root_box: "RootBox | None" = None) -> None:
+    """Capacity recursions, the generator state, and the array-to-converter ceiling.
+
+    ``root_box`` confines the year-0 plant to a box of module counts. It is what turns this
+    programme from a single lower bound into the lower oracle of a branch-and-bound over
+    the decision the developer actually takes: restricted to a box, its value minorises the
+    rule-based cost of every plan whose root lies in that box, so a box whose value already
+    exceeds a known plan can be discarded whole. Only the root is confined; every descendant
+    stays free, because what the plan does later is not what is being certified.
+    """
     divided = architecture == "mixed"
     ratio = (config.DC_AC_RATIO_MAX if architecture in ("dc", "mixed")
              else config.AC_RATIO_MAX)
     ratings = np.asarray(cfg.gen_catalog_kw, dtype=float)
 
     m.add_constraints(v["z_ge"].sum("gsize") == 1, name="one_generator")
+
+    if root_box is not None:
+        root = int(c.node[0])
+        for module, (low, high) in root_box.modules.items():
+            m.add_constraints(v[module].sel(node=root) >= int(low),
+                              name=f"root_{module}_low")
+            m.add_constraints(v[module].sel(node=root) <= int(high),
+                              name=f"root_{module}_high")
+        # A rating the box excludes is excluded at the root only; the plan may still
+        # upgrade to it later, which is a different decision and not the one under test.
+        allowed = set(root_box.generator_ratings)
+        for k, rating in enumerate(ratings):
+            if float(rating) not in allowed:
+                m.add_constraints(v["z_ge"].sel(node=root, gsize=k) == 0,
+                                  name=f"root_no_gen_{k}")
 
     for n in c.node:
         parent = c.parent[int(n)]

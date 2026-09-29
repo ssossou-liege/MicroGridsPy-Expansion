@@ -79,8 +79,14 @@ def node_data(tree: ScenarioTree, rep: dict[int, RepDays],
 def build_model(tree: ScenarioTree, rep: dict[int, RepDays], cfg: ModelConfig,
                 architecture: str = "dc", relax_commitment: bool = True,
                 settings: ProjectSettings | None = None,
-                opening_condition: str = "fixed") -> TreeProgramme:
-    """Build the tree-wide programme for one coupling architecture."""
+                opening_condition: str = "fixed",
+                root_box=None) -> TreeProgramme:
+    """Build the tree-wide programme for one coupling architecture.
+
+    ``root_box`` confines the year-0 plant, leaving every later decision free. Solved over
+    such a box the programme is the lower oracle of a branch-and-bound on the first stage,
+    which is the decision this tool exists to answer.
+    """
     import linopy
 
     settings = default_settings() if settings is None else settings
@@ -91,7 +97,8 @@ def build_model(tree: ScenarioTree, rep: dict[int, RepDays], cfg: ModelConfig,
 
     model = linopy.Model()
     variables = add_variables(model, coords, relax_commitment=relax_commitment)
-    add_investment_constraints(model, variables, coords, cfg, architecture=architecture)
+    add_investment_constraints(model, variables, coords, cfg, architecture=architecture,
+                               root_box=root_box)
     data = node_data(tree, rep, settings)
     add_dispatch_constraints(model, variables, coords, cfg, data, battery, generator,
                              architecture=architecture,

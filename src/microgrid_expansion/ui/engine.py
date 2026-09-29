@@ -147,11 +147,16 @@ def plan_expansion(job: Job, overrides: dict[str, Any],
     solved = solve(programme, settings, solver=cfg.solver)
     if solved.objective == float("inf"):
         raise RuntimeError("no feasible plan under these settings")
+    # The dispatch gap is measured against what the anticipative programme can be *proven*
+    # to cost, not against the best plan its solver happened to reach before stopping at a
+    # tolerance. The two differ by about a hundredth of a per cent here, and only the first
+    # is a bound.
+    lower = solved.bound
     plans = extract_solution(programme, cfg)
     job.done = step + 3
 
     job.announce("job.descend")
-    certificate = certify_tree(plans, tree, rep, solved.objective,
+    certificate = certify_tree(plans, tree, rep, lower,
                                architecture=architecture, settings=settings, verbose=False)
     traces = certificate.traces
     from ..exact.certify import _infrastructure_usd_yr
@@ -162,10 +167,11 @@ def plan_expansion(job: Job, overrides: dict[str, Any],
     expected.update({
         "architecture": architecture,
         "expected_rule_cost_usd": certificate.z_rule,
-        "expected_optimal_cost_usd": solved.objective,
-        "price_of_heuristic_usd": certificate.z_rule - solved.objective,
-        "price_of_heuristic_pct": 100.0 * (certificate.z_rule - solved.objective)
-        / max(solved.objective, 1.0),
+        "expected_optimal_cost_usd": lower,
+        "expected_optimal_mip_gap": solved.mip_gap,
+        "price_of_heuristic_usd": certificate.z_rule - lower,
+        "price_of_heuristic_pct": 100.0 * (certificate.z_rule - lower)
+        / max(lower, 1.0),
         "search_evaluations": certificate.evaluations,
     })
     job.done = step + 4
@@ -183,7 +189,7 @@ def plan_expansion(job: Job, overrides: dict[str, Any],
                       "battery_kwh": root.battery_kwh, "inverter_kw": root.inverter_kw,
                       "generator_kw": root.generator_kw},
         "expected": expected,
-        "bound_usd": solved.objective,
+        "bound_usd": lower,
         "rule_usd": certificate.z_rule,
         "per_node": [node_kpis(certificate.plans, n, tree, traces)
                      for n in tree.nodes],

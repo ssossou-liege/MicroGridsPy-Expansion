@@ -130,6 +130,27 @@ class BatterySpec:
         ``effective_lifetime_years`` is built on. It is no longer charged as an operating
         cost: doing that beside a pack that is also replaced on its calendar life paid for
         the same battery twice, and inflated the levelised cost by a sixth.
+
+        Nor is it worth carrying inside the programme, and it is worth saying why once so
+        that the question does not have to be reopened. The right general form is a maximum
+        -- the pack costs the greater of its capital over the calendar life and its wear
+        over the cycles -- and under minimisation a maximum of two linear terms is exact
+        with one variable and two constraints, so the obstacle is not formulation. It is
+        arithmetic. The wear term overtakes the calendar term only above
+
+            (crf(calendar) + om) x cycles x depth
+              = 0.1730 x 6000 x 0.90 = 934 kWh a year per kWh installed,
+
+        which is 2.84 full cycles a day, every day of the year. A solar plant charges once
+        a day. Every certified pack in this project runs at about 272 -- twenty-nine per
+        cent of the threshold, a factor of 3.4 short -- so the calendar life is what ends
+        the pack and the wear term would never be the binding one.
+
+        The constraint would therefore be correct and inert, and inert constraints on a
+        programme of a million columns are a cost with no return. If the chemistry is ever
+        changed for one with a shorter cycle life, or the maintenance rate falls far enough
+        to lower the calendar charge, this stops being true;
+        ``test_the_calendar_life_is_what_ends_the_pack`` is what will say so.
         """
         throughput = self.cycles * (self.soc_max - self.soc_min)
         return self.cost_usd_kwh / throughput

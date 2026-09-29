@@ -119,3 +119,42 @@ def test_the_instance_cache_distinguishes_chemistries():
     lfp = _cache_key("Samionta", 2025, "central", 12, 0, "lfp")
     lead = _cache_key("Samionta", 2025, "central", 12, 0, "lead_acid")
     assert lfp != lead
+
+
+def test_the_calendar_life_is_what_ends_the_pack() -> None:
+    """And therefore why no throughput term is carried inside the programme.
+
+    The pack costs the greater of its capital over the calendar life and its wear over the
+    cycles. Which of the two binds is arithmetic, not opinion: the wear term overtakes the
+    calendar term only above ``(crf(calendar) + om) x cycles x depth`` kilowatt-hours a
+    year per kilowatt-hour installed, and on this chemistry that is 2.84 full cycles a day
+    every day, which a plant charged by the sun does not reach.
+
+    This test exists so that a change of chemistry says so. A pack with a shorter cycle
+    life, or a lower maintenance rate, could put the wear term in front -- and then the
+    programme would have to carry it, as a maximum of two linear terms.
+    """
+    import glob
+    import json
+
+    from microgrid_expansion import config
+    from microgrid_expansion.settings import default_settings
+
+    spec = default_settings().battery
+    depth = spec.soc_max - spec.soc_min
+    calendar_rate = config.crf(n=spec.lifetime_years) + spec.om_rate
+    threshold = calendar_rate * spec.cycles * depth
+    assert threshold / (365.0 * depth) > 2.0, (
+        "the wear term now binds below two cycles a day; the programme must carry it")
+
+    worked = []
+    for path in sorted(glob.glob("results/summary_certification_*.json")):
+        record = json.loads(open(path).read())
+        capacity = record.get("design", {}).get("battery_kwh")
+        throughput = record.get("storage_throughput_kwh")
+        if capacity and throughput is not None:
+            worked.append(throughput / capacity)
+    assert worked, "no certificate records what its storage actually moved"
+    assert max(worked) < 0.5 * threshold, (
+        f"a certified pack reaches {max(worked):.0f} kWh/kWh/yr against a threshold of "
+        f"{threshold:.0f}; the calendar life may no longer be what ends it")

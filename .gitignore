@@ -22,9 +22,14 @@ sites/
 
 # Results (keep summaries, ignore bulk outputs)
 results/**
+# Git will not look inside an ignored directory, so the folders have to be readmitted
+# before anything inside one of them can be.
+!results/**/
 !results/.gitkeep
 !results/**/summary*.csv
 !results/**/summary*.json
+# A result kept for a reason has to be able to say what the reason is.
+!results/**/README.md
 
 # LaTeX build
 *.aux

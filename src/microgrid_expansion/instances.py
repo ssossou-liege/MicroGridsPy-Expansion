@@ -53,12 +53,14 @@ class SiteYear:
 #: the package is either here or in ``_OFFLINE_SOURCES``; a test refuses a third category,
 #: so a module added to the package forces someone to say which it is rather than being
 #: silently left out of the key.
-_GENERATION_SOURCES = ("generator.py", "growth.py", "productive.py", "archetypes.py")
+_GENERATION_SOURCES = ("generator.py", "growth.py", "productive.py", "archetypes.py",
+                       "uses.py")
 
 #: Modules that build the calibration tables rather than read them. Their output is the
 #: CSVs, which the digest already covers, so hashing them too would rebuild every cached
 #: year for a change that cannot reach one.
 _OFFLINE_SOURCES = ("__init__.py", "build_archetype_shapes.py",
+                    "build_community_profiles.py",
                     "build_mixture_probabilities.py",
                     "build_monthly_household_clusters.py",
                     "build_productive_profiles.py",
@@ -143,6 +145,19 @@ def _site_fingerprint(site: Site) -> str:
     roster = getattr(site, "productive_mix", None)
     if roster:
         parts.append(";".join(f"{k}={v}" for k, v in sorted(roster.items())))
+    # The community uses and the uses the developer described, on the same terms: appended
+    # only when there are any, so a village that declared none keys as it always did.
+    community = getattr(site, "community_mix", None)
+    if community:
+        parts.append("c:" + ";".join(f"{k}={v}" for k, v in sorted(community.items())))
+    declared = getattr(site, "declared_uses", None)
+    if declared:
+        parts.append("u:" + ";".join(
+            f"{u.key}=" + ",".join(f"{d.name}:{d.power_w}:{d.number}:{d.func_time_min}:"
+                                   f"{d.func_cycle_min}:{d.window_start_min}:"
+                                   f"{d.window_end_min}:{d.occasional_use}"
+                                   for d in u.devices)
+            for u in sorted(declared, key=lambda x: x.key)))
     return "|".join(str(x) for x in parts)
 
 

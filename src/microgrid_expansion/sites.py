@@ -68,6 +68,14 @@ class Site:
     #: welder do not make the same day as three tailors. ``None`` falls back to the total
     #: above, and that in turn to the ratio measured at the reference villages.
     productive_mix: dict[str, int] | None = None
+    #: How many of each community use the village has -- a school, a health centre, a place
+    #: of worship, street lamps. These are not households and not trades, and no calibration
+    #: of ours covers them; they are declared or they are absent.
+    community_mix: dict[str, int] | None = None
+    #: Uses the developer described because no class of ours fits them, each carrying the
+    #: devices that make it up. Their counts live in the two mixes above, under the same
+    #: key, so that a declared use is counted exactly as a calibrated one is.
+    declared_uses: tuple | None = None
     #: ``"template"`` for the two shipped with the tool, ``"user"`` for a described one.
     origin: str = "template"
     #: Standard time offset from UTC [h]. A property of the site, not of the acquisition:
@@ -126,6 +134,20 @@ def _slug(name: str) -> str:
     return ("".join(keep).strip().replace(" ", "-").lower()) or "site"
 
 
+def _uses_from(records) -> tuple | None:
+    """Rebuild declared uses from a stored record, dropping any that no longer parse."""
+    if not records:
+        return None
+    from .demand.uses import UseSpec
+    out = []
+    for record in records:
+        try:
+            out.append(UseSpec.from_record(record))
+        except (KeyError, TypeError, ValueError):
+            continue          # a use written by an older version is skipped, not fatal
+    return tuple(out) or None
+
+
 def to_record(site: Site) -> dict:
     """A site as the plain mapping the store holds and the interface edits."""
     return {"name": site.name, "census": dict(site.census),
@@ -133,6 +155,9 @@ def to_record(site: Site) -> dict:
             "irradiance_file": site.irradiance_file, "meter_file": site.meter_file,
             "productive_units": site.productive_units,
             "productive_mix": site.productive_mix,
+            "community_mix": site.community_mix,
+            "declared_uses": ([u.to_record() for u in site.declared_uses]
+                              if site.declared_uses else None),
             "utc_offset_hours": site.utc_offset_hours, "origin": site.origin}
 
 
@@ -144,6 +169,8 @@ def from_record(record: dict) -> Site:
                 meter_file=record.get("meter_file"),
                 productive_units=record.get("productive_units"),
                 productive_mix=record.get("productive_mix"),
+                community_mix=record.get("community_mix"),
+                declared_uses=_uses_from(record.get("declared_uses")),
                 utc_offset_hours=int(record.get("utc_offset_hours", 1)),
                 origin=record.get("origin", "user"))
 

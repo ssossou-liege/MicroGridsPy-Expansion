@@ -206,7 +206,14 @@ def _appliance_spec(row: pd.Series,
 
     func_cycle = row.get("func_cycle", 1.0)
     func_cycle = 1 if not np.isfinite(func_cycle) else max(1, int(round(float(func_cycle))))
-    func_cycle = max(1, min(func_cycle, func_time))
+    # The shortest stretch a device runs for cannot exceed the duty, nor the window it is
+    # confined to. For a window that crosses midnight the bound is the *shorter* of the two
+    # segments, not the longer: the simulator places cycles in both, and one too long for
+    # the smaller leaves it empty. A dusk-to-dawn street lamp splits into 330 minutes before
+    # midnight and 360 after; bounded by 360 only the small hours lit, and bounded by
+    # nothing at all the lamp never lit and the use drew zero all month, in silence.
+    segments = [end - start] + ([wrapped[1] - wrapped[0]] if wrapped else [])
+    func_cycle = max(1, min(func_cycle, func_time, min(s for s in segments if s > 0)))
 
     mean_number = row.get("number", 1.0)
     mean_number = 1.0 if not np.isfinite(mean_number) else max(0.0, float(mean_number))
@@ -225,6 +232,124 @@ def _appliance_spec(row: pd.Series,
         "window_2": wrapped,
         "window_var": window_var,
     }
+
+
+def _measured_community(site):
+    """The calibrated community uses this village declares, with their counts.
+
+    Returns ``None`` when the village declares none or the calibration has not been built.
+    A community use is present from the first month rather than scaled by how far the line
+    has reached: a place of worship predates the grid and is among the first things put on
+    it.
+    """
+    declared = getattr(site, "community_mix", None)
+    if not declared:
+        return None
+    from .uses import CommunityCalibration
+
+    calibration = CommunityCalibration.load()
+    if calibration is None:
+        return None
+    counts = {k: int(v) for k, v in declared.items()
+              if int(v) > 0 and k in calibration.profiles.index}
+    return (counts, calibration) if counts else None
+
+
+def _declared_counts(site, counts: dict[str, int]) -> dict:
+    """The declared uses in force this month, with how many of each.
+
+    A community use is there from the start; a productive one waits for the line as the
+    calibrated trades do, so its count is scaled by the share of households connected and
+    may round to none in the early months.
+    """
+    declared = getattr(site, "declared_uses", None)
+    if not declared:
+        return {}
+    from .generator import INACTIVE                      # the key for an unconnected home
+
+    connected = sum(v for k, v in counts.items() if k != INACTIVE)
+    share = connected / max(getattr(site, "n_households", 0) or 1, 1)
+    productive = getattr(site, "productive_mix", None) or {}
+    community = getattr(site, "community_mix", None) or {}
+
+    out = {}
+    for use in declared:
+        if use.category == "community":
+            count = int(community.get(use.key, 0))
+        else:
+            count = int(round(int(productive.get(use.key, 0)) * share))
+        if count > 0:
+            out[use] = count
+    return out
+
+
+def _declared_use_minutes(uses: dict, year: int, month: int, n_days: int,
+                          seed: int) -> np.ndarray | None:
+    """Minute-by-minute draw for the uses a developer declared, or ``None`` if there are none.
+
+    These reach RAMP through ``_appliance_spec`` exactly as a calibrated appliance does, so
+    a declared device inherits its handling of windows that cross midnight, of duties that
+    fill their window, and of the randomisation caps. A use declared with no device, or
+    with devices the specification rejects, contributes nothing rather than raising: the
+    year must still be buildable while a developer is halfway through describing a village.
+    """
+    import pandas as pd
+    from ramp.core.core import User
+
+    total = np.zeros(n_days * MINUTES_PER_DAY)
+    users = []
+    for use, count in uses.items():
+        if count <= 0 or not use.devices:
+            continue
+        user = User(user_name=f"use_{use.key}", num_users=int(count))
+        attached = False
+        for device in use.devices:
+            # A device that runs its whole window every day has no behaviour to draw, and
+            # drawing one loses energy rather than adding realism: a street lamp put through
+            # the appliance library came back with barely half the kilowatt-hours it burns,
+            # because the library scatters a duty it was told was stochastic. Such a device
+            # is placed exactly instead, minute by minute.
+            if device.is_constant:
+                total += count * _constant_minutes(device, n_days)
+                attached = True            # it contributed, even without reaching RAMP
+                continue
+            row = pd.Series(device.as_row(), name=device.name)
+            spec = _appliance_spec(row)
+            if spec is None:
+                continue
+            appliance = user.add_appliance(
+                number=max(1, int(round(spec["mean_number"]))),
+                power=spec["power"], func_time=spec["func_time"],
+                func_cycle=spec["func_cycle"], occasional_use=spec["occasional_use"],
+                time_fraction_random_variability=TIME_VARIABILITY,
+                name=spec["name"],
+                num_windows=2 if spec.get("window_2") else 1,
+            )
+            appliance.windows(window_1=spec["window"], window_2=spec.get("window_2"),
+                              random_var_w=spec["window_var"])
+            attached = True
+        if attached and user.App_list:
+            users.append(user)
+    if users:
+        total += _run_ramp(users, year, month, n_days, seed)
+    return total if total.any() else None
+
+
+def _constant_minutes(device, n_days: int) -> np.ndarray:
+    """One device's watts, minute by minute, over a month it runs unfailingly.
+
+    The window is written as it was declared, wrapping past midnight where it does, so a
+    lamp lit at half past six in the evening is still lit at dawn without the day boundary
+    interrupting it.
+    """
+    day = np.zeros(MINUTES_PER_DAY)
+    start, end = int(device.window_start_min), int(device.window_end_min)
+    if end > start:
+        day[start:end] = 1.0
+    else:                                   # the window crosses midnight
+        day[start:] = 1.0
+        day[:end] = 1.0
+    return np.tile(day, n_days) * device.power_w * device.number
 
 
 def _realise_count(mean_number: float, rng: np.random.Generator) -> int:
@@ -293,8 +418,6 @@ def _simulate_month(
     """Minute-resolution community load [W] over one calendar month."""
     import random as _stdlib_random
 
-    from ramp import UseCase
-
     # The appliance library draws its usage windows and its power variation from Python's
     # global random module, and seeds it only inside ``UseCase`` -- after the users have been
     # built, and only when the seed is truthy, which a seed of zero is not. Both together
@@ -313,6 +436,17 @@ def _simulate_month(
                                            scaling))
     if not users:                              # every household inactive this month
         return np.zeros(n_days * MINUTES_PER_DAY)
+
+    return _run_ramp(users, year, month, n_days, seed)
+
+
+def _run_ramp(users: list, year: int, month: int, n_days: int, seed: int) -> np.ndarray:
+    """Draw one month of minutes for a set of RAMP users.
+
+    Shared by the households and by the uses a developer declares, so that both reach the
+    appliance library by one path and inherit the same seeding.
+    """
+    from ramp import UseCase
 
     start = f"{year}-{month:02d}-01"
     end = f"{year}-{month:02d}-{n_days:02d}"
@@ -490,6 +624,27 @@ def simulate_demand_year(
             enterprises[month] = units
             profile = profile + monthly_profile_kw(units, productive,
                                                    profile.size // 24, rng)
+
+        # The community classes the meters could speak to -- one, the place of worship --
+        # contribute their measured day exactly as a productive class does, spread and all.
+        measured = _measured_community(site)
+        if measured is not None:
+            community, calibration = measured
+            profile = profile + monthly_profile_kw(community, calibration,
+                                                   profile.size // 24, rng)
+
+        # The uses the developer declared, simulated device by device. Community uses are
+        # connected from the first month rather than scaled by how far the line has reached:
+        # a school or a dispensary is usually what the line was run for, not something that
+        # waits its turn behind the households. Declared productive uses wait like the
+        # calibrated ones do.
+        declared = _declared_counts(site, counts)
+        if declared:
+            minutes = _declared_use_minutes(
+                declared, year, month, calendar.monthrange(year, month)[1],
+                seed=int(rng.integers(0, 2**31 - 1)))
+            if minutes is not None:
+                profile = profile + _to_hourly_kw(minutes)
         hourly.append(profile)
 
     return DemandYear(

@@ -453,3 +453,53 @@ button.door .door-foot { margin-top: 8px; padding-top: 0; }
 .legend .swatch.hold { background: var(--surface-sunk); border: 1px solid var(--line); }
 .legend .swatch.grow { background: var(--accent-soft); border: 1px solid var(--accent); }
 .legend .swatch.gridmark { background: var(--good); border-radius: 50%; }
+
+/* ================================================================= declaring a use
+   A panel rather than a page: describing a device is a detour from describing a village,
+   and a detour should return you where you were. */
+/* Above the map. Leaflet stacks its panes and controls up to a thousand, so a panel that
+   merely cleared the page chrome came up *underneath* the map it was covering. */
+.sheet { position: fixed; inset: 0; z-index: 2000; display: grid; place-items: center;
+         background: rgba(0,0,0,.42); padding: 24px; overflow: auto; }
+.sheet-panel { background: var(--surface); border-radius: var(--radius);
+               box-shadow: var(--shadow-lift); padding: 26px 28px; width: min(1020px, 100%);
+               /* Scrolls down when the devices pile up, never sideways: the table is sized
+                  to the panel, and a sideways bar under it only ever meant a rounding
+                  error in the column widths. The shorthand must not follow these, or it
+                  puts the bar back. */
+               max-height: 90vh; overflow-y: auto; overflow-x: hidden; }
+.sheet-panel h3 { font-size: 19px; font-weight: 620; letter-spacing: -.02em; margin: 0 0 6px; }
+.sheet-panel > .hint { max-width: 70ch; margin: 0 0 18px; }
+.sheet-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+
+/* Seven columns of a device, kept inside the panel rather than scrolling sideways. The
+   units sit under their heading instead of beside each box, which is where the width was
+   going: a column that says "min" once reads as well as one that says it on every row. */
+.devices { width: 100%; margin-top: 18px; table-layout: fixed; }
+.devices th { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em;
+              color: var(--ink-faint); font-weight: 600; text-align: left;
+              padding: 0 5px 8px; line-height: 1.3; }
+.devices th .u { display: block; text-transform: none; letter-spacing: 0;
+                 font-weight: 500; opacity: .8; }
+.devices td { padding: 4px 5px; border: 0; text-align: left; }
+.devices input { padding: 7px 8px; font-size: 13px; width: 100%; }
+.devices input[type=number] { text-align: right; }
+/* Summing to a hundred exactly: a column left in pixels beside percentages pushed the
+   table past the panel and put a scrollbar under it. */
+.devices col.name { width: 20%; }
+.devices col.num  { width: 11%; }
+.devices col.win  { width: 20%; }
+.devices col.drop { width: 4%; }
+.devices .window { display: flex; gap: 5px; }
+.devices .window input { width: 50%; min-width: 0; padding: 7px 4px; }
+.devices .drop { all: unset; cursor: pointer; color: var(--ink-faint); font-size: 17px;
+                 padding: 0 6px; border-radius: var(--radius-sm); }
+.devices .drop:hover { color: var(--bad); }
+.totals { margin: 16px 0 0; font-variant-numeric: tabular-nums; font-weight: 550; }
+
+/* Street lighting asks for two numbers where every other use asks for one, so it spans the
+   roster rather than sharing a column, and each box says what it holds. */
+.roster .pue.lamps { grid-column: 1 / -1; grid-template-columns: 22px 1fr auto auto; }
+.pue .pair { display: flex; align-items: baseline; gap: 6px; }
+.pue .pair input[type=number] { width: 62px; }
+.pue .pair .u { font-size: 12px; color: var(--ink-soft); white-space: nowrap; }

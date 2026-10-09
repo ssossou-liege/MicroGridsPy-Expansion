@@ -6,7 +6,7 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
 const state = { groups: [], overrides: {}, defaults: {}, job: null, timer: null,
                 result: null, projects: [], projectName: "",
-                sites: [], site: null, arch: null, classes: [], lang: "en",
+                sites: [], site: null, arch: null, classes: [], communityUses: [], lang: "en",
                 page: "project", reached: 1 };
 
 /* ------------------------------------------------------------------ language
@@ -603,6 +603,16 @@ function renderCommunity() {
             }).join("")}
           </div>
           <div class="roster-foot" id="pue-total"></div>
+          <button class="btn quiet" id="pue-add" style="margin-top:12px"${lock}>${
+            T("use.add")}</button>
+        </div>
+      </div>
+      <div class="field wide">
+        <div><label>${T("site.community")}</label>${info("site.community.hint")}</div>
+        <div class="control">
+          <div class="roster" id="community"></div>
+          <button class="btn quiet" id="com-add" style="margin-top:12px"${lock}>${
+            T("use.add")}</button>
         </div>
       </div>
     </div>`;
@@ -641,10 +651,115 @@ function renderCommunity() {
   });
   $$("#lieu input[data-count]").forEach(box => box.oninput = readRoster);
 
+  renderCommunity_();
+  $("#pue-add").onclick = async () => {
+    const use = await openUseDialog("productive");
+    if (use) addDeclaredUse(use);
+  };
+  $("#com-add").onclick = async () => {
+    const use = await openUseDialog("community");
+    if (use) addDeclaredUse(use);
+  };
+
   readRoster();
   showTimezone();
   mountMap(s.latitude, s.longitude);
 }
+
+/* The four community loads, listed from the start at a count of zero. A developer reading
+   "school, health centre, place of worship, street lighting" remembers to count them; an
+   empty list reminds them of nothing. Street lighting is the exception in form as well as
+   in substance: it is given as a lamp count and a rating, because that is how it is known
+   and because it has no behaviour to describe. */
+function renderCommunity_() {
+  const host = $("#community");
+  if (!host) return;
+  const s = state.site || {};
+  const mix = s.community_mix || {};
+  const tpl = s.origin === "template";
+  const declared = (s.declared_uses || []).filter(u => u.category === "community");
+  const lamp = (s.declared_uses || []).find(u => u.key === "public_lighting");
+  const watts = lamp ? lamp.devices[0].power_w : 60;
+
+  host.innerHTML = (state.communityUses || []).map(c => {
+    const n = mix[c.key] || 0;
+    if (c.lamps) {
+      // Two boxes on one row need saying apart. The unit goes beside each, visibly: a
+      // label only a screen reader can hear leaves everyone else guessing which number is
+      // the count and which the rating.
+      return `<label class="pue lamps${n ? " on" : ""}">
+        <input type="checkbox" data-com="${esc(c.key)}"${n ? " checked" : ""}${tpl ? " disabled" : ""}>
+        <span class="lbl">${esc(c.label)}${info(`use.${c.key}.hint`)}</span>
+        <span class="pair"><input type="number" min="0" step="1" data-comcount="${esc(c.key)}"
+            aria-label="${esc(T("use.lamps"))}" value="${n || ""}" placeholder="0"
+            ${n ? "" : "disabled"}${tpl ? " disabled" : ""}><span class="u">${
+            T("use.lamps")}</span></span>
+        <span class="pair"><input type="number" min="1" step="1" id="lamp-watts"
+            aria-label="${esc(T("use.lamp_watts"))}" value="${watts}"
+            ${n ? "" : "disabled"}${tpl ? " disabled" : ""}><span class="u">${
+            T("use.lamp_watts")}</span></span>
+      </label>`;
+    }
+    // Whether a class is measured belongs in its note, not on a badge beside its name: the
+    // row is a thing to count, and a mark that changes nothing about the counting only
+    // competes with it.
+    return `<label class="pue${n ? " on" : ""}" data-class="${esc(c.key)}">
+      <input type="checkbox" data-com="${esc(c.key)}"${n ? " checked" : ""}${tpl ? " disabled" : ""}>
+      <span class="lbl">${esc(c.label)}${info(`use.${c.key}.hint`)}</span>
+      <input type="number" min="0" step="1" data-comcount="${esc(c.key)}"
+        aria-label="${esc(c.label)}" value="${n || ""}" placeholder="0"
+        ${n ? "" : "disabled"}${tpl ? " disabled" : ""}>
+    </label>`;
+  }).join("") + declared.filter(u => u.key !== "public_lighting").map(u => `
+    <label class="pue on" data-class="${esc(u.key)}">
+      <input type="checkbox" checked disabled>
+      <span class="lbl">${esc(u.label)} <span class="badge warn"
+        style="font-size:11px">${T("use.declared", { n: u.devices.length })}</span></span>
+      <input type="number" min="0" step="1" data-comcount="${esc(u.key)}"
+        value="${mix[u.key] || 1}"${tpl ? " disabled" : ""}>
+    </label>`).join("");
+
+  $$("#community input[data-com]").forEach(box => box.onchange = e => {
+    const key = e.target.dataset.com;
+    const row = e.target.closest(".pue");
+    row.querySelectorAll("input[type=number]").forEach(n => {
+      n.disabled = !e.target.checked;
+      if (e.target.checked && n.dataset.comcount && !n.value) n.value = 1;
+      if (!e.target.checked && n.dataset.comcount) n.value = "";
+    });
+    row.classList.toggle("on", e.target.checked);
+    readCommunity();
+  });
+  $$("#community input[type=number]").forEach(box => box.oninput = readCommunity);
+  readCommunity();
+}
+
+function readCommunity() {
+  const mix = {};
+  $$("#community input[data-comcount]").forEach(box => {
+    const n = parseInt(box.value || "0", 10);
+    if (Number.isFinite(n) && n > 0) mix[box.dataset.comcount] = n;
+  });
+  if (state.site) {
+    state.site.community_mix = mix;
+    const w = $("#lamp-watts");
+    state.site.lamp_watts = w ? parseFloat(w.value) || null : null;
+  }
+}
+
+/* A use the developer described joins the list it belongs to, with a count of one, and is
+   kept on the site so it survives a language change and a move to the next page. */
+function addDeclaredUse(use) {
+  if (!state.site) return;
+  const kept = (state.site.declared_uses || []).filter(u => u.key !== use.key);
+  state.site.declared_uses = [...kept, use];
+  const mix = use.category === "community"
+    ? (state.site.community_mix = { ...(state.site.community_mix || {}) })
+    : (state.site.productive_mix = { ...(state.site.productive_mix || {}) });
+  mix[use.key] = mix[use.key] || 1;
+  renderCommunity();
+}
+
 
 /* The roster the reader has ticked, kept on the site as it is typed so that a page rebuilt
    in another language, or returned to from the next step, still holds it. */
@@ -748,9 +863,13 @@ async function saveSite() {
   if (!name) return fail("state.need_name");
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return fail("state.need_point");
   if (households <= 0) return fail("state.need_households");
+  readCommunity();
   const body = {
     name, latitude: lat, longitude: lon, census,
     productive_mix: state.site.productive_mix || {},
+    community_mix: state.site.community_mix || {},
+    declared_uses: state.site.declared_uses || [],
+    lamp_watts: state.site.lamp_watts || null,
   };
   const offset = parseInt($("#utc")?.value ?? "", 10);
   if (Number.isFinite(offset) && offset !== Math.round(lon / 15)) body.utc_offset_hours = offset;
@@ -788,6 +907,159 @@ async function saveProject() {
   });
   if (r.ok) state.projects = await (await fetch("/api/projects")).json();
 }
+
+/* ------------------------------------------------------------------ declaring a use
+   The six activity classes and the four community loads cover what the two reference
+   villages contain. They do not cover what a village elsewhere contains, and a cold store
+   forced into the nearest class describes a different village. So a use can be described
+   instead of chosen, device by device, in the terms the appliance library is driven by.
+
+   The dialog asks for exactly those terms and nothing more: what a device draws, how many
+   there are, how long it runs, the shortest stretch it runs for, when it may run, and how
+   often it is used at all. */
+
+const BLANK_DEVICE = () => ({
+  name: "", power_w: 100, number: 1, func_time_min: 120, func_cycle_min: 10,
+  window_start_min: 480, window_end_min: 1080, occasional_use: 1.0,
+});
+
+function minutesToClock(m) {
+  const h = Math.floor(((m % 1440) + 1440) % 1440 / 60);
+  return `${String(h).padStart(2, "0")}:${String(Math.round(m % 60)).padStart(2, "0")}`;
+}
+
+function clockToMinutes(text) {
+  const [h, m] = String(text).split(":").map(Number);
+  return Number.isFinite(h) ? (h * 60 + (m || 0)) % 1440 : 0;
+}
+
+/* What the declared devices come to, shown as it is typed so a mistake of a factor of
+   sixty in the minutes is visible before the use is saved rather than after a sizing. */
+function useTotals(devices) {
+  let kwh = 0, kw = 0;
+  for (const d of devices) {
+    kwh += (d.power_w * d.number * d.func_time_min) / 60000;
+    kw += (d.power_w * d.number) / 1000;
+  }
+  return { kwh, kw };
+}
+
+function openUseDialog(category) {
+  // Resolves with the use that was described, or with nothing if the panel was dismissed.
+  // A promise rather than a callback: the caller then reads as the sequence it is, and the
+  // panel has no opinion about what becomes of what it collected.
+  return new Promise(resolve => {
+  const devices = [BLANK_DEVICE()];
+  const host = document.createElement("div");
+  host.className = "sheet";
+  document.body.appendChild(host);
+
+  const draw = () => {
+    const t = useTotals(devices);
+    host.innerHTML = `
+      <div class="sheet-panel" role="dialog" aria-modal="true" aria-label="${esc(T("use.new.title"))}">
+        <h3>${T("use.new.title")}</h3>
+        <p class="hint">${T("use.new.lead")}</p>
+
+        <div class="field">
+          <div><label for="use-name">${T("use.new.name")}</label></div>
+          <div class="control"><input id="use-name" type="text" value="${esc(host.dataset.name || "")}"></div>
+        </div>
+        <div class="field">
+          <div><label for="use-cat">${T("use.new.category")}</label>${info("use.new.category.hint")}</div>
+          <div class="control"><select id="use-cat">
+            <option value="productive"${category === "productive" ? " selected" : ""}>${T("use.new.category.productive")}</option>
+            <option value="community"${category === "community" ? " selected" : ""}>${T("use.new.category.community")}</option>
+          </select></div>
+        </div>
+
+        <table class="devices">
+          <colgroup><col class="name"><col class="num"><col class="num"><col class="num">
+            <col class="num"><col class="win"><col class="num"><col class="drop"></colgroup>
+          <tr><th>${T("dev.name")}</th>
+              <th>${T("dev.power")}<span class="u">W</span></th>
+              <th>${T("dev.number")}</th>
+              <th>${T("dev.func_time")}${info("dev.func_time.hint")}<span class="u">min</span></th>
+              <th>${T("dev.func_cycle")}${info("dev.func_cycle.hint")}<span class="u">min</span></th>
+              <th>${T("dev.window")}${info("dev.window.hint")}</th>
+              <th>${T("dev.occasional")}${info("dev.occasional.hint")}</th><th></th></tr>
+          ${devices.map((d, i) => `<tr>
+            <td><input data-i="${i}" data-k="name" type="text" value="${esc(d.name)}"></td>
+            <td><input data-i="${i}" data-k="power_w" type="number" min="1" step="1" value="${d.power_w}"></td>
+            <td><input data-i="${i}" data-k="number" type="number" min="0" step="1" value="${d.number}"></td>
+            <td><input data-i="${i}" data-k="func_time_min" type="number" min="1" step="5" value="${d.func_time_min}"></td>
+            <td><input data-i="${i}" data-k="func_cycle_min" type="number" min="1" step="1" value="${d.func_cycle_min}"></td>
+            <td class="window">
+              <input data-i="${i}" data-k="window_start_min" type="time" value="${minutesToClock(d.window_start_min)}">
+              <input data-i="${i}" data-k="window_end_min" type="time" value="${minutesToClock(d.window_end_min)}"></td>
+            <td><input data-i="${i}" data-k="occasional_use" type="number" min="0" max="10" step="1" value="${Math.round(d.occasional_use * 10)}"></td>
+            <td>${devices.length > 1 ? `<button class="drop" data-drop="${i}" aria-label="${esc(T("dev.remove"))}">×</button>` : ""}</td>
+          </tr>`).join("")}
+        </table>
+        <button class="btn quiet" id="dev-add">${T("dev.add")}</button>
+
+        <p class="totals">${T("use.new.total", { kwh: nf(t.kwh, 2), kw: nf(t.kw, 2) })}</p>
+        <p class="hint warn hidden" id="use-error"></p>
+        <div class="sheet-actions">
+          <button class="btn quiet" id="use-cancel">${T("use.new.cancel")}</button>
+          <button class="btn primary" id="use-save">${T("use.new.save")}</button>
+        </div>
+      </div>`;
+
+    $("#use-name").oninput = e => host.dataset.name = e.target.value;
+    $$("#dev-add").forEach(b => b.onclick = () => { devices.push(BLANK_DEVICE()); draw(); });
+    $$("[data-drop]").forEach(b => b.onclick = () => {
+      devices.splice(Number(b.dataset.drop), 1); draw();
+    });
+    $$(".devices input").forEach(el => el.oninput = () => {
+      const d = devices[Number(el.dataset.i)], k = el.dataset.k;
+      if (k === "name") d[k] = el.value;
+      else if (k.startsWith("window")) d[k] = clockToMinutes(el.value);
+      else if (k === "occasional_use") d[k] = Math.min(10, Math.max(0, Number(el.value))) / 10;
+      else d[k] = Number(el.value);
+      const t2 = useTotals(devices);
+      $(".totals").textContent = T("use.new.total",
+        { kwh: nf(t2.kwh, 2), kw: nf(t2.kw, 2) });
+    });
+    $("#use-cancel").onclick = () => { host.remove(); resolve(null); };
+    $("#use-save").onclick = () => {
+      const name = (host.dataset.name || "").trim();
+      const problem = useProblem(name, devices);
+      if (problem) {
+        const box = $("#use-error");
+        box.textContent = problem;
+        box.classList.remove("hidden");
+        return;
+      }
+      host.remove();
+      resolve({
+        key: `custom_${name.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`.replace(/_+$/, ""),
+        label: name, category: $("#use-cat").value,
+        source: "declared by the developer",
+        devices: devices.map(d => ({ ...d, name: d.name.trim() || T("dev.name") })),
+      });
+    };
+  };
+  draw();
+  });
+}
+
+/* The same refusals the model would raise, said before the use is saved rather than when a
+   sizing is already an hour in. */
+function useProblem(name, devices) {
+  if (!name) return T("use.new.name");
+  for (const d of devices) {
+    if (!(d.power_w > 0) || !(d.func_time_min > 0)) return T("dev.power");
+    const width = d.window_end_min > d.window_start_min
+      ? d.window_end_min - d.window_start_min
+      : 1440 - d.window_start_min + d.window_end_min;
+    if (d.func_time_min > width) {
+      return T("use.new.lead") && `${d.name || T("dev.name")} — ${nf(d.func_time_min)} > ${nf(width)} min`;
+    }
+  }
+  return "";
+}
+
 
 /* ------------------------------------------------------------------ archetypes */
 async function loadArchetypes() {
@@ -1322,6 +1594,7 @@ async function boot(lang) {
   if (first || !state.site || state.site.origin === "template")
     state.site = state.sites.find(x => x.name === state.overrides["site"]) || state.sites[0];
   state.classes = await (await fetch(`/api/productive-classes?lang=${b.lang}`)).json();
+  state.communityUses = await (await fetch(`/api/community-uses?lang=${b.lang}`)).json();
 
   refreshCurrency();
   renderHome();

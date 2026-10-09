@@ -147,6 +147,19 @@ DECLARED = re.compile(
     r"|([A-Za-z_$][\w$]*)\s*:\s*(?:async\s*)?(?:function|\())"
 )
 
+#: Parameter lists, whose names are declarations too. A function called through the name it
+#: was handed under -- a promise's ``resolve``, a callback -- exists as surely as one
+#: declared at the top of the file, and reading only the top of the file reported it
+#: missing. The lists are read loosely: a name that is in scope somewhere is enough to say
+#: the call is not to something that does not exist, which is all this test claims.
+PARAMETERS = re.compile(
+    r"(?:(?:async\s+)?function\s*[A-Za-z_$][\w$]*\s*|\b)\(([^)]*)\)\s*(?:=>|\{)"
+)
+NAME = re.compile(r"^[A-Za-z_$][\w$]*$")
+#: An arrow taking one parameter needs no parentheses around it -- ``resolve => {…}`` --
+#: and the pattern above, which keys on a closing bracket, does not see it.
+BARE_PARAMETER = re.compile(r"\b([A-Za-z_$][\w$]*)\s*=>")
+
 
 def _code_only(script: str) -> str:
     """The script with its comments and string bodies blanked out.
@@ -212,6 +225,12 @@ def test_the_script_calls_nothing_it_never_declares() -> None:
 
     declared = {name for match in DECLARED.finditer(stripped) for name in match.groups()
                 if name}
+    for match in PARAMETERS.finditer(stripped):
+        for piece in match.group(1).split(","):
+            piece = piece.split("=")[0].strip().lstrip(".")
+            if NAME.match(piece):
+                declared.add(piece)
+    declared |= set(BARE_PARAMETER.findall(stripped))
     called = {name for name in CALL.findall(stripped)}
     unknown = sorted(called - declared - BROWSER_GLOBALS)
     assert not unknown, f"the page calls what it never declares: {unknown}"

@@ -272,16 +272,20 @@ STRINGS: dict[str, dict[str, str]] = {
                            "fr": "archétypes livrés, non ajustés."},
 
     # ---------------------------------------------------------------- the front door
-    "home.title": {"en": "What should this community build?",
-                   "fr": "Que faut-il construire pour cette communauté ?"},
+    "home.title": {"en": "Microgrid sizing and expansion planning",
+                   "fr": "Dimensionnement et plan d'extension de mini-réseaux"},
     "home.lead": {
-        "en": "Describe a village, and the tool returns the plant to buy this year — array, "
-              "storage, conversion, generating set — sized for every way its demand may "
-              "grow, with the tariff that plant implies and proof that no cheaper one exists.",
-        "fr": "Décrivez un village : l'outil renvoie la centrale à acheter cette année — "
-              "champ, stockage, conversion, groupe électrogène — dimensionnée pour toutes "
-              "les manières dont sa demande peut croître, avec le tarif qu'elle implique et "
-              "la preuve qu'il n'en existe pas de moins chère."},
+        "en": "A village is electrified once, with money that cannot be spent twice, and "
+              "nobody knows how far its demand will climb. This tool answers the one "
+              "question that follows: what capacity to buy now — array, storage, "
+              "conversion, generating set — weighed against every future the demand may "
+              "take, with the tariff it implies and proof that no cheaper plant exists.",
+        "fr": "Un village ne s'électrifie qu'une fois, avec un budget qu'on ne dépense pas "
+              "deux fois, et nul ne sait jusqu'où sa demande montera. L'outil répond à la "
+              "seule question qui en découle : quelle capacité acheter maintenant — champ, "
+              "stockage, conversion, groupe électrogène — pesée sur tous les avenirs que "
+              "la demande peut prendre, avec le tarif qu'elle implique et la preuve qu'il "
+              "n'existe pas de centrale moins chère."},
     "home.new": {"en": "Create a new project", "fr": "Créer un nouveau projet"},
     "home.new.hint": {"en": "Start from a community you describe yourself.",
                       "fr": "Partir d'une communauté que vous décrivez vous-même."},
@@ -298,10 +302,10 @@ STRINGS: dict[str, dict[str, str]] = {
     "home.open.answered": {"en": "answered", "fr": "répondue"},
     "home.test": {"en": "Try it on a real village", "fr": "L'essayer sur un vrai village"},
     "home.test.hint": {
-        "en": "Two surveyed communities in northern Benin, shipped whole — households, "
-              "enterprises and weather. A study runs on them with no network.",
-        "fr": "Deux communautés enquêtées du nord du Bénin, livrées entières — foyers, "
-              "entreprises et météorologie. Une étude s'y déroule sans connexion."},
+        "en": "Two surveyed communities in southern and central Benin, shipped whole — "
+              "households, enterprises and weather. A study runs on them with no network.",
+        "fr": "Deux communautés enquêtées du sud et du centre du Bénin, livrées entières — "
+              "foyers, entreprises et météorologie. Une étude s'y déroule sans connexion."},
     "home.sample.title": {"en": "What comes back", "fr": "Ce que l'outil renvoie"},
     "home.sample.note": {
         "en": "Shown here as an illustration. The figures on your project are computed from "
@@ -317,9 +321,9 @@ STRINGS: dict[str, dict[str, str]] = {
                      "fr": "Un mini-réseau solaire en lisière de village"},
     "home.credit": {
         "en": "Built on MicroGridsPy. Archetypes calibrated on metered consumption in "
-              "northern Benin.",
+              "southern and central Benin.",
         "fr": "Bâti sur MicroGridsPy. Archétypes calibrés sur des consommations relevées au "
-              "compteur dans le nord du Bénin."},
+              "compteur dans le sud et le centre du Bénin."},
 
     # ---------------------------------------------------------------- moving through the pages
     "wiz.next": {"en": "Next page", "fr": "Page suivante"},
@@ -364,6 +368,126 @@ STRINGS: dict[str, dict[str, str]] = {
               "référence."},
     "pue.total": {"en": "{n} productive customers in all",
                   "fr": "{n} clients productifs au total"},
+
+    # ---------------------------------------------------------------- community uses
+    "site.community": {"en": "Community uses", "fr": "Usages communautaires"},
+    "site.community.hint": {
+        "en": "The buildings a village already has, and its street lighting. They are not "
+              "households and not trades, and they are connected from the first months — "
+              "a line is usually run for them. Leave a count at zero where there is none, "
+              "or where the building is wired but not supplied.",
+        "fr": "Les bâtiments que le village a déjà, et son éclairage public. Ce ne sont ni "
+              "des foyers ni des commerces, et ils sont raccordés dès les premiers mois — "
+              "c'est souvent pour eux que la ligne est tirée. Laissez un compte à zéro là "
+              "où il n'y en a pas, ou là où le bâtiment est équipé sans être alimenté."},
+    "use.school": {"en": "School", "fr": "École"},
+    "use.school.hint": {
+        "en": "Lighting, fans, and whatever office equipment the school holds, during term "
+              "and school hours only. One school is metered across the two reference "
+              "villages and its relay has never closed — it is equipped, not supplied — so "
+              "there is nothing measured to go on and its devices must be declared.",
+        "fr": "Éclairage, ventilation et le matériel de bureau que l'école possède, aux "
+              "seules heures de classe. Une école est équipée d'un compteur sur les deux "
+              "villages de référence et son relais n'a jamais été fermé — elle est "
+              "équipée, non alimentée — de sorte qu'il n'y a rien de mesuré sur quoi "
+              "s'appuyer et que ses appareils doivent être déclarés."},
+    "use.health_centre": {"en": "Health centre", "fr": "Centre de santé"},
+    "use.health_centre.hint": {
+        "en": "Lighting, the cold chain, and occasionally a steriliser. The cold chain runs "
+              "around the clock and is usually the whole of the load; a centre without one "
+              "is a different building electrically. Neither reference village has a "
+              "dispensary, so its devices must be declared.",
+        "fr": "Éclairage, chaîne du froid et parfois un stérilisateur. La chaîne du froid "
+              "tourne jour et nuit et constitue généralement toute la charge ; un centre "
+              "qui n'en a pas est électriquement un autre bâtiment. Aucun des deux "
+              "villages de référence n'a de dispensaire : ses appareils doivent être "
+              "déclarés."},
+    "use.place_of_worship": {"en": "Place of worship", "fr": "Lieu de culte"},
+    "use.place_of_worship.hint": {
+        "en": "Lighting and amplification, concentrated on service days and on evenings. "
+              "This one is measured: four metered across the two reference villages give a "
+              "day peaking at seven in the evening, with a morning rise at service hours "
+              "and a standing load through the night.",
+        "fr": "Éclairage et sonorisation, concentrés les jours d'office et en soirée. "
+              "Celui-ci est mesuré : quatre compteurs sur les deux villages de référence "
+              "donnent une journée qui culmine à dix-neuf heures, avec une remontée le "
+              "matin aux heures d'office et une charge permanente la nuit."},
+    "use.public_lighting": {"en": "Street lighting", "fr": "Éclairage public"},
+    "use.public_lighting.hint": {
+        "en": "Lamps burning from dusk to dawn, every night. It has no behaviour to draw, "
+              "so it is placed exactly from the lamp count and the rating rather than "
+              "simulated. Often unmetered: where the distribution meters record it, it "
+              "arrives with the network losses and must not be counted twice.",
+        "fr": "Des lampes qui brûlent du crépuscule à l'aube, toutes les nuits. Il n'y a là "
+              "aucun comportement à tirer : la charge est posée exactement d'après le "
+              "nombre de lampadaires et leur puissance, non simulée. Souvent non compté : "
+              "là où les compteurs de départ le relèvent, il arrive avec les pertes du "
+              "réseau et ne doit pas être compté deux fois."},
+    "use.lamps": {"en": "lamps", "fr": "lampadaires"},
+    "use.lamp_watts": {"en": "W each", "fr": "W chacun"},
+    "use.declare": {"en": "Describe its devices", "fr": "Décrire ses appareils"},
+    "use.declared": {"en": "{n} devices described", "fr": "{n} appareils décrits"},
+
+    # ---------------------------------------------------------------- declaring a use
+    "use.add": {"en": "Add a use", "fr": "Ajouter un usage"},
+    "use.new.title": {"en": "A use of your own", "fr": "Un usage de votre choix"},
+    "use.new.lead": {
+        "en": "Describe it device by device. Each line is one kind of device: what it "
+              "draws, how many there are, how long it runs in a day, and when. That is "
+              "what the appliance library needs to simulate it.",
+        "fr": "Décrivez-le appareil par appareil. Chaque ligne est un type d'appareil : ce "
+              "qu'il consomme, combien il y en a, combien de temps il marche dans la "
+              "journée, et quand. C'est ce qu'il faut à la bibliothèque d'appareils pour "
+              "le simuler."},
+    "use.new.name": {"en": "Name of the use", "fr": "Nom de l'usage"},
+    "use.new.category": {"en": "Kind", "fr": "Nature"},
+    "use.new.category.productive": {"en": "A trade", "fr": "Un commerce"},
+    "use.new.category.community": {"en": "A community building",
+                                   "fr": "Un bâtiment communautaire"},
+    "use.new.category.hint": {
+        "en": "A trade waits for the line as the other trades do; a community building is "
+              "connected from the first months.",
+        "fr": "Un commerce attend la ligne comme les autres commerces ; un bâtiment "
+              "communautaire est raccordé dès les premiers mois."},
+    "dev.name": {"en": "Device", "fr": "Appareil"},
+    "dev.power": {"en": "Power", "fr": "Puissance"},
+    "dev.number": {"en": "How many", "fr": "Combien"},
+    "dev.func_time": {"en": "Runs for", "fr": "Marche pendant"},
+    "dev.func_time.hint": {
+        "en": "Minutes a day it actually runs, not how long it is switched on at the wall. "
+              "A fridge with a compressor running a third of the time runs 480 minutes.",
+        "fr": "Minutes par jour où il marche réellement, et non la durée pendant laquelle "
+              "il est sous tension. Un réfrigérateur dont le compresseur tourne un tiers "
+              "du temps marche 480 minutes."},
+    "dev.func_cycle": {"en": "Shortest run", "fr": "Marche minimale"},
+    "dev.func_cycle.hint": {
+        "en": "The shortest stretch it runs for once started, in minutes. It is what stops "
+              "a fridge being simulated as a thousand one-minute bursts.",
+        "fr": "La plus courte durée pendant laquelle il marche une fois démarré, en "
+              "minutes. C'est ce qui évite qu'un réfrigérateur soit simulé comme mille "
+              "démarrages d'une minute."},
+    "dev.window": {"en": "Between", "fr": "Entre"},
+    "dev.window.hint": {
+        "en": "The part of the day it may run in. An end before the start means it crosses "
+              "midnight, which is how a night load is written.",
+        "fr": "La partie de la journée où il peut marcher. Une fin antérieure au début "
+              "signifie qu'il franchit minuit, et c'est ainsi qu'on écrit une charge "
+              "nocturne."},
+    "dev.occasional": {"en": "Days in ten it is used", "fr": "Jours sur dix où il sert"},
+    "dev.occasional.hint": {
+        "en": "Ten for something used every day, four for a welding set worked three days "
+              "a week. A device used every day for its whole window is placed exactly "
+              "rather than drawn, because there is nothing to draw.",
+        "fr": "Dix pour ce qui sert tous les jours, quatre pour un poste à souder employé "
+              "trois jours par semaine. Un appareil qui sert tous les jours pendant toute "
+              "sa fenêtre est posé exactement plutôt que tiré, puisqu'il n'y a rien à "
+              "tirer."},
+    "dev.add": {"en": "Add a device", "fr": "Ajouter un appareil"},
+    "dev.remove": {"en": "Remove", "fr": "Retirer"},
+    "use.new.total": {"en": "{kwh} kWh a day, {kw} kW at once",
+                      "fr": "{kwh} kWh par jour, {kw} kW à la fois"},
+    "use.new.save": {"en": "Add this use", "fr": "Ajouter cet usage"},
+    "use.new.cancel": {"en": "Cancel", "fr": "Annuler"},
 
     # ---------------------------------------------------------------- activity classes
     "pue.refrigeration": {"en": "Refrigeration and ice",

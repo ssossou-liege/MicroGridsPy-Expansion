@@ -47,6 +47,12 @@ class SiteRequest(BaseModel):
     census: dict[str, int] = Field(default_factory=dict)
     productive_units: int | None = None
     productive_mix: dict[str, int] = Field(default_factory=dict)
+    #: How many of each community use the village has. Street lighting counts lamps.
+    community_mix: dict[str, int] = Field(default_factory=dict)
+    #: Uses the developer described device by device, because no class of ours fits them.
+    declared_uses: list[dict] = Field(default_factory=list)
+    #: What one street lamp draws, when the village has any.
+    lamp_watts: float | None = None
     #: Omitted by the interface, which reads it off the longitude: an hour's displacement
     #: between sun and load is the error a storage sizing is most sensitive to, and asking
     #: a developer to state it invites exactly that error.
@@ -103,6 +109,33 @@ def create_app() -> FastAPI:
         return [{"key": c, "label": i18n.t(f"pue.{c}", lang),
                  "hint": i18n.t(f"pue.{c}.hint", lang)} for c in CLASSES]
 
+    @app.get("/api/community-uses")
+    def community_uses(lang: str = i18n.DEFAULT) -> list[dict]:
+        """The community loads a village has, and what is known about each.
+
+        A class the meters could speak to carries its measured day; the rest carry nothing
+        and say so, because a default occupancy would be invention wearing a calibration's
+        clothes. All four are listed from the start, at a count of zero: a developer reading
+        "school, health centre, place of worship, street lighting" remembers to count them,
+        where an empty list reminds them of nothing.
+        """
+        from ..demand.uses import COMMUNITY_CATALOGUE, CommunityCalibration
+
+        calibration = CommunityCalibration.load()
+        measured = set(calibration.classes) if calibration else set()
+        out = []
+        for key, entry in COMMUNITY_CATALOGUE.items():
+            row = {"key": key, "label": i18n.t(f"use.{key}", lang),
+                   "hint": i18n.t(f"use.{key}.hint", lang),
+                   "measured": key in measured,
+                   "lamps": key == "public_lighting"}
+            if key in measured:
+                row["kwh_per_day"] = round(
+                    float(calibration.profiles.loc[key, "kwh_per_day"]), 3)
+                row["n_meters"] = int(calibration.profiles.loc[key, "n_meters"])
+            out.append(row)
+        return out
+
     @app.get("/api/job/{job_id}")
     def job_state(job_id: str) -> dict:
         job = registry.get(job_id)
@@ -134,13 +167,35 @@ def create_app() -> FastAPI:
     def site_save(request: SiteRequest) -> dict:
         from ..sites import Site, save_site, standard_offset, to_record
         census = {k: int(v) for k, v in request.census.items() if int(v) >= 0}
+        from ..demand.uses import UseSpec, dusk_to_dawn
+
         roster = {k: int(v) for k, v in request.productive_mix.items() if int(v) > 0}
+        community = {k: int(v) for k, v in request.community_mix.items() if int(v) > 0}
+        uses = []
+        for record in request.declared_uses:
+            try:
+                use = UseSpec.from_record(record)
+                use.validate()
+            except (KeyError, TypeError, ValueError) as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            uses.append(use)
+        # Street lighting is given as a lamp count and a rating rather than as devices,
+        # because that is how a developer knows it and because it is the one community load
+        # with no behaviour to describe: it burns dusk to dawn, every night.
+        lamps = community.get("public_lighting", 0)
+        if lamps and request.lamp_watts:
+            uses = [u for u in uses if u.key != "public_lighting"]
+            uses.append(dusk_to_dawn(lamps, float(request.lamp_watts),
+                                     source="declared by the developer"))
+            community["public_lighting"] = 1        # one lighting system, however many lamps
         offset = (request.utc_offset_hours if request.utc_offset_hours is not None
                   else standard_offset(request.longitude))
         site = Site(name=request.name.strip(), census=census or {"HH1": 0},
                     latitude=request.latitude, longitude=request.longitude,
                     productive_units=request.productive_units or (sum(roster.values()) or None),
                     productive_mix=roster or None,
+                    community_mix=community or None,
+                    declared_uses=tuple(uses) or None,
                     utc_offset_hours=offset, origin="user")
         if not site.name:
             raise HTTPException(status_code=400, detail="the site needs a name")

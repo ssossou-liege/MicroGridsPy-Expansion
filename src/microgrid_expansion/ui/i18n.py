@@ -94,6 +94,27 @@ STRINGS: dict[str, dict[str, str]] = {
               "connexion ; les coordonnées se saisissent sans."},
     "site.series.have": {"en": "Series available", "fr": "Série disponible"},
     "site.series.none": {"en": "No series", "fr": "Aucune série"},
+    "series.same_cell": {
+        "en": "{site} is {km} km away and inside the same cell of the weather archive's "
+              "grid, so its series is what a new request would return — the same numbers, "
+              "after a wait that can run to hours.",
+        "fr": "{site} est à {km} km et dans la même maille de la grille de l'archive "
+              "météorologique : sa série est ce qu'une nouvelle demande renverrait — les "
+              "mêmes nombres, au bout d'une attente qui peut durer des heures."},
+    "series.nearby": {
+        "en": "{site} is {km} km away and has a series. It is a neighbour's weather rather "
+              "than this point's, close but not identical; the sizing will say whose it "
+              "used.",
+        "fr": "{site} est à {km} km et possède une série. C'est la météorologie d'un "
+              "voisin et non celle de ce point, proche sans être identique ; le "
+              "dimensionnement dira de qui elle vient."},
+    "series.use": {"en": "Use that series", "fr": "Utiliser cette série"},
+    "series.borrowed": {"en": "Using the series of {site}, {km} km away.",
+                        "fr": "Série de {site} utilisée, à {km} km."},
+    "site.series.fetched": {"en": "Series downloaded.", "fr": "Série téléchargée."},
+    "site.series.waiting": {
+        "en": "The weather series is still downloading; the sizing needs it",
+        "fr": "La série météorologique se télécharge encore ; le dimensionnement en a besoin"},
     "site.series.hint": {
         "en": "Without a meteorological series the sizing cannot start. It downloads once per "
               "site from a public reanalysis and needs a connection.",
@@ -689,9 +710,26 @@ STRINGS: dict[str, dict[str, str]] = {
                   "fr": "résolution du programme équivalent-déterministe"},
     "job.descend": {"en": "descending to the plan the controller prefers",
                     "fr": "descente vers le plan que l'automate préfère"},
-    "job.reanalysis": {"en": "requesting the reanalysis for {lat}, {lon} — several minutes",
-                       "fr": "demande de la réanalyse pour {lat}, {lon} — plusieurs minutes"},
-    "job.store": {"en": "storing the series", "fr": "enregistrement de la série"},
+    # What the request is actually doing, in words a developer can act on. The old line
+    # read "requesting the reanalysis for 7.2140, 2.3315", which names a method nobody
+    # outside the field uses and two numbers it never says are coordinates.
+    "job.era5.start": {
+        "en": "asking the weather archive for {years} at this point",
+        "fr": "demande des années {years} à l'archive météorologique pour ce point"},
+    "job.era5.queued": {
+        "en": "waiting in the archive's queue — this can take minutes, and the rest of the "
+              "study can be filled in meanwhile",
+        "fr": "en attente dans la file de l'archive — cela peut prendre des minutes, et le "
+              "reste de l'étude peut se remplir pendant ce temps"},
+    "job.era5.running": {
+        "en": "the archive is preparing {years} of hourly weather",
+        "fr": "l'archive prépare {years} d'heures de météorologie"},
+    "job.era5.downloading": {"en": "downloading the series",
+                             "fr": "téléchargement de la série"},
+    "job.era5.processing": {
+        "en": "converting to irradiance, temperature and wind on the local clock",
+        "fr": "conversion en éclairement, température et vent à l'heure locale"},
+    "job.era5.storing": {"en": "storing the series", "fr": "enregistrement de la série"},
     "job.stopping": {"en": "stop requested", "fr": "arrêt demandé"},
     "job.finished": {"en": "finished", "fr": "fini"},
     "job.interrupted": {"en": "interrupted", "fr": "interrompu"},

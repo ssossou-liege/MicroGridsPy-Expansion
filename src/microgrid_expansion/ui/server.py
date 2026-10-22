@@ -210,6 +210,41 @@ def create_app() -> FastAPI:
                                 detail="the worked examples cannot be deleted")
         return {"deleted": delete_site(name)}
 
+    @app.get("/api/sites/nearby-series")
+    def nearby_series(lat: float, lon: float) -> list[dict]:
+        """Series already on disk for a point near this one.
+
+        A village a few kilometres from one already studied needs no second request: inside
+        one cell of the archive's grid the answer would be the file already here, to the
+        last digit. Beyond the cell it is a neighbour's sun rather than this one's, which
+        the interface says before offering it.
+        """
+        from ..resource.era5 import nearby_series as look
+
+        return look(lat, lon)
+
+    @app.post("/api/sites/{name}/borrow-series")
+    def borrow_series(name: str, source: str) -> dict:
+        """Use a neighbouring village's series for this one, and record whose it is."""
+        from dataclasses import replace
+
+        from ..resource.era5 import distance_km, same_cell
+        from ..sites import get_site, save_site, to_record
+
+        site, lender = get_site(name), get_site(source)
+        if not lender.irradiance_file:
+            raise HTTPException(status_code=400,
+                                detail=f"{source} has no series to lend")
+        if site.latitude is None or lender.latitude is None:
+            raise HTTPException(status_code=400, detail="both sites need coordinates")
+        save_site(replace(site, irradiance_file=lender.irradiance_file,
+                          irradiance_source=lender.name))
+        return {**to_record(get_site(name)),
+                "km": round(distance_km(site.latitude, site.longitude,
+                                        lender.latitude, lender.longitude), 1),
+                "same_cell": same_cell(site.latitude, site.longitude,
+                                       lender.latitude, lender.longitude)}
+
     @app.post("/api/sites/{name}/resource")
     def site_resource(name: str) -> dict:
         job = registry.start("resource", "job.resource",

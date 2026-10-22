@@ -319,10 +319,19 @@ def fetch_resource(job: Job, site_name: str, first_year: int = 2016,
     if site.latitude is None or site.longitude is None:
         raise ValueError("the site has no coordinates; place it on the map first")
 
-    job.total = 2
-    job.announce("job.reanalysis", lat=f"{site.latitude:.4f}", lon=f"{site.longitude:.4f}")
+    # The phases the request actually passes through, in the order it passes through them.
+    # The long one is a queue at the data store, which can be a minute or an hour; the step
+    # count moves on what is known to have happened rather than on a guess at what is left.
+    phases = {"queued": 1, "running": 2, "downloading": 3, "processing": 4, "storing": 5}
+    job.total = 6
+    job.announce("job.era5.start", years=f"{first_year}–{last_year}")
+
+    def reached(name: str, detail: str = "") -> None:
+        job.done = max(job.done, phases.get(name, job.done))
+        job.announce(f"job.era5.{name}", years=f"{first_year}–{last_year}")
+
     try:
-        path = download_era5(site, first_year, last_year)
+        path = download_era5(site, first_year, last_year, on_phase=reached)
     except ImportError as exc:
         raise RuntimeError("the Climate Data Store client is not installed "
                            "(pip install cdsapi)") from exc
@@ -331,11 +340,9 @@ def fetch_resource(job: Job, site_name: str, first_year: int = 2016,
             f"the reanalysis could not be fetched: {exc}. Check the connection and the "
             "~/.cdsapirc credentials file."
         ) from exc
-    job.done = 1
-
-    job.announce("job.store")
+    job.announce("job.era5.storing", years=f"{first_year}–{last_year}")
     save_site(replace(site, irradiance_file=path.name))
-    job.done = 2
+    job.done = 6
     return {"site": site.name, "file": path.name,
             "years": [first_year, last_year],
             "latitude": site.latitude, "longitude": site.longitude}

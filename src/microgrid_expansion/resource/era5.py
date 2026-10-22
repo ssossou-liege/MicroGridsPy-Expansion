@@ -214,6 +214,67 @@ def open_era5(raw_path: Path):
     return merged
 
 
+#: Spacing of the archive's grid, in degrees. A request names a point; the archive answers
+#: with the cell that point falls in. Two points inside one cell therefore receive the same
+#: numbers, to the last digit -- which is what makes reusing a neighbour's series exact
+#: rather than approximate, and what sets the distance below which no second download is
+#: worth making. At this latitude the cell is about eleven kilometres across.
+GRID_DEG = 0.1
+
+#: How far out to look for a series worth offering. Beyond the cell the numbers are no
+#: longer the same, but over a flat savannah a neighbouring cell's sun is close enough to
+#: be worth proposing -- as a proposal, said to be an approximation, and never as a silent
+#: substitution.
+SEARCH_RADIUS_KM = 25.0
+
+EARTH_RADIUS_KM = 6371.0
+
+
+def distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance between two points [km]."""
+    import math
+
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp, dl = p2 - p1, math.radians(lon2 - lon1)
+    a = (math.sin(dp / 2) ** 2
+         + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2)
+    return 2 * EARTH_RADIUS_KM * math.asin(min(1.0, math.sqrt(a)))
+
+
+def same_cell(lat1: float, lon1: float, lat2: float, lon2: float) -> bool:
+    """Whether two points fall in the same grid cell, and so receive identical data."""
+    import math
+
+    return (math.floor(lat1 / GRID_DEG) == math.floor(lat2 / GRID_DEG)
+            and math.floor(lon1 / GRID_DEG) == math.floor(lon2 / GRID_DEG))
+
+
+def nearby_series(latitude: float, longitude: float,
+                  radius_km: float = SEARCH_RADIUS_KM) -> list[dict]:
+    """Series already downloaded for a point near this one, nearest first.
+
+    A village described a few kilometres from one already studied needs no second request:
+    inside one grid cell the archive would return what is already on disk. Offering it
+    saves a queue that can run to hours, and saying how far away it was taken is what keeps
+    the offer honest.
+    """
+    from ..sites import known_sites
+
+    out = []
+    for site in known_sites().values():
+        if not site.irradiance_file or site.latitude is None or site.longitude is None:
+            continue
+        km = distance_km(latitude, longitude, site.latitude, site.longitude)
+        if km > radius_km:
+            continue
+        out.append({"site": site.name, "file": site.irradiance_file,
+                    "latitude": site.latitude, "longitude": site.longitude,
+                    "km": round(km, 1),
+                    "same_cell": same_cell(latitude, longitude,
+                                           site.latitude, site.longitude)})
+    return sorted(out, key=lambda row: row["km"])
+
+
 def series_filename(site: Site, first_year: int, last_year: int) -> str:
     """Canonical name of a site's meteorological series."""
     return f"{site.name.lower()}_weather_hourly_{first_year}_{last_year}.csv"
@@ -226,12 +287,24 @@ def download_era5(
     raw_dir: Path | None = None,
     out_dir: Path = IRRADIANCE_DIR,
     overwrite: bool = False,
+    on_phase=None,
 ) -> Path:
     """Download, process and write the site's hourly meteorological series.
 
     The raw NetCDF is cached, so re-running after an interrupted processing step does not
     queue a second request against the Climate Data Store.
+
+    ``on_phase`` is called with the phase the request has reached -- ``"queued"``,
+    ``"running"``, ``"downloading"``, ``"processing"``, ``"storing"`` -- and with the data
+    store's own words for it. The phases are reported rather than a percentage because the
+    wait is a queue at someone else's door: it can be a minute or an hour, nothing on this
+    side knows which, and a bar filling at an invented rate would be a promise the tool
+    cannot keep. A caller that wants no report passes nothing.
     """
+    def phase(name: str, detail: str = "") -> None:
+        if on_phase is not None:
+            on_phase(name, detail)
+
     if site.latitude is None or site.longitude is None:
         raise ValueError(
             f"{site.name} has no coordinates in the site registry; record them before "
@@ -248,15 +321,31 @@ def download_era5(
         request = Era5Request(site.latitude, site.longitude, first_year, last_year)
         print(f"--> ERA5-Land {site.name} ({site.latitude}, {site.longitude}) "
               f"{request.date_range}")
-        client = cdsapi.Client()
+        phase("queued")
+
+        def entendu(message: str) -> None:
+            """What the data store says of the request, turned into a phase."""
+            texte = str(message)
+            print(texte)
+            bas = texte.lower()
+            if "download" in bas:
+                phase("downloading", texte)
+            elif "running" in bas or "in progress" in bas:
+                phase("running", texte)
+            elif "queue" in bas or "accepted" in bas or "submitted" in bas:
+                phase("queued", texte)
+
+        client = cdsapi.Client(info_callback=entendu)
         client.retrieve("reanalysis-era5-land-timeseries",
                         request.payload()).download(str(raw_path))
     else:
         print(f"--> cache: {raw_path.name}")
 
+    phase("processing")
     frame = process_era5(open_era5(raw_path), utc_offset_hours=site.utc_offset_hours,
                          longitude=site.longitude)
 
+    phase("storing")
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / series_filename(site, first_year, last_year)
     frame.to_csv(out_path, index=False)

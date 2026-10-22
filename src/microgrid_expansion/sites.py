@@ -76,6 +76,10 @@ class Site:
     #: devices that make it up. Their counts live in the two mixes above, under the same
     #: key, so that a declared use is counted exactly as a calibrated one is.
     declared_uses: tuple | None = None
+    #: The village whose series this one is using, when it borrowed rather than downloaded.
+    #: Carried so that a certificate can say whose sun it rests on: a plant sized on a
+    #: neighbour's weather is a fact about the result, not a detail of how it was obtained.
+    irradiance_source: str | None = None
     #: ``"template"`` for the two shipped with the tool, ``"user"`` for a described one.
     origin: str = "template"
     #: Standard time offset from UTC [h]. A property of the site, not of the acquisition:
@@ -153,6 +157,7 @@ def to_record(site: Site) -> dict:
     return {"name": site.name, "census": dict(site.census),
             "latitude": site.latitude, "longitude": site.longitude,
             "irradiance_file": site.irradiance_file, "meter_file": site.meter_file,
+            "irradiance_source": site.irradiance_source,
             "productive_units": site.productive_units,
             "productive_mix": site.productive_mix,
             "community_mix": site.community_mix,
@@ -166,6 +171,7 @@ def from_record(record: dict) -> Site:
     return Site(name=record["name"], census=census or {"HH1": 0},
                 latitude=record.get("latitude"), longitude=record.get("longitude"),
                 irradiance_file=record.get("irradiance_file"),
+                irradiance_source=record.get("irradiance_source"),
                 meter_file=record.get("meter_file"),
                 productive_units=record.get("productive_units"),
                 productive_mix=record.get("productive_mix"),

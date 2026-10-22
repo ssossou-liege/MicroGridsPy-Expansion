@@ -121,3 +121,58 @@ def test_the_page_states_the_zone_it_derived_and_lets_it_be_corrected() -> None:
     assert "site.utc.derived" in script, "the page never says which zone it chose"
     assert "site.utc.adjust" in script, "the derived zone cannot be corrected"
     assert "utc_offset_hours" in script, "a correction never reaches the server"
+
+
+def test_the_weather_is_fetched_for_a_point_and_asks_for_nothing_else() -> None:
+    """A reanalysis knows nothing of households, and must not wait for a census.
+
+    The page asks for the community in the order it presents it: a name, then where it is,
+    then who lives there. Fetching the series sits beside the map, so it is reached before
+    the households are typed -- and refusing it with "no households to connect" is true,
+    unrelated, and arrives at exactly the wrong moment.
+    """
+    script = (STATIC / "app.js").read_text(encoding="utf-8")
+    assert 'saveSite("meteo")' in script, (
+        "fetching the series saves the site under the full validation")
+    assert 'pour === "etude" && households <= 0' in script, (
+        "the household check is not conditioned on why the site is being saved")
+    # And leaving the page still requires them: that is where a village is needed whole.
+    assert "if (state.site && state.site.origin !== \"template\" && !(await saveSite()))" \
+        in script, "the page may now be left without a census"
+
+
+# ------------------------------------------------------- the weather of a nearby point
+def test_two_points_in_one_grid_cell_receive_the_same_weather() -> None:
+    """Which is what makes reusing a neighbour's series exact rather than approximate.
+
+    The archive answers a point with the cell it falls in, about eleven kilometres across
+    at this latitude. Distance alone will not do: two points six kilometres apart can
+    straddle a boundary and land in different cells, and two eleven kilometres apart can
+    share one. It is the cell that decides.
+    """
+    from microgrid_expansion.resource.era5 import GRID_DEG, distance_km, same_cell
+
+    assert GRID_DEG == pytest.approx(0.1)
+    assert distance_km(7.0, 2.0, 7.1, 2.0) == pytest.approx(11.1, abs=0.3)
+    assert same_cell(7.095, 2.244, 7.099, 2.240)
+    # Six kilometres apart, either side of a boundary: not the same numbers.
+    assert not same_cell(7.0955, 2.2446, 7.1500, 2.2446)
+
+
+def test_a_borrowed_series_says_whose_it_is() -> None:
+    """A plant sized on a neighbour's sun is a fact about the result, not a detail.
+
+    So the site records the village it borrowed from, and the cache key already carried the
+    file name, which means a borrowed year is never served for an own-downloaded one.
+    """
+    from dataclasses import replace
+
+    from microgrid_expansion.instances import _site_fingerprint
+    from microgrid_expansion.sites import from_record, get_site, to_record
+
+    site = get_site("Samionta")
+    borrowed = replace(site, irradiance_file="elsewhere_weather_hourly_2016_2025.csv",
+                       irradiance_source="Gbowele")
+    assert from_record(to_record(borrowed)).irradiance_source == "Gbowele"
+    assert _site_fingerprint(borrowed) != _site_fingerprint(site), (
+        "a borrowed series keys the same as the site's own")

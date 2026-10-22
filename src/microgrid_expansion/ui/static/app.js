@@ -7,6 +7,7 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const state = { groups: [], overrides: {}, defaults: {}, job: null, timer: null,
                 result: null, projects: [], projectName: "",
                 sites: [], site: null, arch: null, classes: [], communityUses: [], lang: "en",
+                weather: null, weatherTimer: null,
                 page: "project", reached: 1 };
 
 /* ------------------------------------------------------------------ language
@@ -569,6 +570,9 @@ function renderCommunity() {
           ${s.latitude == null ? "disabled" : ""}>${T("action.fetch_resource")}</button>
         ${s.has_resource ? `<span class="badge ok">${T("site.series.have")}</span>`
                          : `<span class="badge warn">${T("site.series.none")}</span>`}
+        <span class="hint" id="weather-state" style="margin-left:4px"></span>
+      </div>
+      <div id="series-nearby" class="hidden" style="margin-top:12px">
         ${tpl || !state.sites.some(x => x.name === s.name) ? "" : `
           <div class="spacer" style="flex:1"></div>
           <button class="btn link" id="site-drop">${T("action.delete")}</button>`}
@@ -627,17 +631,23 @@ function renderCommunity() {
     openHome();
   };
   $("#get-resource").onclick = async () => {
-    if (!state.site.has_resource && state.site.origin === "user" && !(await saveSite())) return;
+    if (!state.site.has_resource && state.site.origin === "user"
+        && !(await saveSite("meteo"))) return;
     const r = await fetch(`/api/sites/${encodeURIComponent(state.site.name)}/resource`,
                           { method: "POST" });
-    state.job = await r.json();
-    buttons(false); $("#cancel").classList.remove("hidden"); poll();
+    // The weather runs on its own. It blocks nothing: a developer who has just placed the
+    // point has the whole community still to describe, and a queue at someone else's data
+    // store is no reason to sit and watch it. Only the sizing waits for it, and only when
+    // it is reached.
+    state.weather = { job: await r.json(), site: state.site.name, since: Date.now() };
+    pollWeather();
   };
 
   ["lat", "lon"].forEach(id => $("#" + id).addEventListener("change", () => {
     const lat = parseFloat($("#lat").value), lon = parseFloat($("#lon").value);
     if (Number.isFinite(lat) && Number.isFinite(lon)) place(lat, lon, true);
     showTimezone();
+    offerNearbySeries();
   }));
 
   $$("#lieu input[data-pue]").forEach(box => box.onchange = e => {
@@ -650,8 +660,14 @@ function renderCommunity() {
     readRoster();
   });
   $$("#lieu input[data-count]").forEach(box => box.oninput = readRoster);
+  // The census belongs in the state as the roster does. Held only in the boxes, it was
+  // rebuilt from the saved site on every redraw -- and the page is redrawn whenever a use
+  // is added, a language changes or the weather lands, so what had been typed went back to
+  // zero without anything being said.
+  $$("#hh1, #hh2, #hh3").forEach(box => box.oninput = readCensus);
 
   renderCommunity_();
+  paintWeather();
   $("#pue-add").onclick = async () => {
     const use = await openUseDialog("productive");
     if (use) addDeclaredUse(use);
@@ -662,6 +678,8 @@ function renderCommunity() {
   };
 
   readRoster();
+  readCensus();
+  offerNearbySeries();
   showTimezone();
   mountMap(s.latitude, s.longitude);
 }
@@ -732,6 +750,89 @@ function renderCommunity_() {
   });
   $$("#community input[type=number]").forEach(box => box.oninput = readCommunity);
   readCommunity();
+}
+
+/* The download's own line, under the button that asked for it. It survives a redraw of the
+   page, because the page is redrawn whenever anything on it changes and the download
+   outlives all of that. */
+function paintWeather() {
+  const line = $("#weather-state");
+  if (!line) return;
+  const w = state.weather;
+  if (!w || w.site !== state.site?.name) { line.textContent = ""; return; }
+  const job = w.job;
+  const seconds = Math.round((Date.now() - w.since) / 1000);
+  const elapsed = seconds < 90 ? `${seconds} s` : `${Math.round(seconds / 60)} min`;
+  if (job.status === "running") {
+    line.innerHTML = `<b>${T(job.stage, job.stage_args)}</b> — ${elapsed}`;
+    line.className = "hint";
+  } else if (job.status === "done") {
+    line.textContent = T("site.series.fetched");
+    line.className = "hint";
+  } else {
+    line.textContent = `${T("state.failed")} ${job.error ?? ""}`;
+    line.className = "hint warn";
+  }
+}
+
+function pollWeather() {
+  clearInterval(state.weatherTimer);
+  paintWeather();
+  state.weatherTimer = setInterval(async () => {
+    const w = state.weather;
+    if (!w) { clearInterval(state.weatherTimer); return; }
+    w.job = await (await fetch(`/api/job/${w.job.id}`)).json();
+    paintWeather();
+    if (w.job.status === "running") return;
+    clearInterval(state.weatherTimer);
+    if (w.job.status === "done") await refreshSites(w.site);
+  }, 1200);
+}
+
+/* A series already on disk for a point near this one. Inside one cell of the archive's
+   grid the file here *is* what a new request would return, so downloading again would buy
+   nothing but a wait that can run to hours. Beyond the cell it is a neighbour's sun, which
+   is said plainly and offered rather than taken. */
+async function offerNearbySeries() {
+  const box = $("#series-nearby");
+  const s = state.site;
+  if (!box || !s || s.has_resource || s.latitude == null || s.longitude == null) {
+    if (box) box.classList.add("hidden");
+    return;
+  }
+  const found = await (await fetch(
+    `/api/sites/nearby-series?lat=${s.latitude}&lon=${s.longitude}`)).json();
+  const usable = found.filter(x => x.site !== s.name);
+  if (!usable.length) { box.classList.add("hidden"); return; }
+
+  const best = usable[0];
+  box.classList.remove("hidden");
+  box.innerHTML = `<div class="notice" style="display:flex;gap:12px;align-items:center">
+      <span style="flex:1">${best.same_cell
+        ? T("series.same_cell", { site: esc(best.site), km: nf(best.km, 1) })
+        : T("series.nearby", { site: esc(best.site), km: nf(best.km, 1) })}</span>
+      <button class="btn quiet" id="series-borrow">${T("series.use")}</button>
+    </div>`;
+  $("#series-borrow").onclick = async () => {
+    if (s.origin === "user" && !(await saveSite("meteo"))) return;
+    const r = await fetch(
+      `/api/sites/${encodeURIComponent(state.site.name)}/borrow-series`
+      + `?source=${encodeURIComponent(best.site)}`, { method: "POST" });
+    if (!r.ok) { setState(T("state.failed"), null); return; }
+    const row = await r.json();
+    await refreshSites(state.site.name);
+    // The lender, not the borrower: the reply carries the record of the site that was
+    // changed, and naming it here said the village was using its own series.
+    setState(T("series.borrowed", { site: esc(best.site),
+                                    km: nf(row.km ?? best.km, 1) }), null);
+  };
+}
+
+function readCensus() {
+  if (!state.site) return;
+  state.site.census = Object.fromEntries(["HH1", "HH2", "HH3"].map(
+    k => [k, parseInt($("#" + k.toLowerCase())?.value || 0, 10) || 0]));
+  state.site.n_households = Object.values(state.site.census).reduce((a, b) => a + b, 0);
 }
 
 function readCommunity() {
@@ -814,6 +915,7 @@ function place(lat, lon, recentre) {
   else pin = L.marker([lat, lon], { draggable: true }).addTo(map)
                .on("dragend", ev => { const p = ev.target.getLatLng(); place(p.lat, p.lng, false); });
   if (recentre) map.setView([lat, lon], Math.max(map.getZoom(), 13));
+  offerNearbySeries();
 }
 
 /* Not a question any more, an observation. Solar noon follows longitude at fifteen degrees
@@ -848,7 +950,13 @@ function fail(key) {
   return false;
 }
 
-async function saveSite() {
+/* ``pour`` says what the site is being saved for, because the two reasons do not ask for
+   the same thing. Leaving the page needs a village: a name, a point, and somebody to
+   connect. Fetching the weather needs only a point to fetch it at -- the reanalysis knows
+   nothing of households -- and demanding a census there refused the fetch with "no
+   households to connect", which is true, unrelated, and arrives while the developer is
+   still filling the page in the order the page presents it. */
+async function saveSite(pour = "etude") {
   const s = state.site;
   if (!s || s.origin === "template") return true;
   const name = ($("#site-name")?.value || s.name || "").trim();
@@ -857,12 +965,11 @@ async function saveSite() {
   const census = Object.fromEntries(["HH1", "HH2", "HH3"].map(
     k => [k, parseInt($("#" + k.toLowerCase()).value || 0, 10)]));
   const households = Object.values(census).reduce((a, b) => a + b, 0);
-  // Said before the request rather than after it: a name, a point and somebody to connect
-  // are what the rest of the study is built on, and a run that fails a minute in for want
-  // of one of them is a worse way to find out.
+  // Said before the request rather than after it: a run that fails a minute in for want of
+  // a coordinate is a worse way to find out.
   if (!name) return fail("state.need_name");
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return fail("state.need_point");
-  if (households <= 0) return fail("state.need_households");
+  if (pour === "etude" && households <= 0) return fail("state.need_households");
   readCommunity();
   const body = {
     name, latitude: lat, longitude: lon, census,
@@ -1031,13 +1138,17 @@ function openUseDialog(category) {
         box.classList.remove("hidden");
         return;
       }
-      host.remove();
-      resolve({
+      // Read the panel before taking it out of the document. Reversed, the category was
+      // read from an element already removed, the handler threw on null, the promise never
+      // settled, and the use the developer had just described was silently lost.
+      const use = {
         key: `custom_${name.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`.replace(/_+$/, ""),
         label: name, category: $("#use-cat").value,
         source: "declared by the developer",
         devices: devices.map(d => ({ ...d, name: d.name.trim() || T("dev.name") })),
-      });
+      };
+      host.remove();
+      resolve(use);
     };
   };
   draw();
@@ -1490,6 +1601,16 @@ const goBack = () => show(PAGES[Math.max(0, pageIndex(state.page) - 1)].id);
 
 /* ------------------------------------------------------------------ running */
 async function launch() {
+  // The one place the weather is actually needed. Up to here it has been downloading in
+  // the background and nobody had to wait for it; a sizing cannot start without it, so
+  // this is where the waiting belongs -- and it is said as a wait, not as a failure.
+  const w = state.weather;
+  if (!state.site?.has_resource && w && w.site === state.site?.name
+      && w.job.status === "running") {
+    setState(`<b>${T("site.series.waiting")}</b> — ${T(w.job.stage, w.job.stage_args)}`,
+             null);
+    return;
+  }
   const r = await fetch("/api/size", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ overrides: state.overrides })

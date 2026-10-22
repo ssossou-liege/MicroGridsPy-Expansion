@@ -545,6 +545,7 @@ function renderCommunity() {
       <div class="field">
         <div><label for="site-name">${T("site.name")}</label>${info("site.name.hint")}</div>
         <div class="control"><input id="site-name" type="text"
+             placeholder="${esc(T("site.new.name"))}"
              value="${esc(s.name ?? "")}"${lock}></div>
       </div>
     </div>
@@ -605,6 +606,14 @@ function renderCommunity() {
                   value="${n || ""}" placeholder="0"${n ? "" : " disabled"}${lock}>
               </label>`;
             }).join("")}
+            ${(s.declared_uses || []).filter(u => u.category === "productive")
+              .map(u => `<label class="pue on" data-class="${esc(u.key)}">
+                <input type="checkbox" checked disabled>
+                <span class="lbl">${esc(u.label)} <span class="badge warn"
+                  style="font-size:11px">${T("use.declared", { n: u.devices.length })}</span></span>
+                <input type="number" min="0" step="1" data-count="${esc(u.key)}"
+                  aria-label="${esc(u.label)}" value="${roster[u.key] || 1}"${lock}>
+              </label>`).join("")}
           </div>
           <div class="roster-foot" id="pue-total"></div>
           <button class="btn quiet" id="pue-add" style="margin-top:12px"${lock}>${
@@ -852,6 +861,9 @@ function readCommunity() {
    kept on the site so it survives a language change and a move to the next page. */
 function addDeclaredUse(use) {
   if (!state.site) return;
+  // Both lists are redrawn, not only the community one: a trade described through the panel
+  // belongs in the roster beside the six measured classes, and before this it went into the
+  // state and appeared nowhere -- so nothing on screen said it had been added at all.
   const kept = (state.site.declared_uses || []).filter(u => u.key !== use.key);
   state.site.declared_uses = [...kept, use];
   const mix = use.category === "community"
@@ -1477,11 +1489,35 @@ function renderHome() {
     renderHome();
   });
 
-  $("#home-examples").innerHTML = state.sites.filter(x => x.origin === "template")
-    .map(x => `<button class="btn" data-example="${esc(x.name)}">${esc(x.name)}
+  // The villages: the two shipped with the tool, then the ones described here. A village
+  // described while trying something out is a village that stays, and without somewhere to
+  // see them they accumulate unseen -- so they are listed, and each can be removed.
+  const livres = state.sites.filter(x => x.origin === "template");
+  const miens = state.sites.filter(x => x.origin !== "template");
+  $("#home-examples").innerHTML =
+    livres.map(x => `<button class="btn" data-example="${esc(x.name)}">${esc(x.name)}
         <span class="sub">${nf(x.n_households)} ${T("home.households")}</span>
-      </button>`).join("");
-  $$("#home-examples .btn").forEach(b => b.onclick = () => openExample(b.dataset.example));
+      </button>`).join("")
+    + (miens.length ? `<div class="mine">${T("home.mine")}</div>` : "")
+    + miens.map(x => `<div class="saved">
+        <button class="btn" data-example="${esc(x.name)}">${esc(x.name)}
+          <span class="sub">${nf(x.n_households)} ${T("home.households")}${
+            x.has_resource ? ` · ${T("site.series.have").toLowerCase()}` : ""}</span>
+        </button>
+        <button class="drop" data-village="${esc(x.name)}"
+          aria-label="${esc(T("action.delete"))}">×</button>
+      </div>`).join("");
+
+  $$("#home-examples [data-example]").forEach(b =>
+    b.onclick = () => openExample(b.dataset.example));
+  $$("#home-examples [data-village]").forEach(b => b.onclick = async () => {
+    const nom = b.dataset.village;
+    if (!confirm(T("home.drop.sure", { site: nom }))) return;
+    await fetch(`/api/sites/${encodeURIComponent(nom)}`, { method: "DELETE" });
+    state.sites = await (await fetch("/api/sites")).json();
+    if (state.site?.name === nom) state.site = state.sites[0] || null;
+    renderHome();
+  });
 
   $("#door-new").onclick = startNewProject;
 }
@@ -1502,7 +1538,9 @@ function startNewProject() {
   state.projectName = "";
   state.result = null;
   state.reached = 1;
-  state.site = { name: T("site.new.name"), origin: "user",
+  // No name written in for the developer. "New community" sat in the box looking like an
+  // answer, and a village saved before it was renamed carried it.
+  state.site = { name: "", origin: "user",
                  census: { HH1: 0, HH2: 0, HH3: 0 }, n_households: 0,
                  productive_units: null, productive_mix: {},
                  latitude: null, longitude: null };

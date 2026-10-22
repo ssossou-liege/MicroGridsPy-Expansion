@@ -503,3 +503,7 @@ button.door .door-foot { margin-top: 8px; padding-top: 0; }
 .pue .pair { display: flex; align-items: baseline; gap: 6px; }
 .pue .pair input[type=number] { width: 62px; }
 .pue .pair .u { font-size: 12px; color: var(--ink-soft); white-space: nowrap; }
+
+/* The villages one has described, under the two shipped with the tool. */
+.door-foot .mine { font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em;
+                   color: var(--ink-faint); font-weight: 600; margin: 10px 0 2px; }

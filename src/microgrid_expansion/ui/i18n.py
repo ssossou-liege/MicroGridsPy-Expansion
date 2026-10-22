@@ -55,7 +55,8 @@ STRINGS: dict[str, dict[str, str]] = {
                             "compte."},
 
     # ---------------------------------------------------------------- community
-    "site.new.name": {"en": "New community", "fr": "Nouvelle communauté"},
+    #: Shown in the empty box as a prompt, never written into it as an answer.
+    "site.new.name": {"en": "Name of the village", "fr": "Nom du village"},
     "state.site_failed": {"en": "The site could not be saved.",
                           "fr": "Le site n'a pas pu être enregistré."},
     "state.need_name": {"en": "The community needs a name.",
@@ -327,6 +328,14 @@ STRINGS: dict[str, dict[str, str]] = {
               "households, enterprises and weather. A study runs on them with no network.",
         "fr": "Deux communautés enquêtées du sud et du centre du Bénin, livrées entières — "
               "foyers, entreprises et météorologie. Une étude s'y déroule sans connexion."},
+    "home.mine": {"en": "Villages you have described",
+                  "fr": "Les villages que vous avez décrits"},
+    "home.drop.sure": {
+        "en": "Remove {site}? Its description goes; any weather series it downloaded stays "
+              "on disk, and a village placed nearby can still use it.",
+        "fr": "Retirer {site} ? Sa description disparaît ; la série météorologique qu'il "
+              "a éventuellement téléchargée reste sur le disque, et un village placé à "
+              "proximité pourra encore s'en servir."},
     "home.sample.title": {"en": "What comes back", "fr": "Ce que l'outil renvoie"},
     "home.sample.note": {
         "en": "Shown here as an illustration. The figures on your project are computed from "

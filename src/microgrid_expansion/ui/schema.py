@@ -2,13 +2,13 @@
 
 The engine carries some sixty parameters. Putting all sixty on a form is what the tools this
 one means to improve already do, and it makes a developer read sixty questions to answer six.
-Almost every one has a sourced default, so the form asks only for what a site actually
-changes and keeps the rest behind an inspector where the value and its source can be read and,
-if need be, overridden.
+Almost every one has a default worth trusting, so the form asks only for what a site
+actually changes and keeps the rest behind an inspector where the value can be read and, if
+need be, overridden.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass
 from typing import Any
 
 from ..settings import ProjectSettings, default_settings
@@ -30,12 +30,6 @@ class Field:
     #: Catalogue key for the label and the hint. When set, the two above are ignored and the
     #: strings come from the catalogue in the reader's language.
     key: str = ""
-    #: Whose provenance record describes *this* value. Left empty when none does, which is
-    #: the honest answer for most: walking up to the group's record instead made a lifetime
-    #: display the source of a price, and a string-inverter price display the whole
-    #: coupling note. A source shown against a value it does not describe is worse than no
-    #: source at all, because it invites trust the record does not support.
-    source_path: str = ""
 
 
 #: What a developer states about the site. Everything else has a default worth trusting.
@@ -46,12 +40,9 @@ ESSENTIAL: tuple[Field, ...] = (
     Field("maturity_months", "Age of the connection", "months", kind="integer",
           hint="Zero for a new site; twelve for a grid a year into service.", key="f.maturity"),
     Field("economics.horizon_years", "Project horizon", "years", kind="integer", key="f.horizon"),
-    Field("economics.discount_rate", "Discount rate", "", step=0.005,
-          source_path="economics.discount", key="f.discount"),
-    Field("economics.diesel_price_usd_l", "Diesel price", "$/L", step=0.01,
-          source_path="economics.diesel", key="f.diesel"),
+    Field("economics.discount_rate", "Discount rate", "", step=0.005, key="f.discount"),
+    Field("economics.diesel_price_usd_l", "Diesel price", "$/L", step=0.01, key="f.diesel"),
     Field("economics.tariff_usd_kwh", "Target tariff", "$/kWh", step=0.001,
-          source_path="economics.tariff",
           hint="Levelised-cost target; the tool reports the subsidy that reaches it.", key="f.tariff"),
     Field("economics.demand_growth_rate", "Annual demand growth", "", step=0.01,
           hint="Used by the financial appraisal alone, to project revenue. The sizing is "
@@ -87,11 +78,9 @@ GRID: tuple[Field, ...] = (
           hint="What the plant must carry alone, and so what sizes the storage. An "
                "average availability does not say it.", key="f.grid.outage"),
     Field("grid.import_usd_kwh", "Price of imported energy", "$/kWh", step=0.01,
-          source_path="grid.tariff",
           hint="To be taken from the utility: a regulated tariff is particular to the "
                "country and often banded. The value offered is an order of magnitude.", key="f.grid.import"),
     Field("grid.export_usd_kwh", "Price of exported energy", "$/kWh", step=0.01,
-          source_path="grid.tariff",
           hint="Zero where export is not paid for; the surplus is then curtailed.", key="f.grid.export"),
     Field("grid.capacity_kw", "Connection capacity", "kW", step=1.0,
           hint="Zero to impose no limit beyond the converter's own.", key="f.grid.capacity"),
@@ -107,13 +96,10 @@ GRID: tuple[Field, ...] = (
 
 #: Prices and equipment, which move from one market to another.
 EQUIPMENT: tuple[Field, ...] = (
-    Field("photovoltaic.cost_usd_kw", "Photovoltaic", "$/kW", step=1.0,
-          source_path="photovoltaic", key="f.pv_cost"),
-    Field("battery.cost_usd_kwh", "Storage", "$/kWh", step=1.0, source_path="battery", key="f.batt_cost"),
-    Field("inverter.cost_usd_kw", "Power electronics", "$/kW", step=1.0,
-          source_path="inverter", key="f.inv_cost"),
-    Field("coupling.string_inverter_cost_usd_kw", "String inverters", "$/kW", step=1.0,
-          source_path="coupling", key="f.string_cost"),
+    Field("photovoltaic.cost_usd_kw", "Photovoltaic", "$/kW", step=1.0, key="f.pv_cost"),
+    Field("battery.cost_usd_kwh", "Storage", "$/kWh", step=1.0, key="f.batt_cost"),
+    Field("inverter.cost_usd_kw", "Power electronics", "$/kW", step=1.0, key="f.inv_cost"),
+    Field("coupling.string_inverter_cost_usd_kw", "String inverters", "$/kW", step=1.0, key="f.string_cost"),
     Field("photovoltaic.lifetime_years", "Photovoltaic lifetime", "years",
           kind="integer", key="f.pv_life"),
     Field("battery.lifetime_years", "Storage lifetime", "years", kind="integer", key="f.batt_life"),
@@ -126,7 +112,6 @@ EQUIPMENT: tuple[Field, ...] = (
 #: plant; it is silent about the project.
 BALANCE: tuple[Field, ...] = (
     Field("infrastructure.distribution_usd", "Distribution network", "$", step=1000.0,
-          source_path="infrastructure",
           hint="Poles, conductor, earthing and the labour to string them. A lump sum: no "
                "per-kilometre figure carries from a compact village to a scattered one.",
           key="f.distribution"),
@@ -145,10 +130,11 @@ BALANCE: tuple[Field, ...] = (
     Field("infrastructure.development_usd", "Development", "$", step=1000.0,
           hint="Feasibility, survey, permits, design and the developer's own time before "
                "financial close. Spent once and never replaced.", key="f.development"),
-    Field("economics.collection_rate", "Energy billed and collected", "", step=0.01,
-          hint="Share of the energy served that is actually paid for. One means every "
-               "kilowatt-hour delivered is billed and collected, which no rural mini-grid "
-               "achieves.", key="f.collection"),
+    Field("economics.collection_rate", "Customer bills collected", "", step=0.01,
+          hint="Share of what is invoiced to customers that is actually paid. It does not "
+               "apply to the loads nobody is billed for -- the street lighting, the plant's "
+               "own supply -- which are declared as uses and served without being sold.",
+          key="f.collection"),
 )
 
 #: How the plant is wired and run. Changing these changes what the certificate means.
@@ -156,16 +142,14 @@ ADVANCED: tuple[Field, ...] = (
     Field("coupling.architecture", "Coupling", kind="choice",
           choices=("mixed", "dc", "ac", "auto"),
           hint="The divided array contains both pure arrangements as extreme cases.", key="f.coupling"),
-    Field("coupling.dc_ac_ratio_max", "Array admitted per kW, battery bus", "kW/kW", step=0.1,
-          source_path="coupling", key="f.ratio_dc"),
-    Field("coupling.ac_ratio_max", "Array admitted per kW, load bus", "kW/kW", step=0.1,
-          source_path="coupling", key="f.ratio_ac"),
+    Field("coupling.dc_ac_ratio_max", "Array admitted per kW, battery bus", "kW/kW", step=0.1, key="f.ratio_dc"),
+    Field("coupling.ac_ratio_max", "Array admitted per kW, load bus", "kW/kW", step=0.1, key="f.ratio_ac"),
     Field("controller.reserve_multiplier", "Look-ahead reserve", "", step=0.1,
           hint="Multiplies the energy the controller keeps for the night ahead.", key="f.reserve"),
     Field("controller.lookahead_hours", "Look-ahead window", "h", kind="integer", key="f.lookahead"),
     Field("controller.generator_setpoint", "Generator setpoint", "", step=0.05, key="f.setpoint"),
     Field("economics.value_of_lost_load_usd_kwh", "Unserved energy", "$/kWh",
-          step=0.1, source_path="economics.voll", key="f.voll"),
+          step=0.1, key="f.voll"),
     Field("economics.min_service_fraction", "Required service level", "", step=0.005,
           hint="The least share of demand a design must serve to be admitted. Leave it at "
                "zero to require nothing and let the cost of unserved energy arbitrate "
@@ -197,42 +181,9 @@ def read(settings: ProjectSettings, path: str) -> Any:
     return getattr(owner, name)
 
 
-def provenance_of(settings: ProjectSettings, source_path: str,
-                  lang: str = DEFAULT_LANG) -> str | None:
-    """The recorded source at ``source_path``, or nothing.
-
-    Shown beside a field so a developer overriding a price can see what they are overriding,
-    rather than discovering later that a sourced figure was replaced by a guess. Read only
-    where the record actually describes the value: ``"battery"`` reads the battery spec's own
-    note, ``"economics.diesel"`` reads ``diesel_provenance``.
-    """
-    if not source_path:
-        return None
-    if "." in source_path:
-        group, name = source_path.rsplit(".", 1)
-        owner = settings
-        for part in group.split("."):
-            owner = getattr(owner, part)
-        record = getattr(owner, f"{name}_provenance", None)
-    else:
-        record = getattr(getattr(settings, source_path), "provenance", None)
-    if record is not None and is_dataclass(record):
-        source = getattr(record, "source", None)
-        if source:
-            return str(source)
-        # No source is itself worth showing, and the note is where a record says so. A field
-        # whose value nobody has checked should say nothing rather than look sourced -- but
-        # a field that says "unsourced, go and ask the concession" is telling the reader the
-        # single most useful thing about it.
-        note = getattr(record, "note", None)
-        if note and not getattr(record, "verified", False):
-            return f'{t("source.unsourced", lang)} — {note}'
-    return None
-
-
 def describe(settings: ProjectSettings | None = None,
              lang: str = DEFAULT_LANG) -> list[dict]:
-    """Every offered field, with its value and its source, ready for the page."""
+    """Every offered field, with its value, ready for the page."""
     settings = default_settings() if settings is None else settings
     out = []
     for key, title, group in GROUPS:
@@ -248,7 +199,6 @@ def describe(settings: ProjectSettings | None = None,
                 "value": ({True: "yes", False: "no"}[read(settings, f.path)]
                           if f.kind == "choice" and isinstance(read(settings, f.path), bool)
                           else read(settings, f.path)),
-                "source": provenance_of(settings, f.source_path, lang),
             })
         out.append({"key": key, "title": t(f"group.{key}", lang) or title,
                     "fields": entries})

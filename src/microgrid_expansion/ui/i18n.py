@@ -19,7 +19,7 @@ STRINGS: dict[str, dict[str, str]] = {
     # ---------------------------------------------------------------- chrome
     "app.tagline": {"en": "Certified sizing", "fr": "Dimensionnement certifié"},
     "nav.uses": {"en": "Uses and archetypes", "fr": "Usages et archétypes"},
-    "nav.assumptions": {"en": "Assumptions", "fr": "Hypothèses"},
+    "nav.parameters": {"en": "Parameters", "fr": "Paramètres"},
 
     "page.uses.title": {"en": "Uses and archetypes", "fr": "Usages et archétypes"},
     "page.uses.lead": {
@@ -28,12 +28,12 @@ STRINGS: dict[str, dict[str, str]] = {
         "fr": "Les comportements de consommation sur lesquels la demande est bâtie. "
               "Vérifiez-les contre ce que vous connaissez de la communauté, et corrigez-les "
               "si besoin."},
-    "page.assumptions.title": {"en": "Assumptions", "fr": "Hypothèses"},
-    "page.assumptions.lead": {
-        "en": "Prices, service lives and control. Every value carries a default whose source "
-              "is shown, and which you may change.",
-        "fr": "Prix, durées de vie et conduite. Tout porte une valeur par défaut dont la "
-              "source est indiquée, et que vous pouvez modifier."},
+    "page.parameters.title": {"en": "Parameters", "fr": "Paramètres"},
+    "page.parameters.lead": {
+        "en": "Prices, service lives and control. Every value carries a default you may "
+              "change.",
+        "fr": "Prix, durées de vie et conduite. Tout porte une valeur par défaut que vous "
+              "pouvez modifier."},
 
     # ---------------------------------------------------------------- actions
     "action.stop": {"en": "Stop", "fr": "Arrêter"},
@@ -747,8 +747,6 @@ STRINGS: dict[str, dict[str, str]] = {
     "job.failed": {"en": "failed", "fr": "échoué"},
     "job.cancelled": {"en": "cancelled", "fr": "annulé"},
 
-    "source.label": {"en": "Source", "fr": "Source"},
-    "source.unsourced": {"en": "unsourced", "fr": "non sourcé"},
 
     # ---------------------------------------------------------------- form groups
     # ------------------------------------------------------------ choice values

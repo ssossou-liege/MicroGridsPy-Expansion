@@ -320,20 +320,19 @@ function fieldRow(f) {
          value="${f.value ?? ""}" placeholder="${f.value === null ? "—" : ""}">`;
   // A price typed in dollars and read back in francs, with a factor of six hundred between
   // them and nothing on the form to say so, is a mistake waiting to be made. The equivalent
-  // is shown beside the box rather than converting the box, which would round the sourced
-  // figure on every round trip.
+  // is shown beside the box rather than converting the box, which would round the figure
+  // on every round trip.
   const local = f.unit.includes("$") && currency.per_usd !== 1 && Number.isFinite(f.value)
     ? `<div class="hint" id="${id}-loc">≈ ${nf(f.value * currency.per_usd,
         currency.per_usd > 50 ? 0 : 2)} ${f.unit.replace("$", currency.code)}</div>` : "";
-  // A field the reader has moved away from its sourced value is marked, and stays marked
-  // through any re-render -- a language change among them. Reading the mark off the state
-  // rather than setting it once on the keystroke is what makes it survive.
+  // A field the reader has moved away from its default is marked, and stays marked through
+  // any re-render -- a language change among them. Reading the mark off the state rather
+  // than setting it once on the keystroke is what makes it survive.
   const change = String(f.value) !== String(state.defaults[f.path]) ? " changed" : "";
   return `<div class="field${change}">
       <div>
         <label for="${id}">${f.label}</label>
         ${f.hint ? `<div class="hint">${f.hint}</div>` : ""}
-        ${f.source ? `<div class="source"><b>${T("source.label")}</b><span>${f.source}</span></div>` : ""}
       </div>
       <div class="control" style="flex-direction:column;align-items:stretch">
         <div style="display:flex;align-items:center;gap:8px">
@@ -1583,7 +1582,7 @@ async function openExample(name) {
 const PAGES = [
   { id: "project",     label: "page.project.title" },
   { id: "uses",        label: "nav.uses" },
-  { id: "assumptions", label: "nav.assumptions" },
+  { id: "parameters",  label: "nav.parameters" },
   { id: "sizing",      label: "page.sizing.title" },
 ];
 
@@ -1629,8 +1628,8 @@ async function goNext() {
     show("uses");
     return;
   }
-  if (state.page === "uses") { show("assumptions"); return; }
-  if (state.page === "assumptions") show("sizing");   // the run fills it as it arrives
+  if (state.page === "uses") { show("parameters"); return; }
+  if (state.page === "parameters") show("sizing");   // the run fills it as it arrives
   launch();
 }
 

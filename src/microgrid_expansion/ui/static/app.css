@@ -119,11 +119,6 @@ body {
 .field:first-of-type { border-top: 0; padding-top: 0; }
 .field label { font-weight: 500; }
 .field .hint { color: var(--ink-soft); font-size: 12.5px; margin-top: 3px; max-width: 52ch; }
-.field .source {
-  color: var(--ink-faint); font-size: 11.5px; margin-top: 5px; max-width: 52ch;
-  display: flex; gap: 5px; align-items: baseline;
-}
-.field .source b { font-weight: 600; color: var(--ink-soft); }
 
 .control { display: flex; align-items: center; gap: 8px; }
 input, select {
@@ -245,8 +240,8 @@ th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em;
 @media (max-width: 900px) { .arch { grid-template-columns: 1fr; } }
 
 /* ---------------------------------------------------------------- print
-   A sizing is defended on paper: the sheet a lender receives must carry the plant, the
-   assumptions and where each figure came from, and none of the interface around them. */
+   A sizing is defended on paper: the sheet a lender receives must carry the plant and the
+   parameters it was sized under, and none of the interface around them. */
 @media print {
   :root { --bg: #fff; --surface: #fff; --line: #d8dce3; --ink: #000; --ink-soft: #444;
           --shadow: none; }

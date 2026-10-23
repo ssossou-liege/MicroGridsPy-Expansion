@@ -492,6 +492,14 @@ function renderSizing(r) {
       ${ref.infrastructure_usd ? `<p class="hint" style="margin-top:10px">${
           T("fin.beyond_plant", { n: `${amount(ref.infrastructure_usd)} ${currency.code}` })}</p>`
         : `<p class="hint warn" style="margin-top:10px">${T("fin.plant_only")}</p>`}
+      <!-- Said only where the two differ. A village that declared no unbilled use sells
+           everything it delivers, and a line to that effect would be noise. -->
+      ${ref.billable_energy_kwh && ref.billable_energy_kwh < ref.energy_served_kwh - 1
+        ? `<p class="hint" style="margin-top:6px">${T("fin.unbilled", {
+             sold: nf(ref.billable_energy_kwh / 1000, 1),
+             served: nf(ref.energy_served_kwh / 1000, 1),
+             unbilled: nf((ref.energy_served_kwh - ref.billable_energy_kwh) / 1000, 1) })}</p>`
+        : ""}
       <p class="hint" style="margin-top:12px">${T("fin.hint")}
          ${ref.finance_unsubsidised && ref.finance.subsidy_usd
            ? T("fin.unsubsidised", { rate: ref.finance_unsubsidised.irr === null
@@ -1068,6 +1076,7 @@ function openUseDialog(category) {
   // panel has no opinion about what becomes of what it collected.
   return new Promise(resolve => {
   const devices = [BLANK_DEVICE()];
+  let billable = true;
   const host = document.createElement("div");
   host.className = "sheet";
   document.body.appendChild(host);
@@ -1088,6 +1097,17 @@ function openUseDialog(category) {
           <div class="control"><select id="use-cat">
             <option value="productive"${category === "productive" ? " selected" : ""}>${T("use.new.category.productive")}</option>
             <option value="community"${category === "community" ? " selected" : ""}>${T("use.new.category.community")}</option>
+          </select></div>
+        </div>
+        <!-- Whether anybody pays for it. It decides the revenue and not the plant: an
+             unbilled use is served like any other and sold to nobody, which is what the
+             street lighting and the plant's own air conditioning are. Kept on the state
+             rather than read off the select at save time, so a redraw does not lose it. -->
+        <div class="field">
+          <div><label for="use-billed">${T("use.new.billed")}</label>${info("use.new.billed.hint")}</div>
+          <div class="control"><select id="use-billed">
+            <option value="yes"${billable ? " selected" : ""}>${T("use.new.billed.yes")}</option>
+            <option value="no"${billable ? "" : " selected"}>${T("use.new.billed.no")}</option>
           </select></div>
         </div>
 
@@ -1125,6 +1145,7 @@ function openUseDialog(category) {
       </div>`;
 
     $("#use-name").oninput = e => host.dataset.name = e.target.value;
+    $("#use-billed").onchange = e => { billable = e.target.value === "yes"; };
     $$("#dev-add").forEach(b => b.onclick = () => { devices.push(BLANK_DEVICE()); draw(); });
     $$("[data-drop]").forEach(b => b.onclick = () => {
       devices.splice(Number(b.dataset.drop), 1); draw();
@@ -1155,7 +1176,7 @@ function openUseDialog(category) {
       const use = {
         key: `custom_${name.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`.replace(/_+$/, ""),
         label: name, category: $("#use-cat").value,
-        source: "declared by the developer",
+        source: "declared by the developer", billable,
         devices: devices.map(d => ({ ...d, name: d.name.trim() || T("dev.name") })),
       };
       host.remove();

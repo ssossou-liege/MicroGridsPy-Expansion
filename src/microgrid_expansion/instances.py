@@ -35,6 +35,11 @@ class SiteYear:
     maturity_months: int
     seed: int
     chemistry: str = "lfp"
+    #: The part of ``demand_kw`` nobody is billed for: the street lighting, and whatever
+    #: else the community declared as unbilled. Already inside ``demand_kw`` -- the plant
+    #: serves it and is sized for it -- and carried apart so the appraisal can tell the
+    #: energy sold from the energy delivered. ``None`` where the site declares none.
+    unbilled_kw: np.ndarray | None = None
 
     @property
     def hours(self) -> int:
@@ -47,6 +52,26 @@ class SiteYear:
     @property
     def peak_kw(self) -> float:
         return float(self.demand_kw.max())
+
+    @property
+    def unbilled_kwh(self) -> float:
+        return 0.0 if self.unbilled_kw is None else float(self.unbilled_kw.sum())
+
+    @property
+    def billable_kwh(self) -> float:
+        """The demand a customer is invoiced for, which is what a tariff is collected on."""
+        return max(0.0, self.demand_kwh - self.unbilled_kwh)
+
+    @property
+    def billable_fraction(self) -> float:
+        """Share of the demand a customer is invoiced for.
+
+        A share and not a parameter: it falls out of what the community declared. Fixing it
+        instead would say the unbilled load grows with the energy sold, when the street
+        lighting burns the same hours whatever the village consumes.
+        """
+        total = self.demand_kwh
+        return self.billable_kwh / total if total > 0 else 1.0
 
 
 #: The demand modules whose code decides what a simulated year contains. Every module in
@@ -213,6 +238,12 @@ def build_site_year(
                         t_amb_c=stored["t_amb_c"],
                         usable_fraction=stored["usable_fraction"],
                         self_discharge=stored["self_discharge"],
+                        # Written only where there is one, and read as absent otherwise:
+                        # the key covers the generating code, so a file saved before the
+                        # split cannot be served to this reader -- but a village with no
+                        # unbilled use writes no array either.
+                        unbilled_kw=(stored["unbilled_kw"]
+                                     if "unbilled_kw" in stored.files else None),
                         trajectory=trajectory, maturity_months=maturity_months,
                         seed=seed, chemistry=chemistry)
 
@@ -234,13 +265,16 @@ def build_site_year(
         t_amb_c=resource.t_amb_c,
         usable_fraction=resource.usable_fraction,
         self_discharge=resource.self_discharge,
+        unbilled_kw=demand.unbilled_kw,
         trajectory=trajectory, maturity_months=maturity_months, seed=seed,
         chemistry=chemistry,
     )
     if use_cache:
+        extra = ({} if instance.unbilled_kw is None
+                 else {"unbilled_kw": instance.unbilled_kw})
         np.savez_compressed(
             path, demand_kw=instance.demand_kw, specific_yield=instance.specific_yield,
             t_amb_c=instance.t_amb_c, usable_fraction=instance.usable_fraction,
-            self_discharge=instance.self_discharge,
+            self_discharge=instance.self_discharge, **extra,
         )
     return instance

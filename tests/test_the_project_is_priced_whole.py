@@ -7,8 +7,10 @@ carries its energy was not, so a village came to three hundred dollars a househo
 the eight hundred to fifteen hundred one really costs. The battery was recovered over its
 calendar life in the capital accounts and charged again per kilowatt-hour of throughput in
 the operating ones, the same pack bought twice. Revenue counted every kilowatt-hour served
-as billed and collected. And the residual value of the plant sat in the revenue column of
-the final year, where a lender reading a cash-flow table would take it for cash.
+as billed and collected -- and then, corrected by one fraction, counted the street lighting
+as a customer in arrears rather than as a load nobody is invoiced for. And the residual
+value of the plant sat in the revenue column of the final year, where a lender reading a
+cash-flow table would take it for cash.
 
 These tests hold the corrections in place.
 """
@@ -234,3 +236,54 @@ def test_a_saturated_ceiling_is_reported_rather_than_left_to_be_noticed() -> Non
     assert "dc_ac_ratio_max" in priced and "ac_ratio_max" in priced
     assert "binding" in priced
     assert "binding_ceilings" in inspect.getsource(engine.size_site)
+
+# ------------------------------------------------------- what is sold, what is only served
+def test_the_tariff_is_collected_on_the_customer_energy_and_not_on_the_delivery() -> None:
+    """A mini-grid serves loads it invoices nobody for, and they are not arrears.
+
+    Street lighting and the plant's own supply reach no meter. Passing them through the
+    collection rate would make them look like a recoverable shortfall and would also get
+    the arithmetic wrong, since a lighting load that burns the same hours whatever the
+    village consumes is not a fixed share of what the village consumes.
+    """
+    assets = assets_from_settings(default_settings(), architecture="ac")
+    billable = SERVED * 0.9
+    sold = appraise(PLANT, FUEL_USD_YR, SERVED, tariff_usd_kwh=0.263, assets=assets,
+                    billable_energy_kwh=billable)
+    delivered = appraise(PLANT, FUEL_USD_YR, SERVED, tariff_usd_kwh=0.263, assets=assets)
+    assert sold.annual_revenue == pytest.approx(delivered.annual_revenue * 0.9)
+    assert sold.billable_energy_kwh == pytest.approx(billable)
+    # The two reasons a kilowatt-hour brings in nothing compose rather than replace one
+    # another: a tenth is never billed and a sixth of the rest is never paid.
+    both = appraise(PLANT, FUEL_USD_YR, SERVED, tariff_usd_kwh=0.263, assets=assets,
+                    billable_energy_kwh=billable, collection_rate=0.85)
+    assert both.annual_revenue == pytest.approx(sold.annual_revenue * 0.85)
+
+
+def test_an_unbilled_load_raises_the_subsidy_without_touching_the_levelised_cost() -> None:
+    """It costs what it costs to serve; what changes is that it cannot be charged for."""
+    assets = assets_from_settings(default_settings(), architecture="ac")
+    common = dict(horizon_years=25, discount_rate=0.08, tariff_target_usd_kwh=0.15,
+                  assets=assets)
+    whole = life_cycle_cost(PLANT, FUEL_USD_YR, SERVED, **common)
+    split = life_cycle_cost(PLANT, FUEL_USD_YR, SERVED,
+                            billable_energy_kwh=SERVED * 0.9, **common)
+    assert split.lcoe_usd_kwh == pytest.approx(whole.lcoe_usd_kwh), (
+        "the plant delivers the same energy and costs the same to deliver it")
+    assert split.subsidy_fraction > whole.subsidy_fraction
+    assert whole.billable_energy_kwh == pytest.approx(SERVED), (
+        "with nothing said, every kilowatt-hour is a customer's, as it was before the split")
+
+
+def test_the_pricing_reads_the_split_off_the_demand_and_not_off_the_form() -> None:
+    """The unbilled load is a quantity the community declared, never a parameter.
+
+    Fixed as a share it would grow with the energy sold, which is precisely what the street
+    lighting does not do. So the one function that prices a design takes it from the
+    instance, and the form carries only the collection rate, which is about arrears.
+    """
+    from microgrid_expansion.post import appraisal
+
+    source = inspect.getsource(appraisal.price_certified_design)
+    assert "billable_fraction" in source
+    assert "billable_energy_kwh=billable" in source

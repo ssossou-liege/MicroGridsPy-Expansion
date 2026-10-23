@@ -108,6 +108,7 @@ def size_site(job: Job, overrides: dict[str, Any],
         "subsidy_usd": cost.subsidy_usd,
         "tariff_target_usd_kwh": cost.tariff_target_usd_kwh,
         "energy_served_kwh": served,
+        "billable_energy_kwh": priced.billable_energy_kwh,
         "unserved_kwh": instance.demand_kwh - served,
     }
 

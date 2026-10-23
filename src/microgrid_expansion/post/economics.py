@@ -176,6 +176,10 @@ class LifeCycleCost:
     tariff_target_usd_kwh: float | None = None
     subsidy_fraction: float = 0.0
     subsidy_usd: float = 0.0
+    #: Of the energy served, how much a customer is invoiced for. The levelised cost is
+    #: carried by everything delivered and the tariff is collected on this alone, and the
+    #: two bases differ by whatever the plant serves without a meter at the end of it.
+    billable_energy_kwh: float = 0.0
 
     @property
     def cost_reflective_tariff_usd_kwh(self) -> float:
@@ -208,6 +212,7 @@ def life_cycle_cost(
     assets: dict[str, Asset] | None = None,
     tariff_target_usd_kwh: float | None = None,
     collection_rate: float = 1.0,
+    billable_energy_kwh: float | None = None,
 ) -> LifeCycleCost:
     """Net present cost and levelised cost of one design.
 
@@ -243,14 +248,25 @@ def life_cycle_cost(
     lcoe = annualised / energy_served_kwh if energy_served_kwh > 0 else math.inf
 
     # What the project recovers is the tariff on the kilowatt-hours it is actually paid
-    # for, not on every one it delivers. A plant collecting nine tenths of its energy needs
-    # the subsidy of a plant charging nine tenths of the tariff.
+    # for, not on every one it delivers, and two separate things stand between the two.
+    # The collection rate is one: a plant collecting nine tenths of what it bills needs the
+    # subsidy of a plant charging nine tenths of the tariff. The other is that part of what
+    # it delivers is never billed at all -- the street lighting, the supply of its own plant
+    # room -- and no collection effort will ever turn that into revenue. Folding the second
+    # into the first would make it look like a recoverable shortfall, and would also get the
+    # arithmetic wrong, since an unbilled load that does not grow with the sales is not a
+    # fixed share of them.
+    billable = (energy_served_kwh if billable_energy_kwh is None
+                else max(0.0, min(billable_energy_kwh, energy_served_kwh)))
+    billable_share = billable / energy_served_kwh if energy_served_kwh > 0 else 1.0
     fraction = 0.0
     if tariff_target_usd_kwh is not None and math.isfinite(lcoe) and lcoe > 0:
-        collected = tariff_target_usd_kwh * max(0.0, min(collection_rate, 1.0))
+        collected = (tariff_target_usd_kwh * max(0.0, min(collection_rate, 1.0))
+                     * billable_share)
         fraction = max(0.0, 1.0 - collected / lcoe)
     return LifeCycleCost(net_present_cost=present, annualised_cost=annualised,
                          lcoe_usd_kwh=lcoe, energy_served_kwh=energy_served_kwh,
                          breakdown=breakdown,
                          tariff_target_usd_kwh=tariff_target_usd_kwh,
-                         subsidy_fraction=fraction, subsidy_usd=fraction * present)
+                         subsidy_fraction=fraction, subsidy_usd=fraction * present,
+                         billable_energy_kwh=billable)

@@ -48,6 +48,9 @@ class Financials:
     salvage: float = 0.0
     demand_growth_rate: float = 0.0
     collection_rate: float = 1.0
+    #: The energy the revenue was computed on: what a customer is invoiced for, which is
+    #: less than what the plant delivers wherever it serves a load with no meter on it.
+    billable_energy_kwh: float = 0.0
     irr: float | None = None
     #: The same return with the residual value struck out, which is how a lender reads it.
     irr_without_salvage: float | None = None
@@ -63,6 +66,7 @@ class Financials:
             "annual_operating_usd": self.annual_operating,
             "irr": self.irr, "irr_without_salvage": self.irr_without_salvage,
             "collection_rate": self.collection_rate,
+            "billable_energy_kwh": self.billable_energy_kwh,
             "payback_years": self.payback_years,
             "discounted_payback_years": self.discounted_payback_years,
             "net_present_value_usd": self.net_present_value,
@@ -117,6 +121,7 @@ def appraise(
     subsidy_usd: float = 0.0,
     demand_growth_rate: float = 0.0,
     collection_rate: float = 1.0,
+    billable_energy_kwh: float | None = None,
 ) -> Financials:
     """Build the project's cash flows and read the usual measures off them.
 
@@ -132,12 +137,17 @@ def appraise(
     initial = sum(capital_by_asset.values())
     maintenance = sum(assets[name].om_rate * capital
                       for name, capital in capital_by_asset.items())
-    # Billed and collected, not merely delivered. A rural mini-grid loses some energy to
-    # non-technical losses and some of its billing to arrears, and an appraisal that assumes
-    # every kilowatt-hour served is paid for is optimistic in exactly the place the tariff
-    # discussion happens.
+    # Billed and collected, not merely delivered -- and the two words are two different
+    # things. What is billed is the energy that reaches a customer's meter, which is less
+    # than what the plant delivers: the street lighting and the plant's own supply are
+    # served and invoiced to nobody. What is collected is the share of that bill actually
+    # paid, which arrears and non-technical losses keep below one. An appraisal that
+    # multiplies the whole delivery by one fraction gets both wrong at once, and it errs on
+    # the optimistic side in exactly the place the tariff discussion happens.
+    billed = (energy_served_kwh if billable_energy_kwh is None
+              else max(0.0, min(billable_energy_kwh, energy_served_kwh)))
     collected = max(0.0, min(collection_rate, 1.0))
-    revenue = tariff_usd_kwh * energy_served_kwh * collected
+    revenue = tariff_usd_kwh * billed * collected
 
     # An asset replaced late still has life in it when the horizon ends, and the levelised
     # cost already credits that. Leaving it out here put two figures on one page computed on
@@ -185,5 +195,5 @@ def appraise(
         discounted_payback_years=_crossing(discounted),
         net_present_value=discounted[-1], subsidy_usd=subsidy_usd,
         salvage=salvage, demand_growth_rate=demand_growth_rate,
-        collection_rate=collected,
+        collection_rate=collected, billable_energy_kwh=billed,
     )

@@ -19,6 +19,14 @@ declared use goes through exactly the machinery a calibrated one does and inheri
 treatment of windows that cross midnight, of duties that fill their window, and of counts
 that must be realised rather than rounded.
 
+A use also says whether anybody is billed for it. A school, a dispensary and a trade are
+connections with a meter on them; street lighting is a load the plant serves and nobody is
+invoiced for, and so is the plant's own supply -- the air conditioning of the room the
+inverters stand in. The distinction decides the revenue and it is not a matter of degree: a
+street lamp is not billed at nine tenths, it is not billed. Carrying it here rather than as
+one fraction of everything delivered is what lets the energy sold vary while the energy
+nobody pays for stays what it is.
+
 Nothing here carries a default drawn from thin air. A use the developer declares is one the
 developer parameterises; the catalogue below names the four that come up everywhere and says
 what is known about each, which for three of them is nothing numerical at all. A plant sized
@@ -26,7 +34,7 @@ on invented occupancy would be no better for being sized confidently.
 """
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass
 
 MINUTES_PER_DAY = 1440
 
@@ -129,6 +137,11 @@ class UseSpec:
     #: Where the numbers come from. A use carrying none is one nobody has measured, and the
     #: interface says so rather than letting its figures pass for sourced.
     source: str = ""
+    #: Whether a customer is billed for what this use draws. Nearly everything is: a
+    #: household, a trade, a school and a dispensary are all metered connections. Street
+    #: lighting is not, nor is the plant's own supply, and an appraisal that bills them at
+    #: the customer tariff recovers money nobody will ever be invoiced for.
+    billable: bool = True
 
     def validate(self) -> None:
         if not self.key.strip():
@@ -159,7 +172,10 @@ class UseSpec:
         devices = tuple(Device(**device) for device in record.get("devices", ()))
         return cls(key=record["key"], label=record.get("label", record["key"]),
                    category=record.get("category", "community"),
-                   devices=devices, source=record.get("source", ""))
+                   devices=devices, source=record.get("source", ""),
+                   # A record written before the distinction existed described a use
+                   # somebody is billed for, since that is all there was.
+                   billable=bool(record.get("billable", True)))
 
 
 @dataclass(frozen=True)
@@ -201,11 +217,15 @@ def dusk_to_dawn(lamps: int, watts: float, *, source: str,
     It runs from dusk to dawn every night of the year, so its energy follows from a lamp
     count and a rating and nothing else. That makes it the only one of the four this
     catalogue can carry a number for.
+
+    Nobody is billed for it. It is the village's lighting, paid for out of whatever the
+    commune or the concession agreed, and it is the clearest case of a load that the plant
+    must size for and must not count on selling.
     """
     width = MINUTES_PER_DAY - start_min + end_min
     return UseSpec(
         key="public_lighting", label="Public lighting", category="community",
-        source=source,
+        source=source, billable=False,
         devices=(Device(name="street lamp", power_w=watts, number=float(lamps),
                         func_time_min=float(width), func_cycle_min=float(width),
                         window_start_min=start_min, window_end_min=end_min),))
@@ -244,6 +264,7 @@ COMMUNITY_CATALOGUE: dict[str, dict] = {
     "public_lighting": {
         "label": "Public lighting",
         "known": True,
+        "billable": False,
         "note": "Street lamps burning dusk to dawn. Not a customer and usually unmetered: "
                 "at Gbowele it falls inside what the distribution meters record, together "
                 "with the network losses.",

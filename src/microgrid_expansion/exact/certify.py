@@ -1132,6 +1132,9 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"\n  energy served           : {served:,.0f} kWh  "
           f"(unserved {instance.demand_kwh - served:,.0f} kWh)")
+    if priced.billable_energy_kwh < served - 1.0:
+        print(f"  of which billable       : {priced.billable_energy_kwh:,.0f} kWh  "
+              f"(unbilled {served - priced.billable_energy_kwh:,.0f} kWh)")
     print(f"  net present cost        : {cost.net_present_cost:,.0f} $ = "
           f"{local(cost.net_present_cost):,.0f} FCFA")
     print(f"  levelised cost (LCOE)   : {cost.lcoe_usd_kwh:.4f} $/kWh = "
@@ -1187,6 +1190,10 @@ def main(argv: list[str] | None = None) -> int:
     record_tariff = {
         **operation,
         "energy_served_kwh": served,
+        # What the tariff is collected on. Below the energy served by whatever the plant
+        # delivers to no meter -- the street lighting above all -- and equal to it where the
+        # community declared none.
+        "billable_energy_kwh": priced.billable_energy_kwh,
         "npc_usd": cost.net_present_cost,
         "lcoe_usd_kwh": cost.lcoe_usd_kwh,
         "tariff_target_usd_kwh": target,

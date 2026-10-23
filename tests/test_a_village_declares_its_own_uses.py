@@ -130,3 +130,29 @@ def test_the_place_of_worship_is_the_one_class_the_meters_could_speak_to() -> No
     hours = [h for h in range(24) if h in calibration.profiles.columns]
     shape = calibration.profiles.loc["place_of_worship", hours].astype(float)
     assert shape.idxmax() in range(17, 22), "a place of worship peaks in the evening"
+
+
+# ------------------------------------------------------------- who pays for a use
+def test_the_street_lighting_is_served_and_sold_to_nobody() -> None:
+    """A use says whether a customer is invoiced for it, and the lighting says no.
+
+    The distinction decides the revenue. A village of twenty households with eight street
+    lamps delivers two fifths of its kilowatt-hours to the lamps, and a tariff collected on
+    everything delivered would invoice the commune's lighting at the household rate.
+    """
+    lighting = dusk_to_dawn(8, 60.0, source="test")
+    assert lighting.billable is False
+    # Everything else is a metered connection, and a use declared without an opinion is one.
+    assert UseSpec(key="mill", label="Mill", category="productive",
+                   devices=(Device(name="motor", power_w=2200, func_time_min=240),)).billable
+    assert COMMUNITY_CATALOGUE["public_lighting"]["billable"] is False
+
+
+def test_a_use_written_before_the_distinction_existed_reads_as_invoiced() -> None:
+    """Which is what it was: a site saved earlier declared nothing but customers."""
+    record = {"key": "kiosk", "label": "Kiosk", "category": "productive",
+              "devices": [{"name": "router", "power_w": 12.0, "func_time_min": 900.0}]}
+    assert UseSpec.from_record(record).billable is True
+    # And the flag survives the round trip a saved site makes.
+    lighting = dusk_to_dawn(8, 60.0, source="test")
+    assert UseSpec.from_record(lighting.to_record()) == lighting

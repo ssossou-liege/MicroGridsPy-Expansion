@@ -526,10 +526,32 @@ class DemandYear:
     #: Enterprises connected each month, by activity class. Empty when the community is
     #: simulated without productive uses.
     enterprises: dict[int, dict[str, int]] = field(default_factory=dict)
+    #: The part of ``hourly_kw`` that no customer is billed for -- the street lighting and
+    #: anything else declared as unbilled -- hour by hour, so that the revenue can be
+    #: computed on the energy actually sold. It is included in ``hourly_kw``: the plant
+    #: serves it and must be sized for it. ``None`` when the community declares nothing of
+    #: the kind, which is not the same as zero only in that it costs nothing to carry.
+    unbilled_kw: np.ndarray | None = None
 
     @property
     def annual_energy_kwh(self) -> float:
         return float(self.hourly_kw.sum())
+
+    @property
+    def unbilled_kwh(self) -> float:
+        """Energy delivered over the year that nobody is invoiced for [kWh]."""
+        return 0.0 if self.unbilled_kw is None else float(self.unbilled_kw.sum())
+
+    @property
+    def billable_kwh(self) -> float:
+        """Energy delivered to a metered customer, and so the base a tariff applies to.
+
+        The distinction is not a refinement of the collection rate. A fraction applied to
+        everything delivered assumes the unbilled load grows with the energy sold, and it
+        does not: the street lighting burns the same hours whatever the village consumes,
+        so the share it represents moves with the sales rather than staying put.
+        """
+        return max(0.0, self.annual_energy_kwh - self.unbilled_kwh)
 
     @property
     def peak_kw(self) -> float:
@@ -582,6 +604,7 @@ def simulate_demand_year(
     rng = np.random.default_rng(seed)
 
     hourly: list[np.ndarray] = []
+    unbilled: list[np.ndarray] = []
     composition: dict[int, dict[str, int]] = {}
     enterprises: dict[int, dict[str, int]] = {}
     for month in range(1, 13):
@@ -638,15 +661,36 @@ def simulate_demand_year(
         # a school or a dispensary is usually what the line was run for, not something that
         # waits its turn behind the households. Declared productive uses wait like the
         # calibrated ones do.
+        #
+        # The uses nobody is billed for are drawn apart from the rest, so that what they
+        # consume is known rather than inferred from a share of the total. They are added to
+        # the load all the same: the plant serves the street lighting whether or not it
+        # invoices anyone for it.
         declared = _declared_counts(site, counts)
+        unbilled_month = np.zeros(profile.size)
         if declared:
-            minutes = _declared_use_minutes(
-                declared, year, month, calendar.monthrange(year, month)[1],
-                seed=int(rng.integers(0, 2**31 - 1)))
-            if minutes is not None:
-                profile = profile + _to_hourly_kw(minutes)
+            month_seed = int(rng.integers(0, 2**31 - 1))
+            billed = {u: n for u, n in declared.items() if u.billable}
+            unpaid = {u: n for u, n in declared.items() if not u.billable}
+            if billed:
+                minutes = _declared_use_minutes(
+                    billed, year, month, calendar.monthrange(year, month)[1],
+                    seed=month_seed)
+                if minutes is not None:
+                    profile = profile + _to_hourly_kw(minutes)
+            if unpaid:
+                # Derived from the month's seed rather than drawn from the stream, so that
+                # declaring a street lamp does not move the households of every later month.
+                minutes = _declared_use_minutes(
+                    unpaid, year, month, calendar.monthrange(year, month)[1],
+                    seed=month_seed ^ 0x5EED)
+                if minutes is not None:
+                    unbilled_month = _to_hourly_kw(minutes)
+                    profile = profile + unbilled_month
         hourly.append(profile)
+        unbilled.append(unbilled_month)
 
+    series = np.concatenate(unbilled)
     return DemandYear(
         site=site.name,
         year=year,
@@ -654,4 +698,5 @@ def simulate_demand_year(
         hourly_kw=np.concatenate(hourly),
         composition=composition,
         enterprises=enterprises,
+        unbilled_kw=series if series.any() else None,
     )

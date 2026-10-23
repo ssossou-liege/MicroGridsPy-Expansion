@@ -10,6 +10,11 @@ consistent.
 
 So there is one function now, and both callers use it. That is the same rule the rest of
 this project already follows: figures shown side by side are computed side by side.
+
+It is also the one place where the cost of serving a village meets the revenue of selling
+to it, and the two are not carried by the same kilowatt-hours. Everything delivered carries
+the cost; only what reaches a meter can be invoiced. The split comes from the demand, which
+is where the street lighting was declared, and not from a fraction on the form.
 """
 from __future__ import annotations
 
@@ -34,6 +39,9 @@ class Appraisal:
     infrastructure_usd: float
     #: Energy the plant actually delivered over the year simulated.
     energy_served_kwh: float
+    #: Of that, what a customer is invoiced for. Equal to the energy served where the
+    #: community declares no unbilled load, and less by the street lighting where it does.
+    billable_energy_kwh: float
     #: Recurring cost of running it: fuel, unserved energy, the grid's net bill.
     operating_usd_yr: float
     #: Array ratios the certified plant sits exactly on, if any.
@@ -63,6 +71,13 @@ def price_certified_design(instance, design, settings, dispatch, generator) -> A
     battery_life = settings.battery.effective_lifetime_years(
         design.battery_kwh, float(dispatch.discharge_kw.sum()))
     served = instance.demand_kwh - float(dispatch.unserved_kw.sum())
+    # The tariff is collected on what a customer is billed for, and a mini-grid also serves
+    # loads that reach no meter: the street lighting, and the supply of its own plant room.
+    # A shortfall is shed by the controller without regard to who is invoiced for what, so
+    # what was not served is attributed to both in proportion rather than charged to one.
+    # An instance that carries no such split -- a representative-day reduction, or a tree
+    # node -- prices as it did before the split existed, with every kilowatt-hour billed.
+    billable = served * getattr(instance, "billable_fraction", 1.0)
     target = (settings.economics.tariff_usd_kwh
               if settings.economics.tariff_is_target else None)
 
@@ -80,13 +95,15 @@ def price_certified_design(instance, design, settings, dispatch, generator) -> A
     cost = life_cycle_cost(
         capacities, operating + _grid_capital_usd_yr(settings), served,
         horizon_years=horizon, discount_rate=rate, tariff_target_usd_kwh=target,
-        assets=assets, collection_rate=settings.economics.collection_rate)
+        assets=assets, collection_rate=settings.economics.collection_rate,
+        billable_energy_kwh=billable)
 
     common: dict[str, Any] = dict(
         tariff_usd_kwh=settings.economics.tariff_usd_kwh, horizon_years=horizon,
         discount_rate=rate, assets=assets,
         demand_growth_rate=settings.economics.demand_growth_rate,
-        collection_rate=settings.economics.collection_rate)
+        collection_rate=settings.economics.collection_rate,
+        billable_energy_kwh=billable)
     finance = appraise(capacities, operating, served,
                        subsidy_usd=cost.subsidy_usd or 0.0, **common)
     bare = appraise(capacities, operating, served, subsidy_usd=0.0, **common)
@@ -106,5 +123,5 @@ def price_certified_design(instance, design, settings, dispatch, generator) -> A
     return Appraisal(cost=cost, finance=finance, finance_unsubsidised=bare,
                      battery_life_years=battery_life,
                      infrastructure_usd=sum(a.unit_cost for a in balance_assets.values()),
-                     energy_served_kwh=served, operating_usd_yr=operating,
-                     binding_ceilings=binding)
+                     energy_served_kwh=served, billable_energy_kwh=billable,
+                     operating_usd_yr=operating, binding_ceilings=binding)

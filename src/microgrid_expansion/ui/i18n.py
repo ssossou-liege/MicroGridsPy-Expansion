@@ -253,6 +253,13 @@ STRINGS: dict[str, dict[str, str]] = {
               "incluses."},
     "fin.unsubsidised": {"en": "Without the subsidy the rate would be {rate}.",
                          "fr": "Sans la subvention, le taux serait de {rate}."},
+    "fin.unbilled": {
+        "en": "The revenue is that of {sold} MWh, not of the {served} MWh served: "
+              "{unbilled} MWh go to loads nobody is invoiced for. The plant is sized for "
+              "them all the same.",
+        "fr": "La recette est celle de {sold} MWh, et non des {served} MWh servis : "
+              "{unbilled} MWh vont à des charges que personne ne paie. La centrale est "
+              "dimensionnée pour elles malgré tout."},
     "fin.replacements": {"en": "Years carrying an equipment replacement are included.",
                          "fr": "Les années portant un remplacement d'équipement sont incluses."},
     "fin.years": {"en": "years", "fr": "ans"},
@@ -447,12 +454,15 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "Lamps burning from dusk to dawn, every night. It has no behaviour to draw, "
               "so it is placed exactly from the lamp count and the rating rather than "
               "simulated. Often unmetered: where the distribution meters record it, it "
-              "arrives with the network losses and must not be counted twice.",
+              "arrives with the network losses and must not be counted twice. Nobody is "
+              "invoiced for it, so the plant is sized for it and the tariff is not "
+              "collected on it.",
         "fr": "Des lampes qui brûlent du crépuscule à l'aube, toutes les nuits. Il n'y a là "
               "aucun comportement à tirer : la charge est posée exactement d'après le "
               "nombre de lampadaires et leur puissance, non simulée. Souvent non compté : "
               "là où les compteurs de départ le relèvent, il arrive avec les pertes du "
-              "réseau et ne doit pas être compté deux fois."},
+              "réseau et ne doit pas être compté deux fois. Personne n'en est facturé : la "
+              "centrale est dimensionnée pour lui, le tarif n'est pas encaissé dessus."},
     "use.lamps": {"en": "lamps", "fr": "lampadaires"},
     "use.lamp_watts": {"en": "W each", "fr": "W chacun"},
     "use.declare": {"en": "Describe its devices", "fr": "Décrire ses appareils"},
@@ -479,6 +489,20 @@ STRINGS: dict[str, dict[str, str]] = {
               "connected from the first months.",
         "fr": "Un commerce attend la ligne comme les autres commerces ; un bâtiment "
               "communautaire est raccordé dès les premiers mois."},
+    "use.new.billed": {"en": "Invoiced to a customer", "fr": "Facturé à un client"},
+    "use.new.billed.yes": {"en": "Yes, it is a customer", "fr": "Oui, c'est un client"},
+    "use.new.billed.no": {"en": "No, it is served and not sold",
+                          "fr": "Non, il est servi sans être vendu"},
+    "use.new.billed.hint": {
+        "en": "Nearly everything is invoiced: a school, a dispensary and a trade are all "
+              "metered connections. Answer no for a load the plant serves and nobody pays "
+              "for -- the street lighting, the air conditioning of the plant room. The "
+              "plant is sized for it either way; the tariff is not collected on it.",
+        "fr": "Presque tout est facturé : une école, un dispensaire et un commerce sont "
+              "des abonnés munis d'un compteur. Répondez non pour une charge que la "
+              "centrale sert et que personne ne paie : l'éclairage public, la climatisation "
+              "du local technique. La centrale est dimensionnée pour elle dans les deux "
+              "cas ; le tarif n'est pas encaissé dessus."},
     "dev.name": {"en": "Device", "fr": "Appareil"},
     "dev.power": {"en": "Power", "fr": "Puissance"},
     "dev.number": {"en": "How many", "fr": "Combien"},
@@ -681,6 +705,8 @@ STRINGS: dict[str, dict[str, str]] = {
     "csv.npc": {"en": "Net present cost ($)", "fr": "Valeur actuelle nette ($)"},
     "csv.subsidy": {"en": "Subsidy (fraction)", "fr": "Subvention (fraction)"},
     "csv.served": {"en": "Energy served (kWh/yr)", "fr": "Énergie servie (kWh/an)"},
+    "csv.billable": {"en": "Of which billed to customers (kWh/yr)",
+                     "fr": "Dont facturé aux clients (kWh/an)"},
     "csv.unserved": {"en": "Unserved energy (kWh/yr)",
                      "fr": "Énergie non distribuée (kWh/an)"},
     "csv.proven": {"en": "Optimality proven", "fr": "Optimalité prouvée"},
@@ -793,15 +819,17 @@ STRINGS: dict[str, dict[str, str]] = {
               "financial close. Spent once and never replaced.",
         "fr": "Faisabilité, levés, autorisations, études et temps du développeur avant "
               "le bouclage financier. Dépensés une fois, jamais remplacés."},
-    "f.collection": {"en": "Energy billed and collected",
-                     "fr": "Énergie facturée et encaissée"},
+    "f.collection": {"en": "Customer bills collected",
+                     "fr": "Factures effectivement encaissées"},
     "f.collection.hint": {
-        "en": "Share of the energy served that is actually paid for. One means every "
-              "kilowatt-hour delivered is billed and collected, which no rural mini-grid "
-              "achieves.",
-        "fr": "Part de l'énergie servie qui est réellement payée. Un signifie que chaque "
-              "kilowattheure distribué est facturé et encaissé, ce qu'aucun mini-réseau "
-              "rural n'atteint."},
+        "en": "Share of what is invoiced to customers that is actually paid. It applies to "
+              "the energy sold and to nothing else: the street lighting and the plant's own "
+              "supply are served without ever being billed, and they are declared as uses "
+              "rather than hidden in this fraction.",
+        "fr": "Part de ce qui est facturé aux clients qui est réellement payé. Ne porte que "
+              "sur l'énergie vendue : l'éclairage public et l'autoconsommation de la "
+              "centrale sont servis sans jamais être facturés, et se déclarent comme des "
+              "usages au lieu d'être cachés dans cette part."},
 
     "group.project": {"en": "The project", "fr": "Le projet"},
     "group.currency": {"en": "Display currency", "fr": "Monnaie d'affichage"},

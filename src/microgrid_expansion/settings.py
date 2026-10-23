@@ -499,10 +499,18 @@ class EconomicSettings:
     #: and a sizing that reports the shortfall after the fact cannot honour it: the level
     #: has to bound the search, not describe its outcome.
     min_service_fraction: float | None = None
-    #: Share of the energy served that is billed and actually collected. A rural mini-grid
-    #: loses some to non-technical losses and some to arrears; taking every kilowatt-hour
-    #: served as paid for is the optimistic end of an appraisal whose other end is a cost
-    #: boundary that stops at the plant. One is worth as much as the other.
+    #: Share of the energy *billed to customers* that is actually collected. Arrears and
+    #: non-technical losses keep it below one, and taking every invoice as paid is the
+    #: optimistic end of an appraisal whose other end is a cost boundary that stops at the
+    #: plant. One is worth as much as the other.
+    #:
+    #: It applies to the customer energy and not to everything the plant delivers, which is
+    #: a different quantity: street lighting and the plant's own supply are served and
+    #: invoiced to nobody. Those are carried by the demand, as loads, because that is what
+    #: they are -- a village's street lighting burns the same hours whatever the village
+    #: consumes, so the share of the delivery it represents moves with the sales and cannot
+    #: be a parameter. Folding it in here would bill the street lamps at the customer tariff
+    #: and then call the shortfall a collection problem.
     collection_rate: float = 1.0
     #: Annual growth of the energy billed, used by the financial appraisal alone. The
     #: sizing is done for the year and maturity stated, not for this curve; a plant that

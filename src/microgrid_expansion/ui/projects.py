@@ -165,6 +165,7 @@ def _certificate_rows(result: dict, lang: str) -> list[tuple[str, Any]]:
             (t("csv.npc", lang), result.get("npc_usd")),
             (t("csv.subsidy", lang), result.get("subsidy_fraction")),
             (t("csv.served", lang), result.get("energy_served_kwh")),
+            (t("csv.billable", lang), result.get("billable_energy_kwh")),
             (t("csv.unserved", lang), result.get("unserved_kwh")),
             (t("csv.proven", lang), result.get("proven")),
             (t("csv.lattice", lang), result.get("lattice_size")),

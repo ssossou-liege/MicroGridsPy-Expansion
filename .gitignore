@@ -49,6 +49,14 @@ docs/formulation/*.pdf
 # Climate Data Store download cache: reproducible from the CDS, so not versioned.
 data/irradiance/raw/
 
+# Weather series the tool fetches for a village described on this machine. Four megabytes
+# of reanalysis apiece, reproducible from the CDS, and belonging to whoever asked for them
+# rather than to the project. The two reference villages are the exception: the published
+# results rest on their series, so those are versioned and readmitted by name.
+data/irradiance/*_weather_hourly_*.csv
+!data/irradiance/samionta_weather_hourly_2016_2025.csv
+!data/irradiance/gbowele_weather_hourly_2016_2025.csv
+
 # Manufacturer documentation: third-party copyright, kept locally as a source.
 docs/generator/
 

@@ -167,6 +167,15 @@ class FreeBound:
     value of lost load -- and the set cannot produce more than its rating for every hour of
     the year. Applied at the root alone: the descendants may add capacity, so nothing can be
     asserted about what they will have to burn.
+
+    The two terms are minimised independently over the box, which is why the array enters
+    the capital term at the box's floor and the energy term at its ceiling. The sum of two
+    lower bounds is a lower bound; it is not the tightest one available, since a plan cannot
+    hold both arrays at once, and a bound that scanned the array dimension for the least sum
+    would prune harder near the root of the tree. What matters first is that it never
+    exceeds the programme, which is what the test of that name checks and what this failed
+    until the equipment was priced at what the operator pays to land it: with a cheap plant
+    the optimum fell below a bound that had always overstated the fuel.
     """
 
     weights: TreeWeights
@@ -201,10 +210,13 @@ class FreeBound:
         low = box.corner(low=True)
         capital = self.capital(low["b_pv"], low["b_batt"], low["b_inv"], low["b_pv_ac"],
                                min(box.generator_ratings))
-        # The array at its smallest and the set at its largest both lower the running cost,
-        # and taking each at the corner that minimises it keeps the bound a bound even
-        # though no single design sits at both.
-        operating = self.root_operating(box.n_pv[0], box.n_pv_ac[0],
+        # Each term is taken at the corner that minimises it, which keeps the bound a bound
+        # even though no single design sits at both corners. For the running cost that is
+        # the array at its *largest*, because a larger array leaves less for the set to
+        # burn, and the set at its largest too, because fuel is cheaper than lost load.
+        # Taking the array at its smallest, as this did until the equipment prices fell far
+        # enough to expose it, maximises the residual and so overstates the bound.
+        operating = self.root_operating(box.n_pv[1], box.n_pv_ac[1],
                                         max(box.generator_ratings))
         return self.weights.total * capital + self.weights.root * operating
 

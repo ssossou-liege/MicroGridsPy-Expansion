@@ -124,15 +124,13 @@ def infrastructure_assets(settings=None, horizon_years: int | None = None
     if spec is None:
         return {}
     horizon = (settings.economics.horizon_years if horizon_years is None else horizon_years)
-    single, three = 0, 0
-    try:
-        from ..sites import get_site
+    # Through the one function that counts them. Counted again here, this module read the
+    # site differently from the certificate -- households only, against households and
+    # whatever the community holds -- and the two agreed only because the attribute the
+    # other one preferred did not exist.
+    from ..exact.certify import customers_to_connect
 
-        site = get_site(settings.site)
-        single = int(sum(site.census.values()))
-        three = int(getattr(site, "productive_units", 0) or 0)
-    except Exception:                        # a site being described, not yet saved
-        pass
+    single, three = customers_to_connect(settings)
 
     out: dict[str, Asset] = {}
     if spec.distribution_usd > 0:

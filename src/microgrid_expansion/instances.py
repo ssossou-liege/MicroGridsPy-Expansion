@@ -175,6 +175,9 @@ def _site_fingerprint(site: Site) -> str:
     community = getattr(site, "community_mix", None)
     if community:
         parts.append("c:" + ";".join(f"{k}={v}" for k, v in sorted(community.items())))
+    own = getattr(site, "self_mix", None)
+    if own:
+        parts.append("s:" + ";".join(f"{k}={v}" for k, v in sorted(own.items())))
     declared = getattr(site, "declared_uses", None)
     if declared:
         parts.append("u:" + ";".join(
@@ -188,16 +191,68 @@ def _site_fingerprint(site: Site) -> str:
 
 def _cache_key(site: str, year: int, trajectory: str, maturity_months: int,
                seed: int, chemistry: str, archetypes: str = "std",
-               description: str = "") -> str:
+               description: str = "", network_loss: float = 0.0) -> str:
     # The chemistry belongs in the key: it changes the storage ceiling and the
     # self-discharge the instance carries, so a cached instance from another chemistry
     # would silently describe a different battery. So does the demand fingerprint, for the
     # same reason: it decides the demand the instance carries, tables and generating code
     # alike. So does the site's own description, for the plainest reason of all: it *is*
     # the community.
+    # The network loss belongs in the key for the plainest of the reasons above: it decides
+    # the demand the instance carries. A year built for a lossless network describes a
+    # smaller plant, and serving it under a fifteen per cent loss is a different study.
     raw = (f"{site}|{year}|{trajectory}|{maturity_months}|{seed}|{chemistry}"
-           f"|{_demand_fingerprint()}|{archetypes}|{description}")
+           f"|{_demand_fingerprint()}|{archetypes}|{description}"
+           f"|{network_loss:.6f}")
     return hashlib.sha1(raw.encode()).hexdigest()[:16]
+
+
+def check_network_loss(fraction: float) -> float:
+    """The loss fraction as the arithmetic below can use it.
+
+    A share of the injection at or above one would ask the plant for infinite energy, so it
+    is refused rather than clamped: a figure like that is a decimal point in the wrong place
+    and silently serving the nearest admissible study would hide it.
+    """
+    value = float(fraction or 0.0)
+    if value < 0.0:
+        raise ValueError("a network loss cannot be negative")
+    if value >= 1.0:
+        raise ValueError(
+            f"a network loss of {value:.2f} of the injection leaves nothing for the "
+            "customers; it is a share of what the plant sends out, not a multiplier")
+    return value
+
+
+def with_network_loss(total_kw: np.ndarray, at_plant_kw: np.ndarray | None,
+                      loss: float) -> tuple[np.ndarray, np.ndarray]:
+    """The load the plant must produce, and what the network consumed on the way.
+
+    The loss is taken as a share of the energy *injected* into the network, which is the
+    convention a distribution meter reading is divided into and the one a utility reports.
+    So the injection is the load downstream divided by one minus the share, not the load
+    multiplied by one plus it -- at fifteen per cent the two differ by nearly three points.
+
+    It applies to what travels the conductor and to nothing else. The plant's own supply is
+    drawn from the busbar beside it, so ``at_plant_kw`` is taken out before the share is
+    applied and carries no loss of its own.
+
+    A fixed share is an approximation and worth naming as one. Real resistive loss follows
+    the square of the current, so a share fitted at one load is wrong at another. It is the
+    standard planning convention, and at the two reference villages it is not the term that
+    mattered: once the street lighting and the plant's own supply were counted as the loads
+    they are, what remained varying with the load could not be told from zero. The constant
+    everyone had been calling a loss was those two.
+
+    Shared by the single certified year and by the scenario tree, because a plan and a
+    sizing of the same village must be asked for the same energy. Written twice they would
+    drift, which is the fault this project has already repaired once in the pricing.
+    """
+    if loss <= 0.0:
+        return total_kw, np.zeros_like(total_kw)
+    at_plant = np.zeros_like(total_kw) if at_plant_kw is None else at_plant_kw
+    lost = (total_kw - at_plant) * (loss / (1.0 - loss))
+    return total_kw + lost, lost
 
 
 def build_site_year(
@@ -208,12 +263,19 @@ def build_site_year(
     seed: int = 0,
     chemistry: str | None = None,
     use_cache: bool = True,
+    network_loss_fraction: float = 0.0,
 ) -> SiteYear:
     """Resolve a site and year into aligned hourly series.
 
     The demand and the resource are produced independently and must agree in length; a
     leap year has 8 784 hours and both sides are built for the same calendar year, so a
     mismatch signals that one of them was built for another year.
+
+    ``network_loss_fraction`` is the share of the energy injected into the distribution
+    network that the network itself consumes. It is applied here rather than in the
+    generator because it is a property of the conductor and not of anybody's behaviour: the
+    generator says what the village asks for, and this says what the plant must produce for
+    the village to get it.
     """
     from .demand import archetypes as _archetypes
     from .demand.generator import simulate_demand_year
@@ -226,8 +288,10 @@ def build_site_year(
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     # The archetypes a site runs on are part of what a cached year is: adjusted locally and
     # not counted here, a stale file would answer with the behaviour of another community.
+    loss = check_network_loss(network_loss_fraction)
     key = _cache_key(site.name, year, trajectory, maturity_months, seed, chemistry,
-                     _archetypes.fingerprint(site.name), _site_fingerprint(site))
+                     _archetypes.fingerprint(site.name), _site_fingerprint(site),
+                     network_loss=loss)
     path = CACHE_DIR / f"siteyear_{site.name.lower()}_{key}.npz"
 
     if use_cache and path.exists():
@@ -258,14 +322,20 @@ def build_site_year(
             f"{resource.specific_yield.size}; both must cover {year}"
         )
 
+    # The loss is served energy that reaches no meter, so it joins what nobody is billed
+    # for rather than sitting outside the accounts.
+    demand_kw, lost_kw = with_network_loss(demand.hourly_kw, demand.at_plant_kw, loss)
+    unbilled_kw = demand.unbilled_kw
+    if loss > 0.0:
+        unbilled_kw = lost_kw if unbilled_kw is None else unbilled_kw + lost_kw
     instance = SiteYear(
         site=site.name, year=year,
-        demand_kw=demand.hourly_kw,
+        demand_kw=demand_kw,
         specific_yield=resource.specific_yield,
         t_amb_c=resource.t_amb_c,
         usable_fraction=resource.usable_fraction,
         self_discharge=resource.self_discharge,
-        unbilled_kw=demand.unbilled_kw,
+        unbilled_kw=unbilled_kw,
         trajectory=trajectory, maturity_months=maturity_months, seed=seed,
         chemistry=chemistry,
     )

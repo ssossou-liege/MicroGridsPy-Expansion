@@ -128,3 +128,35 @@ def test_every_observation_is_assigned_exactly_one_state(clustering):
     assert clustered["cluster"].notna().all()
     # inactive and outlier are mutually exclusive by construction
     assert not (clustered["is_inactive"] & clustered["is_outlier"]).any()
+
+
+# ------------------------------------------------- whose load, not which hardware
+def test_a_class_is_selected_by_its_customer_and_never_by_a_meter_serial() -> None:
+    """A meter is movable plant; what it recorded last year may belong to somebody else.
+
+    The operator lifts a meter and reassigns it. The one the register lists today as the
+    Samionta powerhouse was metering a place of worship in July 2024, and keyed on that
+    serial those readings would have entered the calibration as the plant's own supply. In
+    the other direction the Samionta powerhouse has been through three meters under two
+    spellings. A serial answers "what hardware"; a calibration asks "whose load".
+
+    Checked on the specification rather than on the data, because the data this runs
+    against is not in the repository and the rule has to hold whatever it contains.
+    """
+    import inspect
+
+    from microgrid_expansion.demand import build_community_profiles as build
+
+    for klass, spec in build.METERS.items():
+        assert "serials" not in spec, (
+            f"{klass} is selected by meter serial; select it by the customer each reading "
+            "names, because the meter may have been somebody else's")
+        assert spec.get("codes") or spec.get("names_by_site"), (
+            f"{klass} names no customer at all")
+
+    source = inspect.getsource(build)
+    assert "meter/customer/name" in source, (
+        "the exports must be read on the customer each reading names")
+    # The archive's own recovery of a malformed code goes through the meter register, which
+    # is the same unreliable inference by another route.
+    assert "code_recovered" in inspect.getsource(build._customer_readings)

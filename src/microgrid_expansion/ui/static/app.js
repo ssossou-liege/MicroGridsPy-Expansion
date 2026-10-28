@@ -635,6 +635,14 @@ function renderCommunity() {
             T("use.add")}</button>
         </div>
       </div>
+      <div class="field wide">
+        <div><label>${T("site.self")}</label>${info("site.self.hint")}</div>
+        <div class="control">
+          <div class="roster" id="selfuse"></div>
+          <button class="btn quiet" id="self-add" style="margin-top:12px"${lock}>${
+            T("use.add")}</button>
+        </div>
+      </div>
     </div>`;
 
   $("#project-name").oninput = e => state.projectName = e.target.value;
@@ -683,6 +691,7 @@ function renderCommunity() {
   $$("#hh1, #hh2, #hh3").forEach(box => box.oninput = readCensus);
 
   renderCommunity_();
+  renderSelfUses();
   paintWeather();
   $("#pue-add").onclick = async () => {
     const use = await openUseDialog("productive");
@@ -690,6 +699,10 @@ function renderCommunity() {
   };
   $("#com-add").onclick = async () => {
     const use = await openUseDialog("community");
+    if (use) addDeclaredUse(use);
+  };
+  $("#self-add").onclick = async () => {
+    const use = await openUseDialog("self_consumption");
     if (use) addDeclaredUse(use);
   };
 
@@ -700,23 +713,39 @@ function renderCommunity() {
   mountMap(s.latitude, s.longitude);
 }
 
-/* The four community loads, listed from the start at a count of zero. A developer reading
-   "school, health centre, place of worship, street lighting" remembers to count them; an
-   empty list reminds them of nothing. Street lighting is the exception in form as well as
-   in substance: it is given as a lamp count and a rating, because that is how it is known
-   and because it has no behaviour to describe. */
-function renderCommunity_() {
-  const host = $("#community");
+/* The loads that are neither a household nor a trade, in two lists on one page.
+   The community buildings are customers with a meter; self consumption is what the plant
+   serves and bills to nobody. Both are listed from the start at a count of zero -- a
+   developer reading "school, health centre, place of worship" remembers to count them, and
+   an empty list reminds them of nothing -- and both accept uses described by hand.
+
+   One renderer draws either, because the rows differ in nothing but which count they
+   write. Street lighting is the one exception in form as well as in substance: it is given
+   as a lamp count and a rating, because that is how it is known and because it has no
+   behaviour to describe. */
+const ROSTERS = {
+  community: { host: "community", field: "community_mix" },
+  self_consumption: { host: "selfuse", field: "self_mix" },
+};
+
+function renderCommunity_() { drawRoster("community"); }
+function renderSelfUses() { drawRoster("self_consumption"); }
+
+function drawRoster(category) {
+  const spec = ROSTERS[category];
+  const host = $("#" + spec.host);
   if (!host) return;
   const s = state.site || {};
-  const mix = s.community_mix || {};
+  const mix = s[spec.field] || {};
   const tpl = s.origin === "template";
-  const declared = (s.declared_uses || []).filter(u => u.category === "community");
+  const declared = (s.declared_uses || []).filter(u => u.category === category);
   const lamp = (s.declared_uses || []).find(u => u.key === "public_lighting");
   const watts = lamp ? lamp.devices[0].power_w : 60;
+  const rows = (state.communityUses || []).filter(c => c.category === category);
 
-  host.innerHTML = (state.communityUses || []).map(c => {
+  host.innerHTML = rows.map(c => {
     const n = mix[c.key] || 0;
+    const described = declared.find(u => u.key === c.key);
     if (c.lamps) {
       // Two boxes on one row need saying apart. The unit goes beside each, visibly: a
       // label only a screen reader can hear leaves everyone else guessing which number is
@@ -736,15 +765,32 @@ function renderCommunity_() {
     }
     // Whether a class is measured belongs in its note, not on a badge beside its name: the
     // row is a thing to count, and a mark that changes nothing about the counting only
-    // competes with it.
-    return `<label class="pue${n ? " on" : ""}" data-class="${esc(c.key)}">
+    // competes with it. What does belong there is whether its devices have been described,
+    // because a class nothing of ours measures and nobody has described draws nothing --
+    // and it drew nothing silently, with a tick beside its name and a count in its box.
+    //
+    // The way to describe them is offered on every row, the measured one included: a
+    // village that knows its own place of worship is better evidence than five meters in
+    // two other villages. A description then replaces the measured shape rather than
+    // adding to it. Where the shape is measured and nothing has been described the row
+    // says nothing, because the note already says where its day comes from.
+    const badge = described
+      ? `<span class="badge ok" style="font-size:11px">${
+           T("use.declared", { n: described.devices.length })}</span>`
+      : c.measured ? ""
+      : `<span class="badge warn" style="font-size:11px">${T("use.undescribed")}</span>`;
+    return `<label class="pue${n ? " on" : ""}${tpl ? "" : " declarable"}"
+        data-class="${esc(c.key)}">
       <input type="checkbox" data-com="${esc(c.key)}"${n ? " checked" : ""}${tpl ? " disabled" : ""}>
       <span class="lbl">${esc(c.label)}${info(`use.${c.key}.hint`)}</span>
+      ${tpl ? "" : `<span class="pair">${badge}
+        <button type="button" class="btn link declare"
+          data-declare="${esc(c.key)}">${T("use.declare")}</button></span>`}
       <input type="number" min="0" step="1" data-comcount="${esc(c.key)}"
         aria-label="${esc(c.label)}" value="${n || ""}" placeholder="0"
         ${n ? "" : "disabled"}${tpl ? " disabled" : ""}>
     </label>`;
-  }).join("") + declared.filter(u => u.key !== "public_lighting").map(u => `
+  }).join("") + declared.filter(u => !rows.some(c => c.key === u.key)).map(u => `
     <label class="pue on" data-class="${esc(u.key)}">
       <input type="checkbox" checked disabled>
       <span class="lbl">${esc(u.label)} <span class="badge warn"
@@ -753,8 +799,18 @@ function renderCommunity_() {
         value="${mix[u.key] || 1}"${tpl ? " disabled" : ""}>
     </label>`).join("");
 
-  $$("#community input[data-com]").forEach(box => box.onchange = e => {
-    const key = e.target.dataset.com;
+  const read = () => readRosterCounts(category);
+  $$(`#${spec.host} [data-declare]`).forEach(button => button.onclick = async e => {
+    // The button sits inside the row's own <label>. Without stopping the event here the
+    // click would also reach the tick and turn the row off on its way to the panel.
+    e.preventDefault();
+    e.stopPropagation();
+    const row = (state.communityUses || []).find(c => c.key === button.dataset.declare);
+    if (!row) return;
+    const use = await openUseDialog(category, { key: row.key, label: row.label });
+    if (use) addDeclaredUse(use);
+  });
+  $$(`#${spec.host} input[data-com]`).forEach(box => box.onchange = e => {
     const row = e.target.closest(".pue");
     row.querySelectorAll("input[type=number]").forEach(n => {
       n.disabled = !e.target.checked;
@@ -762,10 +818,10 @@ function renderCommunity_() {
       if (!e.target.checked && n.dataset.comcount) n.value = "";
     });
     row.classList.toggle("on", e.target.checked);
-    readCommunity();
+    read();
   });
-  $$("#community input[type=number]").forEach(box => box.oninput = readCommunity);
-  readCommunity();
+  $$(`#${spec.host} input[type=number]`).forEach(box => box.oninput = read);
+  read();
 }
 
 /* The download's own line, under the button that asked for it. It survives a redraw of the
@@ -851,17 +907,28 @@ function readCensus() {
   state.site.n_households = Object.values(state.site.census).reduce((a, b) => a + b, 0);
 }
 
-function readCommunity() {
+/* The counts of one roster, written to the site as they are typed so that a page rebuilt
+   in another language, or returned to from the next step, still holds them. */
+function readRosterCounts(category) {
+  const spec = ROSTERS[category];
   const mix = {};
-  $$("#community input[data-comcount]").forEach(box => {
+  $$(`#${spec.host} input[data-comcount]`).forEach(box => {
     const n = parseInt(box.value || "0", 10);
     if (Number.isFinite(n) && n > 0) mix[box.dataset.comcount] = n;
   });
-  if (state.site) {
-    state.site.community_mix = mix;
+  if (!state.site) return;
+  state.site[spec.field] = mix;
+  // The lamp rating sits on the street-lighting row, which is in the self-consumption
+  // roster. Read only there, so drawing the community roster cannot clear it.
+  if (category === "self_consumption") {
     const w = $("#lamp-watts");
     state.site.lamp_watts = w ? parseFloat(w.value) || null : null;
   }
+}
+
+function readCommunity() {
+  readRosterCounts("community");
+  readRosterCounts("self_consumption");
 }
 
 /* A use the developer described joins the list it belongs to, with a count of one, and is
@@ -873,9 +940,8 @@ function addDeclaredUse(use) {
   // state and appeared nowhere -- so nothing on screen said it had been added at all.
   const kept = (state.site.declared_uses || []).filter(u => u.key !== use.key);
   state.site.declared_uses = [...kept, use];
-  const mix = use.category === "community"
-    ? (state.site.community_mix = { ...(state.site.community_mix || {}) })
-    : (state.site.productive_mix = { ...(state.site.productive_mix || {}) });
+  const field = ROSTERS[use.category]?.field || "productive_mix";
+  const mix = (state.site[field] = { ...(state.site[field] || {}) });
   mix[use.key] = mix[use.key] || 1;
   renderCommunity();
 }
@@ -994,6 +1060,7 @@ async function saveSite(pour = "etude") {
     name, latitude: lat, longitude: lon, census,
     productive_mix: state.site.productive_mix || {},
     community_mix: state.site.community_mix || {},
+    self_mix: state.site.self_mix || {},
     declared_uses: state.site.declared_uses || [],
     lamp_watts: state.site.lamp_watts || null,
   };
@@ -1070,19 +1137,26 @@ function useTotals(devices) {
   return { kwh, kw };
 }
 
-function openUseDialog(category) {
+function openUseDialog(category, preset = null) {
   // Resolves with the use that was described, or with nothing if the panel was dismissed.
   // A promise rather than a callback: the caller then reads as the sequence it is, and the
   // panel has no opinion about what becomes of what it collected.
+  //
+  // ``preset`` is a row of the catalogue whose devices are being described -- a school, a
+  // plant room. The panel then keeps that row's key, so the description attaches to the
+  // class the reader ticked instead of standing beside it as a use of its own, and its
+  // nature is settled rather than asked.
   return new Promise(resolve => {
   const devices = [BLANK_DEVICE()];
-  let billable = true;
+  let kind = category, billable = true;
   const host = document.createElement("div");
   host.className = "sheet";
+  if (preset) host.dataset.name = preset.label;
   document.body.appendChild(host);
 
   const draw = () => {
     const t = useTotals(devices);
+    const own = kind === "self_consumption";
     host.innerHTML = `
       <div class="sheet-panel" role="dialog" aria-modal="true" aria-label="${esc(T("use.new.title"))}">
         <h3>${T("use.new.title")}</h3>
@@ -1094,20 +1168,23 @@ function openUseDialog(category) {
         </div>
         <div class="field">
           <div><label for="use-cat">${T("use.new.category")}</label>${info("use.new.category.hint")}</div>
-          <div class="control"><select id="use-cat">
-            <option value="productive"${category === "productive" ? " selected" : ""}>${T("use.new.category.productive")}</option>
-            <option value="community"${category === "community" ? " selected" : ""}>${T("use.new.category.community")}</option>
+          <div class="control"><select id="use-cat"${preset ? " disabled" : ""}>
+            <option value="productive"${kind === "productive" ? " selected" : ""}>${T("use.new.category.productive")}</option>
+            <option value="community"${kind === "community" ? " selected" : ""}>${T("use.new.category.community")}</option>
+            <option value="self_consumption"${kind === "self_consumption" ? " selected" : ""}>${T("use.new.category.self")}</option>
           </select></div>
         </div>
         <!-- Whether anybody pays for it. It decides the revenue and not the plant: an
              unbilled use is served like any other and sold to nobody, which is what the
              street lighting and the plant's own air conditioning are. Kept on the state
-             rather than read off the select at save time, so a redraw does not lose it. -->
+             rather than read off the select at save time, so a redraw does not lose it.
+             Self consumption is what nobody is billed for by definition, so the question
+             is answered and locked rather than asked twice. -->
         <div class="field">
           <div><label for="use-billed">${T("use.new.billed")}</label>${info("use.new.billed.hint")}</div>
-          <div class="control"><select id="use-billed">
-            <option value="yes"${billable ? " selected" : ""}>${T("use.new.billed.yes")}</option>
-            <option value="no"${billable ? "" : " selected"}>${T("use.new.billed.no")}</option>
+          <div class="control"><select id="use-billed"${own ? " disabled" : ""}>
+            <option value="yes"${billable && !own ? " selected" : ""}>${T("use.new.billed.yes")}</option>
+            <option value="no"${billable && !own ? "" : " selected"}>${T("use.new.billed.no")}</option>
           </select></div>
         </div>
 
@@ -1145,6 +1222,9 @@ function openUseDialog(category) {
       </div>`;
 
     $("#use-name").oninput = e => host.dataset.name = e.target.value;
+    // The nature of the use decides whether the next question can be asked at all, so the
+    // panel is redrawn on it rather than patched.
+    $("#use-cat").onchange = e => { kind = e.target.value; draw(); };
     $("#use-billed").onchange = e => { billable = e.target.value === "yes"; };
     $$("#dev-add").forEach(b => b.onclick = () => { devices.push(BLANK_DEVICE()); draw(); });
     $$("[data-drop]").forEach(b => b.onclick = () => {
@@ -1173,10 +1253,17 @@ function openUseDialog(category) {
       // Read the panel before taking it out of the document. Reversed, the category was
       // read from an element already removed, the handler threw on null, the promise never
       // settled, and the use the developer had just described was silently lost.
+      const own = kind === "self_consumption";
       const use = {
-        key: `custom_${name.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`.replace(/_+$/, ""),
-        label: name, category: $("#use-cat").value,
-        source: "declared by the developer", billable,
+        key: preset ? preset.key
+          : `custom_${name.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`.replace(/_+$/, ""),
+        label: name, category: kind,
+        source: "declared by the developer",
+        billable: own ? false : billable,
+        // Everything a village holds sits on the network, the street lighting included.
+        // What a developer declares as self consumption is the plant's own supply, which
+        // does not, and which therefore carries no distribution loss.
+        on_network: !own,
         devices: devices.map(d => ({ ...d, name: d.name.trim() || T("dev.name") })),
       };
       host.remove();

@@ -328,16 +328,29 @@ def customers_to_connect(settings) -> tuple[int, int]:
     daytime-heavy. Where the developer has not said how many productive units to expect, the
     count falls to zero rather than to a guess: a connection cost invented here would be
     charged to the project as though someone had quoted it.
+
+    The community buildings are counted too, each as one single-phase connection. A school
+    takes a service drop, a board and a meter exactly as a household does, and leaving them
+    out understated the connection capital of every village that has any -- in a module
+    written because pricing the plant alone understates the project. What is left out is
+    what has no customer at the end of it: the street lighting and the plant's own supply
+    are served without anybody being connected.
+
+    This is the one count, and both callers use it. Computed twice -- once here and once in
+    the life-cycle cost -- the two read the site differently and agreed only by accident.
     """
     from ..sites import get_site
 
     try:
         site = get_site(settings.site)
-    except Exception:                        # a site being described, not yet saved
+    except (KeyError, FileNotFoundError, ValueError):
+        # A site being described and not yet saved. Narrow on purpose: a misspelt name or a
+        # store that will not parse is a fault to report, not a project costing nothing.
         return 0, 0
-    households = int(getattr(site, "connections", 0) or sum(site.census.values()))
+    households = int(sum(site.census.values()))
+    community = sum(int(n) for n in (getattr(site, "community_mix", None) or {}).values())
     productive = int(getattr(site, "productive_units", 0) or 0)
-    return households, productive
+    return households + community, productive
 
 
 def _infrastructure_usd_yr(settings) -> float:
@@ -1068,8 +1081,10 @@ def main(argv: list[str] | None = None) -> int:
                                                                max(high, args.voll))
     settings.validate()
 
-    instance = build_site_year(args.site, args.year, trajectory=args.trajectory,
-                               maturity_months=args.maturity_months)
+    instance = build_site_year(
+        args.site, args.year, trajectory=args.trajectory,
+        maturity_months=args.maturity_months,
+        network_loss_fraction=settings.infrastructure.network_loss_fraction)
     print(f"{args.site} {args.year} -- trajectory {args.trajectory}, "
           f"connection age {args.maturity_months} months")
     print(f"solver   : {settings.solver.name}")
@@ -1202,6 +1217,9 @@ def main(argv: list[str] | None = None) -> int:
         "battery_life_years": priced.battery_life_years,
         "infrastructure_usd": priced.infrastructure_usd,
         "collection_rate": settings.economics.collection_rate,
+        # It decides the demand, so it decides the plant. A certificate that did not say
+        # which loss it was computed under would not describe a study anyone could repeat.
+        "network_loss_fraction": settings.infrastructure.network_loss_fraction,
         "binding_ceilings": list(priced.binding_ceilings),
         "irr": priced.finance.irr,
         "irr_without_salvage": priced.finance.irr_without_salvage,

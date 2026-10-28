@@ -17,7 +17,6 @@ DEFAULT = "en"
 #: Keyed strings. The English entry is authoritative; French follows it.
 STRINGS: dict[str, dict[str, str]] = {
     # ---------------------------------------------------------------- chrome
-    "app.tagline": {"en": "Certified sizing", "fr": "Dimensionnement certifié"},
     "nav.uses": {"en": "Uses and archetypes", "fr": "Usages et archétypes"},
     "nav.parameters": {"en": "Parameters", "fr": "Paramètres"},
 
@@ -38,18 +37,15 @@ STRINGS: dict[str, dict[str, str]] = {
     # ---------------------------------------------------------------- actions
     "action.stop": {"en": "Stop", "fr": "Arrêter"},
     "action.delete": {"en": "Delete", "fr": "Supprimer"},
-    "action.open": {"en": "Open…", "fr": "Ouvrir…"},
     "action.export_csv": {"en": "Export as CSV", "fr": "Exporter en CSV"},
     "action.export_json": {"en": "Export as JSON", "fr": "Exporter en JSON"},
     "action.print": {"en": "Printable report", "fr": "Rapport imprimable"},
     "action.apply": {"en": "Apply to this site", "fr": "Appliquer à ce site"},
     "action.reset": {"en": "Back to calibrated values",
                      "fr": "Revenir aux valeurs calibrées"},
-    "action.save_site": {"en": "Save the community", "fr": "Enregistrer la communauté"},
     "action.fetch_resource": {"en": "Fetch the meteorological series",
                               "fr": "Obtenir la série météorologique"},
     "state.ready": {"en": "Ready.", "fr": "Prêt."},
-    "state.saved": {"en": "Project saved.", "fr": "Projet enregistré."},
     "state.applied": {"en": "Archetypes applied. The next sizing will use them.",
                       "fr": "Archétypes appliqués. Le prochain dimensionnement en tiendra "
                             "compte."},
@@ -122,7 +118,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "fr": "Sans série météorologique le dimensionnement ne peut pas démarrer. Elle se "
               "télécharge une fois par site depuis une réanalyse publique et demande une "
               "connexion."},
-    "site.card": {"en": "Site", "fr": "Site"},
 
     # ---------------------------------------------------------------- archetypes
     "arch.origin": {"en": "Where these behaviours come from",
@@ -156,7 +151,6 @@ STRINGS: dict[str, dict[str, str]] = {
               "communauté dont les usages, le tarif ou les horaires diffèrent."},
 
     # ---------------------------------------------------------------- results
-    "res.plant": {"en": "Certified plant", "fr": "Parc certifié"},
     "res.pv": {"en": "Photovoltaic", "fr": "Photovoltaïque"},
     "res.storage": {"en": "Storage", "fr": "Stockage"},
     "res.conversion": {"en": "Conversion", "fr": "Conversion"},
@@ -166,14 +160,10 @@ STRINGS: dict[str, dict[str, str]] = {
     "res.proven": {"en": "Optimality proven by exhaustion",
                    "fr": "Optimalité prouvée par épuisement"},
     "res.unproven": {"en": "Search incomplete", "fr": "Recherche incomplète"},
-    "res.cost_title": {"en": "What it costs", "fr": "Ce que cela coûte"},
-    "res.lcoe": {"en": "Levelised cost", "fr": "Coût actualisé"},
-    "res.annual": {"en": "Annualised cost", "fr": "Coût annualisé"},
     "res.subsidy": {"en": "Subsidy", "fr": "Subvention"},
     "res.subsidy.none": {"en": "none", "fr": "aucune"},
     "res.subsidy.met": {"en": "the tariff is met", "fr": "le tarif est atteint"},
     "res.target": {"en": "target tariff", "fr": "tarif visé"},
-    "res.gap": {"en": "Dispatch gap", "fr": "Écart de dispatch"},
     "res.week": {"en": "The most demanding week", "fr": "La semaine la plus sollicitée"},
     "res.week.hint": {
         "en": "Seven days taken where the generating set runs most, a plant being judged on "
@@ -265,12 +255,8 @@ STRINGS: dict[str, dict[str, str]] = {
     "fin.years": {"en": "years", "fr": "ans"},
 
     # ---------------------------------------------------------------- plan
-    "plan.future": {"en": "What the future will decide", "fr": "Ce que l'avenir décidera"},
-    "plan.branch": {"en": "Branch at year", "fr": "Branche à l'année"},
     "plan.probability": {"en": "Probability", "fr": "Probabilité"},
     "plan.energy": {"en": "Energy to serve", "fr": "Énergie à servir"},
-    "plan.enlarge": {"en": "enlarge", "fr": "agrandir"},
-    "plan.hold": {"en": "add nothing", "fr": "ne rien ajouter"},
     "plan.grid_here": {"en": "grid arrived", "fr": "réseau arrivé"},
     "plan.tree": {"en": "The tree has {nodes} nodes and {leaves} leaves. Only the first line "
                         "is committed; the rest is decided when the uncertainty lifts.",
@@ -365,7 +351,6 @@ STRINGS: dict[str, dict[str, str]] = {
     # ---------------------------------------------------------------- moving through the pages
     "wiz.next": {"en": "Next page", "fr": "Page suivante"},
     "wiz.back": {"en": "Previous page", "fr": "Page précédente"},
-    "wiz.step": {"en": "Step {n} of {total}", "fr": "Étape {n} sur {total}"},
     "wiz.home": {"en": "Home", "fr": "Accueil"},
     "wiz.info": {"en": "What this is", "fr": "De quoi il s'agit"},
 
@@ -409,14 +394,45 @@ STRINGS: dict[str, dict[str, str]] = {
     # ---------------------------------------------------------------- community uses
     "site.community": {"en": "Community uses", "fr": "Usages communautaires"},
     "site.community.hint": {
-        "en": "The buildings a village already has, and its street lighting. They are not "
-              "households and not trades, and they are connected from the first months — "
-              "a line is usually run for them. Leave a count at zero where there is none, "
-              "or where the building is wired but not supplied.",
-        "fr": "Les bâtiments que le village a déjà, et son éclairage public. Ce ne sont ni "
-              "des foyers ni des commerces, et ils sont raccordés dès les premiers mois — "
-              "c'est souvent pour eux que la ligne est tirée. Laissez un compte à zéro là "
-              "où il n'y en a pas, ou là où le bâtiment est équipé sans être alimenté."},
+        "en": "The buildings a village already has. They are not households and not "
+              "trades, and they are connected from the first months — a line is usually "
+              "run for them. Each is a customer with a meter. Leave a count at zero where "
+              "there is none, or where the building is wired but not supplied.",
+        "fr": "Les bâtiments que le village a déjà. Ce ne sont ni des foyers ni des "
+              "commerces, et ils sont raccordés dès les premiers mois — c'est souvent pour "
+              "eux que la ligne est tirée. Chacun est un abonné muni d'un compteur. Laissez "
+              "un compte à zéro là où il n'y en a pas, ou là où le bâtiment est équipé sans "
+              "être alimenté."},
+    "site.self": {"en": "Self consumption", "fr": "Autoconsommation"},
+    "site.self.hint": {
+        "en": "What the plant serves and invoices to nobody: the street lighting, and what "
+              "the plant draws to run itself. Both are supplied from the first day and "
+              "both size the plant exactly as a customer would — they simply earn nothing. "
+              "Counted here rather than taken out of the energy sold as a percentage, "
+              "because neither grows when the village consumes more.",
+        "fr": "Ce que la centrale sert sans le facturer à personne : l'éclairage public, et "
+              "ce que la centrale consomme pour fonctionner. Les deux sont alimentés dès le "
+              "premier jour et dimensionnent la centrale exactement comme un abonné — ils "
+              "ne rapportent simplement rien. Comptés ici plutôt que retirés de l'énergie "
+              "vendue en pourcentage, parce que ni l'un ni l'autre ne croît quand le "
+              "village consomme davantage."},
+    "use.powerhouse": {"en": "Powerhouse", "fr": "Local technique"},
+    "use.powerhouse.hint": {
+        "en": "What the plant draws to run itself: the air conditioning of the room the "
+              "inverters stand in, its lighting, the router that carries the metering. The "
+              "one load no distribution loss applies to, since it draws from the busbar "
+              "beside it. Measured at both reference plants, which meter their air "
+              "conditioning separately and agree closely: a flat block through the working "
+              "day, nothing through the small hours, and a second block before midnight. "
+              "Describe its devices to use your own figures instead.",
+        "fr": "Ce que la centrale consomme pour fonctionner : la climatisation du local où "
+              "se trouvent les onduleurs, son éclairage, le routeur qui porte la télérelève. "
+              "La seule charge à laquelle aucune perte de distribution ne s'applique, "
+              "puisqu'elle est prise sur le jeu de barres voisin. Mesurée dans les deux "
+              "centrales de référence, qui comptent leur climatisation à part et "
+              "s'accordent de près : un palier pendant la journée de travail, rien aux "
+              "petites heures, et un second palier avant minuit. Décrivez ses appareils "
+              "pour employer vos propres chiffres."},
     "use.school": {"en": "School", "fr": "École"},
     "use.school.hint": {
         "en": "Lighting, fans, and whatever office equipment the school holds, during term "
@@ -456,16 +472,23 @@ STRINGS: dict[str, dict[str, str]] = {
               "simulated. Often unmetered: where the distribution meters record it, it "
               "arrives with the network losses and must not be counted twice. Nobody is "
               "invoiced for it, so the plant is sized for it and the tariff is not "
-              "collected on it.",
+              "collected on it. Count the lamps that light, not the lamps installed: a "
+              "failed one draws nothing and is almost never replaced. At Gbowele ten are "
+              "installed and the night load reaching no meter is worth at most six.",
         "fr": "Des lampes qui brûlent du crépuscule à l'aube, toutes les nuits. Il n'y a là "
               "aucun comportement à tirer : la charge est posée exactement d'après le "
               "nombre de lampadaires et leur puissance, non simulée. Souvent non compté : "
               "là où les compteurs de départ le relèvent, il arrive avec les pertes du "
               "réseau et ne doit pas être compté deux fois. Personne n'en est facturé : la "
-              "centrale est dimensionnée pour lui, le tarif n'est pas encaissé dessus."},
-    "use.lamps": {"en": "lamps", "fr": "lampadaires"},
+              "centrale est dimensionnée pour lui, le tarif n'est pas encaissé dessus. "
+              "Comptez les lampadaires qui s'allument, non ceux qui sont posés : un "
+              "lampadaire en panne ne consomme rien et n'est presque jamais remplacé. À "
+              "Gbowele, dix sont posés et la charge nocturne qui n'atteint aucun compteur "
+              "en vaut au plus six."},
+    "use.lamps": {"en": "lamps lit", "fr": "lampadaires allumés"},
     "use.lamp_watts": {"en": "W each", "fr": "W chacun"},
     "use.declare": {"en": "Describe its devices", "fr": "Décrire ses appareils"},
+    "use.undescribed": {"en": "no devices yet", "fr": "aucun appareil"},
     "use.declared": {"en": "{n} devices described", "fr": "{n} appareils décrits"},
 
     # ---------------------------------------------------------------- declaring a use
@@ -484,11 +507,16 @@ STRINGS: dict[str, dict[str, str]] = {
     "use.new.category.productive": {"en": "A trade", "fr": "Un commerce"},
     "use.new.category.community": {"en": "A community building",
                                    "fr": "Un bâtiment communautaire"},
+    "use.new.category.self": {"en": "Self consumption", "fr": "De l'autoconsommation"},
     "use.new.category.hint": {
         "en": "A trade waits for the line as the other trades do; a community building is "
-              "connected from the first months.",
+              "connected from the first months. Self consumption is neither: it is what the "
+              "plant serves and nobody is billed for, and it is never invoiced whatever the "
+              "next question says.",
         "fr": "Un commerce attend la ligne comme les autres commerces ; un bâtiment "
-              "communautaire est raccordé dès les premiers mois."},
+              "communautaire est raccordé dès les premiers mois. L'autoconsommation n'est "
+              "ni l'un ni l'autre : c'est ce que la centrale sert sans que personne en soit "
+              "facturé, et elle ne l'est jamais quelle que soit la question suivante."},
     "use.new.billed": {"en": "Invoiced to a customer", "fr": "Facturé à un client"},
     "use.new.billed.yes": {"en": "Yes, it is a customer", "fr": "Oui, c'est un client"},
     "use.new.billed.no": {"en": "No, it is served and not sold",
@@ -662,7 +690,6 @@ STRINGS: dict[str, dict[str, str]] = {
                               "fr": "ANNÉE DE RÉFÉRENCE, CERTIFIÉE"},
 
     "sizing.difference": {"en": "Difference", "fr": "Écart"},
-    "sizing.same": {"en": "the same plant", "fr": "la même centrale"},
     "sizing.none.title": {"en": "Nothing sized yet",
                           "fr": "Rien de dimensionné pour l'instant"},
     "sizing.none.body": {
@@ -819,6 +846,24 @@ STRINGS: dict[str, dict[str, str]] = {
               "financial close. Spent once and never replaced.",
         "fr": "Faisabilité, levés, autorisations, études et temps du développeur avant "
               "le bouclage financier. Dépensés une fois, jamais remplacés."},
+    "f.network_loss": {"en": "Network losses", "fr": "Pertes sur le réseau"},
+    "f.network_loss.hint": {
+        "en": "Share of the energy the plant sends into the network that the network itself "
+              "consumes. The plant has to produce it and nobody is billed for it, so it "
+              "sizes the plant like a customer and earns nothing. It does not apply to the "
+              "powerhouse, which draws from the busbar beside it. Zero is the default "
+              "because at the two reference villages, once the street lighting and the "
+              "plant's own supply were counted as loads, what remained varying with the "
+              "load could not be told from zero — enter what your own distribution meters "
+              "show.",
+        "fr": "Part de l'énergie que la centrale injecte dans le réseau et que le réseau "
+              "consomme lui-même. La centrale doit la produire et personne n'en est "
+              "facturé : elle dimensionne la centrale comme un abonné et ne rapporte rien. "
+              "Elle ne s'applique pas au local technique, pris sur le jeu de barres voisin. "
+              "Zéro par défaut, car dans les deux villages de référence, une fois "
+              "l'éclairage public et l'autoconsommation comptés comme des charges, ce qui "
+              "restait de variable avec la charge ne se distinguait pas de zéro — portez ce "
+              "que montrent vos propres compteurs de départ."},
     "f.collection": {"en": "Customer bills collected",
                      "fr": "Factures effectivement encaissées"},
     "f.collection.hint": {

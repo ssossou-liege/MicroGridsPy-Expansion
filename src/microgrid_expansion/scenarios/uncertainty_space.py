@@ -124,3 +124,37 @@ class UncertaintySpace:
     economic: EconomicAxis = field(default_factory=EconomicAxis)
     policy: PolicyAxis = field(default_factory=PolicyAxis)
     grid: GridArrivalAxis = field(default_factory=GridArrivalAxis)
+
+
+def space_from_settings(settings) -> "UncertaintySpace":
+    """The uncertainty this project actually faces, as the settings describe it.
+
+    Without this the tree was always drawn over the defaults below, and the grid answers a
+    developer gave on the form reached nothing: a village where the line is already in and
+    a village where it is plainly not coming were branched over the same hazard, and the
+    switch that says which of the two this is -- "treat the arrival as uncertain" -- was
+    read nowhere at all. It was a control with a paragraph of explanation and no effect.
+
+    The grid is the axis the settings speak to. Three cases, and they are not degrees of one
+    another. A connection that exists is not an uncertainty: the line is in from the first
+    milestone. An arrival nobody has announced is not one either: branching a tree over a
+    question with an answer spends nodes to learn nothing. Between them sits the case this
+    axis was written for, a line announced without a date, and only there does the hazard
+    apply.
+    """
+    grid = getattr(settings, "grid", None)
+    if grid is None:
+        return UncertaintySpace()
+    stages = len(getattr(grid, "arrival_hazard_by_stage", ()) or ()) or 5
+    if grid.connected:
+        # Already connected: certain from the start. A hazard of one at the first milestone
+        # says that in the language the sampler already reads.
+        hazard = (1.0,) + (0.0,) * (stages - 1)
+    elif grid.arrival_uncertain:
+        hazard = tuple(float(h) for h in grid.arrival_hazard_by_stage)
+    else:
+        hazard = (0.0,) * stages
+    return UncertaintySpace(grid=GridArrivalAxis(
+        hazard_by_stage=hazard,
+        availability=float(grid.availability),
+        mean_outage_hours=float(grid.mean_outage_hours)))

@@ -658,6 +658,19 @@ class InfrastructureSpec:
     #: close. Spent once, never replaced, and carrying no maintenance.
     development_usd: float = 0.0
 
+    #: Share of the energy injected into the low-voltage network that the network itself
+    #: consumes, counted on the injection as a distribution meter reading is. The plant has
+    #: to produce it, nobody is billed for it, and it sizes the plant exactly as a customer
+    #: would. Applied to what travels the conductor and not to the plant's own supply, which
+    #: draws from the busbar beside it.
+    #:
+    #: Zero by default, and that is a finding rather than a convenience. At the two
+    #: reference villages, once the street lighting and the plant's own supply were counted
+    #: as the loads they are, what remained varying with the load could not be told from
+    #: zero: the constant that had looked like a loss was those two. A village whose
+    #: distribution meters show a real gap should enter what they show.
+    network_loss_fraction: float = 0.0
+
     provenance: Provenance = field(default_factory=lambda: Provenance(
         source="", verified=False,
         note="the balance of plant is site-specific and must be quoted, not defaulted; "
@@ -836,6 +849,10 @@ class ProjectSettings:
             raise ValueError("the array-to-inverter ratios must be strictly positive")
         if self.economics.horizon_years <= 0:
             raise ValueError("the horizon must be a positive number of years")
+        if not 0.0 <= self.infrastructure.network_loss_fraction < 1.0:
+            raise ValueError(
+                "the network loss is a share of the energy injected and must lie in "
+                f"[0, 1), not {self.infrastructure.network_loss_fraction}")
         if not self.generators:
             raise ValueError("the generator catalogue must not be empty")
         ratings = [g.rating_kw for g in self.generators]

@@ -28,7 +28,7 @@ from .model import build_model
 from .paths import RESULTS_DIR
 from .post import extract_solution, expected_npc_lcoe, node_kpis
 from .post.report import write_report
-from .scenarios import sample_scenario_paths
+from .scenarios import sample_scenario_paths, space_from_settings
 from .settings import default_settings
 from .solve import solve
 from .timedomain import reduce_to_rep_days
@@ -53,7 +53,9 @@ def run(cfg: ModelConfig, out_dir: Path = RESULTS_DIR, verbose: bool = True) -> 
     cfg.validate()
     settings = default_settings()
 
-    paths = sample_scenario_paths(cfg)
+    # Over the uncertainty the settings describe, as the interface does. Left to the
+    # library's defaults the two paths answered the same project differently.
+    paths = sample_scenario_paths(cfg, space_from_settings(settings))
     tree = build_tree(paths, cfg)
     tree.check_probabilities()
     if verbose:

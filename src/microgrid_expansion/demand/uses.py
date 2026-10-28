@@ -11,6 +11,10 @@ and none of them is a household or a trade. Nor do the six activity classes exha
 trades: a village with a cold store, a welding shop or an internet kiosk has a load none of
 the six describes, and forcing it into the nearest class describes a different village.
 
+Nor do they cover what the plant draws to run itself. The air conditioning of the room the
+inverters stand in, its lighting and the router that carries the metering are a real load on
+a small plant, and they are the one load that is neither a customer nor on the network.
+
 This module lets such a use be declared rather than inferred. A use is a name and a list of
 devices, each given in the terms RAMP is driven by -- what it draws, how many there are, how
 long it runs, the shortest stretch it runs for, the window it runs in, and how often it is
@@ -40,8 +44,10 @@ MINUTES_PER_DAY = 1440
 
 #: The categories a use can belong to. Productive uses are trades, and scale with how far
 #: the connection has advanced; community uses are the buildings a village already has, and
-#: are connected from the start because they are what a line is usually run for.
-CATEGORIES = ("productive", "community")
+#: are connected from the start because they are what a line is usually run for. Self
+#: consumption is the third kind and the one that is not a customer at all: the street
+#: lighting and the plant's own supply, served from the first day and invoiced to nobody.
+CATEGORIES = ("productive", "community", "self_consumption")
 
 
 @dataclass(frozen=True)
@@ -142,12 +148,22 @@ class UseSpec:
     #: lighting is not, nor is the plant's own supply, and an appraisal that bills them at
     #: the customer tariff recovers money nobody will ever be invoiced for.
     billable: bool = True
+    #: Whether the load sits downstream of the distribution network. Everything in a village
+    #: does, the street lighting included -- its energy travels the same conductor and is
+    #: diminished by the same losses. The plant's own supply does not: the air conditioning
+    #: of the inverter room draws from the busbar it stands beside. The two are both unbilled
+    #: and they are not the same load, which is why the distinction is kept rather than
+    #: folded into the first.
+    on_network: bool = True
 
     def validate(self) -> None:
         if not self.key.strip():
             raise ValueError("a use needs a key")
         if self.category not in CATEGORIES:
             raise ValueError(f"{self.key}: unknown category {self.category!r}")
+        if self.category == "self_consumption" and self.billable:
+            raise ValueError(f"{self.key}: self consumption is what nobody is billed for; "
+                             "a use somebody pays for is a customer, not self consumption")
         if not self.devices:
             raise ValueError(f"{self.key}: a use with no device draws nothing")
         for device in self.devices:
@@ -175,17 +191,23 @@ class UseSpec:
                    devices=devices, source=record.get("source", ""),
                    # A record written before the distinction existed described a use
                    # somebody is billed for, since that is all there was.
-                   billable=bool(record.get("billable", True)))
+                   billable=bool(record.get("billable", True)),
+                   on_network=bool(record.get("on_network", True)))
 
 
 @dataclass(frozen=True)
 class CommunityCalibration:
-    """The community classes the meters could speak to, in the shape the generator wants.
+    """The classes the meters could speak to, in the shape the generator wants.
 
     Presented with the same ``profiles`` attribute the productive calibration carries, so
-    that a measured community class reaches the month through the function that already
-    draws the productive ones and inherits its day-to-day spread rather than repeating a
-    mean day, which would flatten the evenings this class is almost entirely made of.
+    that a measured class reaches the month through the function that already draws the
+    productive ones and inherits its day-to-day spread rather than repeating a mean day,
+    which would flatten the evenings one of these classes is almost entirely made of.
+
+    The table covers both catalogues, so each row says what kind of load it is. Reading the
+    flags off the calibration rather than keeping a list of keys here is what stops the two
+    from disagreeing: a class added to the table arrives with its own answer to who pays for
+    it and where it sits.
     """
 
     profiles: "object"
@@ -193,6 +215,28 @@ class CommunityCalibration:
     @property
     def classes(self) -> tuple[str, ...]:
         return tuple(self.profiles.index)
+
+    def _flag(self, klass: str, column: str, default: bool) -> bool:
+        if klass not in self.profiles.index or column not in self.profiles.columns:
+            return default
+        value = self.profiles.loc[klass, column]
+        # A table written before the column existed, or by a hand that wrote words.
+        if isinstance(value, str):
+            return value.strip().lower() in ("true", "yes", "1")
+        return bool(value)
+
+    def is_billable(self, klass: str) -> bool:
+        """Whether a customer is invoiced for this class. Everything but the plant's own."""
+        return self._flag(klass, "billable", True)
+
+    def is_on_network(self, klass: str) -> bool:
+        """Whether the class sits downstream of the distribution network."""
+        return self._flag(klass, "on_network", True)
+
+    def category_of(self, klass: str) -> str:
+        if klass not in self.profiles.index or "category" not in self.profiles.columns:
+            return "community"
+        return str(self.profiles.loc[klass, "category"])
 
     @classmethod
     def load(cls) -> "CommunityCalibration | None":
@@ -208,15 +252,37 @@ class CommunityCalibration:
         profiles.columns = [int(c) if str(c).isdigit() else c for c in profiles.columns]
         return cls(profiles=profiles)
 
+    @property
+    def measured_powerhouse_kwh_per_day(self) -> float | None:
+        """What the plant's own supply draws, where it was measured. ``None`` otherwise."""
+        if "powerhouse" not in self.profiles.index:
+            return None
+        return float(self.profiles.loc["powerhouse", "kwh_per_day"])
+
 
 def dusk_to_dawn(lamps: int, watts: float, *, source: str,
-                 start_min: int = 18 * 60 + 30,
-                 end_min: int = 6 * 60) -> UseSpec:
+                 start_min: int = 19 * 60,
+                 end_min: int = 7 * 60) -> UseSpec:
     """Street lighting, which is the one community use that needs no occupancy to model.
 
     It runs from dusk to dawn every night of the year, so its energy follows from a lamp
     count and a rating and nothing else. That makes it the only one of the four this
     catalogue can carry a number for.
+
+    The default window is twelve hours, from seven in the evening to seven in the morning,
+    and it is measured rather than assumed. Both reference villages switch within a quarter
+    of an hour of those times, and they do it by different mechanisms -- one on a timer, one
+    on photocells -- which is what makes the agreement worth something. The window a lamp
+    actually burns is not sunset to sunrise: a photocell waits for real darkness and lets go
+    well after first light. The eleven and a half hours from half past six that stood here
+    before were a reasonable guess and about an hour short at dawn.
+
+    ``lamps`` is the number that *lights*, not the number installed, and the two differ. A
+    lamp that fails draws nothing, and on these networks it is rarely replaced: at Gbowele
+    ten are installed at forty watts, and the load that reaches no meter between one and
+    four in the morning averages two hundred and fifty watts over a settled year, which is
+    at most six of them alight -- and some of that is network loss, so at most. Counting the
+    installed ten would size the plant for a hundred and sixty watts that nothing draws.
 
     Nobody is billed for it. It is the village's lighting, paid for out of whatever the
     commune or the concession agreed, and it is the clearest case of a load that the plant
@@ -224,21 +290,20 @@ def dusk_to_dawn(lamps: int, watts: float, *, source: str,
     """
     width = MINUTES_PER_DAY - start_min + end_min
     return UseSpec(
-        key="public_lighting", label="Public lighting", category="community",
+        key="public_lighting", label="Public lighting", category="self_consumption",
         source=source, billable=False,
         devices=(Device(name="street lamp", power_w=watts, number=float(lamps),
                         func_time_min=float(width), func_cycle_min=float(width),
                         window_start_min=start_min, window_end_min=end_min),))
 
 
-#: The four community uses that come up in every village, and what is known about each.
+#: The three community buildings that come up in every village, and what is known about
+#: each, which is nothing numerical.
 #:
-#: Only street lighting carries numbers, and they are the ones reported for the Samionta
-#: plant rather than a figure chosen to look plausible. The school, the health centre and
-#: the place of worship are named and left empty on purpose: their load depends on what
-#: equipment they hold and how many hours they keep, which varies more between two villages
-#: than between a village and a town, and a default would be invention dressed as
-#: calibration. The interface asks for them; it does not pretend to know them.
+#: They are named and left empty on purpose: their load depends on what equipment they hold
+#: and how many hours they keep, which varies more between two villages than between a
+#: village and a town, and a default would be invention dressed as calibration. The
+#: interface asks for them; it does not pretend to know them.
 COMMUNITY_CATALOGUE: dict[str, dict] = {
     "school": {
         "label": "School",
@@ -261,27 +326,68 @@ COMMUNITY_CATALOGUE: dict[str, dict] = {
                 "Five are metered across the two reference villages, which is enough to "
                 "calibrate a shape and not enough to have done so yet.",
     },
+}
+
+#: What the plant serves and nobody is billed for. Two loads, and they differ in where they
+#: sit as much as in who pays: the street lighting is spread along the conductor like any
+#: customer, while the plant's own supply draws from the busbar beside it and is diminished
+#: by no network loss at all.
+#:
+#: They were counted as a shortfall before they were counted as load. Taken out of the
+#: energy sold by one fraction, they looked like customers in arrears -- and the fraction was
+#: the wrong shape for them besides, since neither grows when the village consumes more.
+SELF_CONSUMPTION_CATALOGUE: dict[str, dict] = {
     "public_lighting": {
         "label": "Public lighting",
         "known": True,
         "billable": False,
-        "note": "Street lamps burning dusk to dawn. Not a customer and usually unmetered: "
-                "at Gbowele it falls inside what the distribution meters record, together "
-                "with the network losses.",
+        "on_network": True,
+        "note": "Street lamps burning dusk to dawn, counted as the number that lights "
+                "rather than the number installed -- a failed lamp draws nothing and is "
+                "rarely replaced. Not a customer and usually unmetered: at Gbowele it "
+                "falls inside what the distribution meters record, together with the "
+                "network losses, and what reaches no meter in the small hours is about "
+                "six lamps' worth of the ten installed.",
+    },
+    "powerhouse": {
+        "label": "Powerhouse",
+        "known": True,
+        "billable": False,
+        "on_network": False,
+        "note": "What the plant draws to run itself: the air conditioning of the room the "
+                "inverters stand in, its lighting, the router that carries the metering. At "
+                "the plant rather than on the network, so no distribution loss applies to "
+                "it. Measured: both reference plants meter their air conditioning "
+                "separately and the two agree closely -- a flat block through the working "
+                "day, nothing through the small hours, and a second block before midnight.",
     },
 }
 
 
-def community_catalogue(lamps: int | None = None, watts: float | None = None,
-                        source: str = "") -> dict[str, UseSpec | None]:
-    """The four community uses, those with numbers carrying them and the rest empty.
+def community_catalogue() -> dict[str, UseSpec | None]:
+    """The three community buildings, all empty, because none of them is measured.
 
     ``None`` against a key means the use is known to exist and not known to any figure, and
     the caller must obtain it. Returning ``None`` rather than a plausible default is the
     whole point: a plant sized on invented occupancy is not improved by the confidence with
     which it was sized.
     """
-    out: dict[str, UseSpec | None] = {key: None for key in COMMUNITY_CATALOGUE}
+    return {key: None for key in COMMUNITY_CATALOGUE}
+
+
+def self_consumption_catalogue(lamps: int | None = None, watts: float | None = None,
+                               source: str = "") -> dict[str, UseSpec | None]:
+    """The two self-consumption loads, the street lighting carrying numbers if given any.
+
+    Street lighting is the one load in either catalogue that follows from two numbers and
+    nothing else, because it has no occupancy and no behaviour: a lamp count and a rating
+    settle it. The powerhouse comes back empty, and not for want of measurement -- both
+    reference plants meter theirs. What it has is a measured *shape*, which reaches the
+    month through the calibration rather than through a device list, so there is no
+    specification to return for it. A developer who prefers their own figures describes it,
+    and the description then replaces the measured shape.
+    """
+    out: dict[str, UseSpec | None] = {key: None for key in SELF_CONSUMPTION_CATALOGUE}
     if lamps and watts:
         out["public_lighting"] = dusk_to_dawn(lamps, watts, source=source)
     return out

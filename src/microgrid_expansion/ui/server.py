@@ -47,8 +47,11 @@ class SiteRequest(BaseModel):
     census: dict[str, int] = Field(default_factory=dict)
     productive_units: int | None = None
     productive_mix: dict[str, int] = Field(default_factory=dict)
-    #: How many of each community use the village has. Street lighting counts lamps.
+    #: How many of each community building the village has.
     community_mix: dict[str, int] = Field(default_factory=dict)
+    #: What the plant serves and bills to nobody: the street lighting, counted in lamps,
+    #: and the powerhouse.
+    self_mix: dict[str, int] = Field(default_factory=dict)
     #: Uses the developer described device by device, because no class of ours fits them.
     declared_uses: list[dict] = Field(default_factory=list)
     #: What one street lamp draws, when the village has any.
@@ -111,29 +114,41 @@ def create_app() -> FastAPI:
 
     @app.get("/api/community-uses")
     def community_uses(lang: str = i18n.DEFAULT) -> list[dict]:
-        """The community loads a village has, and what is known about each.
+        """The loads a village has that are neither a household nor a trade.
+
+        Two kinds, and each row says which: the community buildings, which are customers
+        with a meter, and what the plant serves without invoicing anyone -- the street
+        lighting and the plant's own supply. The page splits them into two lists on that
+        key, because the question a reader answers is different for each.
 
         A class the meters could speak to carries its measured day; the rest carry nothing
         and say so, because a default occupancy would be invention wearing a calibration's
-        clothes. All four are listed from the start, at a count of zero: a developer reading
-        "school, health centre, place of worship, street lighting" remembers to count them,
-        where an empty list reminds them of nothing.
+        clothes. All of them are listed from the start, at a count of zero: a developer
+        reading "school, health centre, place of worship" remembers to count them, where an
+        empty list reminds them of nothing.
         """
-        from ..demand.uses import COMMUNITY_CATALOGUE, CommunityCalibration
+        from ..demand.uses import (COMMUNITY_CATALOGUE, SELF_CONSUMPTION_CATALOGUE,
+                                   CommunityCalibration)
 
         calibration = CommunityCalibration.load()
         measured = set(calibration.classes) if calibration else set()
         out = []
-        for key, entry in COMMUNITY_CATALOGUE.items():
-            row = {"key": key, "label": i18n.t(f"use.{key}", lang),
-                   "hint": i18n.t(f"use.{key}.hint", lang),
-                   "measured": key in measured,
-                   "lamps": key == "public_lighting"}
-            if key in measured:
-                row["kwh_per_day"] = round(
-                    float(calibration.profiles.loc[key, "kwh_per_day"]), 3)
-                row["n_meters"] = int(calibration.profiles.loc[key, "n_meters"])
-            out.append(row)
+        for category, catalogue in (("community", COMMUNITY_CATALOGUE),
+                                    ("self_consumption", SELF_CONSUMPTION_CATALOGUE)):
+            for key, entry in catalogue.items():
+                row = {"key": key, "category": category,
+                       "label": i18n.t(f"use.{key}", lang),
+                       "hint": i18n.t(f"use.{key}.hint", lang),
+                       "measured": key in measured,
+                       # Street lighting is the one row given as a count and a rating
+                       # rather than described device by device, because that is how it is
+                       # known and because it has no behaviour to describe.
+                       "lamps": key == "public_lighting"}
+                if key in measured:
+                    row["kwh_per_day"] = round(
+                        float(calibration.profiles.loc[key, "kwh_per_day"]), 3)
+                    row["n_meters"] = int(calibration.profiles.loc[key, "n_meters"])
+                out.append(row)
         return out
 
     @app.get("/api/job/{job_id}")
@@ -171,6 +186,7 @@ def create_app() -> FastAPI:
 
         roster = {k: int(v) for k, v in request.productive_mix.items() if int(v) > 0}
         community = {k: int(v) for k, v in request.community_mix.items() if int(v) > 0}
+        own = {k: int(v) for k, v in request.self_mix.items() if int(v) > 0}
         uses = []
         for record in request.declared_uses:
             try:
@@ -180,14 +196,16 @@ def create_app() -> FastAPI:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
             uses.append(use)
         # Street lighting is given as a lamp count and a rating rather than as devices,
-        # because that is how a developer knows it and because it is the one community load
-        # with no behaviour to describe: it burns dusk to dawn, every night.
-        lamps = community.get("public_lighting", 0)
+        # because that is how a developer knows it and because it is the one load with no
+        # behaviour to describe: it burns dusk to dawn, every night. It is read from the
+        # self-consumption count, falling back to the community one for a site saved before
+        # it had a category of its own.
+        lamps = own.get("public_lighting", community.pop("public_lighting", 0))
         if lamps and request.lamp_watts:
             uses = [u for u in uses if u.key != "public_lighting"]
             uses.append(dusk_to_dawn(lamps, float(request.lamp_watts),
                                      source="declared by the developer"))
-            community["public_lighting"] = 1        # one lighting system, however many lamps
+            own["public_lighting"] = 1              # one lighting system, however many lamps
         offset = (request.utc_offset_hours if request.utc_offset_hours is not None
                   else standard_offset(request.longitude))
         site = Site(name=request.name.strip(), census=census or {"HH1": 0},
@@ -195,6 +213,7 @@ def create_app() -> FastAPI:
                     productive_units=request.productive_units or (sum(roster.values()) or None),
                     productive_mix=roster or None,
                     community_mix=community or None,
+                    self_mix=own or None,
                     declared_uses=tuple(uses) or None,
                     utc_offset_hours=offset, origin="user")
         if not site.name:

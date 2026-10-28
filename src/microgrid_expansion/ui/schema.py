@@ -130,6 +130,12 @@ BALANCE: tuple[Field, ...] = (
     Field("infrastructure.development_usd", "Development", "$", step=1000.0,
           hint="Feasibility, survey, permits, design and the developer's own time before "
                "financial close. Spent once and never replaced.", key="f.development"),
+    Field("infrastructure.network_loss_fraction", "Network losses", "", step=0.01,
+          hint="Share of the energy the plant sends into the network that the network "
+               "itself consumes. The plant must produce it and nobody is billed for it, so "
+               "it sizes the plant like a customer and earns nothing. It does not apply to "
+               "the powerhouse, which draws from the busbar beside it.",
+          key="f.network_loss"),
     Field("economics.collection_rate", "Customer bills collected", "", step=0.01,
           hint="Share of what is invoiced to customers that is actually paid. It does not "
                "apply to the loads nobody is billed for -- the street lighting, the plant's "

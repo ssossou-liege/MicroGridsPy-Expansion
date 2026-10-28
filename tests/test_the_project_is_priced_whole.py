@@ -287,3 +287,52 @@ def test_the_pricing_reads_the_split_off_the_demand_and_not_off_the_form() -> No
     source = inspect.getsource(appraisal.price_certified_design)
     assert "billable_fraction" in source
     assert "billable_energy_kwh=billable" in source
+
+
+# ------------------------------------------------------------- the network in between
+def test_the_network_loss_is_a_share_of_the_injection_not_of_the_delivery() -> None:
+    """Which is the convention a distribution meter reading is divided into.
+
+    Nine kilowatts reaching customers at a loss of a tenth of the injection means ten
+    injected and one lost, not nine point nine injected. At fifteen per cent the two
+    readings of the same figure differ by nearly three points, which is more than the
+    differences this work reports.
+    """
+    import numpy as np
+
+    from microgrid_expansion.instances import check_network_loss, with_network_loss
+
+    load = np.full(24, 10.0)
+    at_plant = np.full(24, 1.0)          # of which one kilowatt never leaves the plant
+    total, lost = with_network_loss(load, at_plant, 0.10)
+    assert float(total[0] - at_plant[0]) == pytest.approx(10.0)
+    assert float(lost[0]) == pytest.approx(1.0)
+
+    # The plant's own supply draws from the busbar beside it and carries no loss at all.
+    same, nothing = with_network_loss(at_plant, at_plant, 0.10)
+    assert np.allclose(same, at_plant) and np.allclose(nothing, 0.0)
+
+    # Zero is exactly the behaviour there was before the term existed.
+    untouched, none = with_network_loss(load, at_plant, 0.0)
+    assert untouched is load and np.allclose(none, 0.0)
+
+    # A share at or above one asks the plant for infinite energy. Refused, not clamped: a
+    # figure like that is a decimal point in the wrong place and serving the nearest
+    # admissible study would hide it.
+    for impossible in (-0.01, 1.0, 15.0):
+        with pytest.raises(ValueError):
+            check_network_loss(impossible)
+
+
+def test_the_loss_is_applied_through_one_function_for_the_year_and_for_the_tree() -> None:
+    """A plan and a sizing of one village must be asked for the same energy.
+
+    Written twice the two would drift, which is the fault this file already holds the
+    repair of in the pricing. So both the certified year and the scenario pool call the
+    same function, and this checks that they do rather than that they agree today.
+    """
+    from microgrid_expansion import instances
+    from microgrid_expansion.scenarios import demand_paths
+
+    assert "with_network_loss" in inspect.getsource(instances.build_site_year)
+    assert "with_network_loss" in inspect.getsource(demand_paths.simulate_stage_demand)

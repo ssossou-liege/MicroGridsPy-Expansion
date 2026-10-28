@@ -176,3 +176,144 @@ def test_a_borrowed_series_says_whose_it_is() -> None:
     assert from_record(to_record(borrowed)).irradiance_source == "Gbowele"
     assert _site_fingerprint(borrowed) != _site_fingerprint(site), (
         "a borrowed series keys the same as the site's own")
+
+def _reachable_functions(root: Path) -> tuple[set[str], dict[str, set[str]]]:
+    """Which functions of the package can actually be reached, and what each one names.
+
+    A call graph over the package, marked live from the places the outside world enters:
+    module-level code, the interface's route handlers, every ``main``, and the dunder
+    entry points. A function nobody calls is dead however complete it looks, and a setting
+    read only inside a dead function is a setting nothing reads.
+    """
+    import ast
+
+    names: dict[str, set[str]] = {}          # function -> identifiers it mentions
+    calls: dict[str, set[str]] = {}          # function -> functions it refers to
+    module_level: set[str] = set()
+    entry: set[str] = set()
+
+    for path in sorted(root.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        functions = [n for n in ast.walk(tree)
+                     if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+        inner = {id(n) for f in functions for n in ast.walk(f)}
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Name, ast.Attribute)) and id(node) not in inner:
+                module_level.add(node.id if isinstance(node, ast.Name) else node.attr)
+        for function in functions:
+            key = f"{path.name}:{function.name}"
+            mentioned = {n.id for n in ast.walk(function) if isinstance(n, ast.Name)}
+            mentioned |= {n.attr for n in ast.walk(function)
+                          if isinstance(n, ast.Attribute)}
+            names[key] = mentioned
+            calls[key] = mentioned
+            # A route handler is called by the web framework, a main by the shell, and a
+            # nested function by the one that defines it; none of them is ever named.
+            decorated = any(isinstance(d, (ast.Call, ast.Attribute))
+                            for d in function.decorator_list)
+            if decorated or function.name in ("main", "run") or path.name == "__main__.py":
+                entry.add(key)
+
+    live = {k for k in names if k in entry or k.split(":")[1] in module_level}
+    changed = True
+    while changed:                            # one fixed point over the call graph
+        changed = False
+        reached = set().union(*(calls[k] for k in live)) if live else set()
+        for key in calls:
+            if key not in live and key.split(":")[1] in reached:
+                live.add(key)
+                changed = True
+    return live, names
+
+
+def test_every_setting_the_form_offers_is_read_by_something_reachable() -> None:
+    """A knob that changes nothing is worse than an absent one: it reads as an answer.
+
+    "Treat the arrival as uncertain" sat on the form with a paragraph explaining that the
+    expansion plan would branch on the arrival of the line. Nothing read it. The tree was
+    always drawn over the library's default hazard, so a village with a line already in and
+    a village with none were planned identically, and the switch that distinguishes them was
+    a decoration.
+
+    Naming the setting somewhere is not enough and the first version of this test made that
+    mistake: with the wiring torn out again it still passed, because the function that reads
+    the setting was left behind, unreachable and convincing. So the question asked here is
+    whether anything that can actually run reads it.
+    """
+    import re
+    from pathlib import Path
+
+    from microgrid_expansion.ui.schema import GROUPS
+
+    root = Path(__file__).resolve().parents[1] / "src" / "microgrid_expansion"
+    live, names = _reachable_functions(root)
+    assert len(live) > 100, f"only {len(live)} reachable functions; the scan is broken"
+    read_live = set().union(*(names[k] for k in live))
+
+    script = (root / "ui" / "static" / "app.js").read_text(encoding="utf-8")
+    unread = [f.path for _k, _t, group in GROUPS for f in group
+              if f.path.split(".")[-1] not in read_live
+              and not re.search(rf"\b{re.escape(f.path.split('.')[-1])}\b", script)]
+    assert not unread, (
+        "the form offers settings that nothing reachable reads; either wire them to the "
+        f"model or take them off the form: {unread}")
+
+
+def test_the_plan_is_configured_from_the_settings_and_not_from_the_defaults() -> None:
+    """Every figure the tree configuration duplicates from the settings must be handed over.
+
+    ``ModelConfig`` repeats a handful of the project settings because the tree is drawn
+    before a settings object exists. Each repetition is a chance for the two to disagree,
+    and they did: the interface built the configuration with the solver name alone, so every
+    expansion plan it produced was Samionta's, whatever village had been described, and the
+    connection age, the horizon, the discount rate, the storage chemistry and the network
+    loss were all the library's defaults rather than the reader's answers.
+
+    The test above asks whether a setting is read by anything reachable. This one asks the
+    narrower question that fault turned on: whether the bridge between the two carries
+    everything it has room for. Neither proves a setting reaches every computation it ought
+    to; a behavioural check is the only thing that would, and the ones that matter most are
+    held in the pricing tests.
+    """
+    import ast
+    import dataclasses
+    from pathlib import Path
+
+    from microgrid_expansion.config import ModelConfig
+    from microgrid_expansion.settings import ProjectSettings
+
+    def paths(spec, prefix: str = "") -> set[str]:
+        out = set()
+        for field in dataclasses.fields(spec):
+            out.add(f"{prefix}{field.name}")
+            if dataclasses.is_dataclass(field.type) or field.name in (
+                    "economics", "battery", "infrastructure", "solver", "grid",
+                    "coupling", "controller"):
+                out.add(field.name)
+        return out
+
+    shared = {f.name for f in dataclasses.fields(ModelConfig)}
+    settings_names = paths(ProjectSettings)
+    # A configuration field whose name also names a project setting, or sits inside one.
+    nested = set()
+    for name in ("economics", "battery", "infrastructure", "solver", "grid"):
+        spec = ProjectSettings.__dataclass_fields__[name].type
+        if dataclasses.is_dataclass(spec):
+            nested |= {f.name for f in dataclasses.fields(spec)}
+    duplicated = {name for name in shared
+                  if name in settings_names or name in nested
+                  or name in ("battery_chemistry", "network_loss_fraction")}
+
+    source = (Path(__file__).resolve().parents[1] / "src" / "microgrid_expansion"
+              / "ui" / "engine.py").read_text(encoding="utf-8")
+    passed: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == "ModelConfig"):
+            passed |= {kw.arg for kw in node.keywords if kw.arg}
+    assert passed, "the interface never builds a ModelConfig; this test is reading nothing"
+
+    forgotten = sorted(duplicated - passed - {"seed", "stage_years"})
+    assert not forgotten, (
+        "the interface builds the tree configuration without handing over settings it "
+        f"duplicates, so the plan will quietly use a default: {forgotten}")

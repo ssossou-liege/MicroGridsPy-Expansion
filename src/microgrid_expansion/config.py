@@ -137,6 +137,20 @@ class ModelConfig:
     # --- Economics ---
     discount_rate: float = DISCOUNT_RATE
 
+    # --- Age of the connection the tree starts from ---
+    # The plan ages the community from this, milestone by milestone. Held here for the same
+    # reason as the horizon: the tree is drawn before a settings object exists, and a plan
+    # built from a one-year-old connection is the wrong plan for a village being connected
+    # next month.
+    maturity_months: int = 12
+
+    # --- The network between the plant and the customer ---
+    # Share of the energy injected that the distribution network consumes. Held here as
+    # well as in the project settings, for the same reason the horizon and the discount
+    # rate are: the tree is drawn before a settings object exists, and the demand it draws
+    # is the demand the plant must produce.
+    network_loss_fraction: float = 0.0
+
     def validate(self) -> None:
         """Check internal consistency (stage count vs branching, etc.)."""
         if len(self.branching) != len(self.stage_years):

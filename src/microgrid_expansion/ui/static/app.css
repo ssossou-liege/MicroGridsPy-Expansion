@@ -495,6 +495,10 @@ button.door .door-foot { margin-top: 8px; padding-top: 0; }
 /* Street lighting asks for two numbers where every other use asks for one, so it spans the
    roster rather than sharing a column, and each box says what it holds. */
 .roster .pue.lamps { grid-column: 1 / -1; grid-template-columns: 22px 1fr auto auto; }
+/* A class nothing of ours measures carries, beside its count, whether its devices have
+   been described and the way to describe them. That needs the width of the roster. */
+.roster .pue.declarable { grid-column: 1 / -1; grid-template-columns: 22px 1fr auto 78px; }
+.pue .declare { padding: 0; font-size: 12px; }
 .pue .pair { display: flex; align-items: baseline; gap: 6px; }
 .pue .pair input[type=number] { width: 62px; }
 .pue .pair .u { font-size: 12px; color: var(--ink-soft); white-space: nowrap; }

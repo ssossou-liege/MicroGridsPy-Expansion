@@ -234,33 +234,56 @@ def _appliance_spec(row: pd.Series,
     }
 
 
-def _measured_community(site):
-    """The calibrated community uses this village declares, with their counts.
+def _measured_groups(site):
+    """The calibrated classes this village has, grouped by who pays and where they sit.
 
-    Returns ``None`` when the village declares none or the calibration has not been built.
-    A community use is present from the first month rather than scaled by how far the line
+    Returns a list of ``(counts, calibration, billable, on_network)``, empty when the
+    village declares none or the calibration has not been built. The grouping is what lets
+    a measured class reach the right series: a place of worship is a customer out on the
+    network, the plant's own supply is neither, and one of the three is not an opinion the
+    generator holds -- it is read off the calibration table, which says of every class it
+    carries who is billed for it and whether a distribution loss reaches it.
+
+    A measured class is present from the first month rather than scaled by how far the line
     has reached: a place of worship predates the grid and is among the first things put on
-    it.
+    it, and the inverter room is air conditioned before a single household is connected.
+
+    A class the developer has described device by device is left out. The two are both
+    offered on purpose -- a measured shape for the village that has none of its own, and the
+    developer's own figures for the village that knows better -- but they are alternatives,
+    and adding both counted one building twice.
     """
-    declared = getattr(site, "community_mix", None)
-    if not declared:
-        return None
     from .uses import CommunityCalibration
 
+    counted = {**(getattr(site, "community_mix", None) or {}),
+               **(getattr(site, "self_mix", None) or {})}
+    if not counted:
+        return []
     calibration = CommunityCalibration.load()
     if calibration is None:
-        return None
-    counts = {k: int(v) for k, v in declared.items()
-              if int(v) > 0 and k in calibration.profiles.index}
-    return (counts, calibration) if counts else None
+        return []
+    described = {u.key for u in (getattr(site, "declared_uses", None) or ())}
+    groups: dict[tuple[bool, bool], dict[str, int]] = {}
+    for klass, number in counted.items():
+        if int(number) <= 0 or klass in described:
+            continue
+        if klass not in calibration.profiles.index:
+            continue
+        key = (calibration.is_billable(klass), calibration.is_on_network(klass))
+        groups.setdefault(key, {})[klass] = int(number)
+    # Sorted so that the draws fall in a fixed order whatever a dictionary happens to hold.
+    return [(counts, calibration, billable, on_network)
+            for (billable, on_network), counts in sorted(groups.items(), reverse=True)]
 
 
 def _declared_counts(site, counts: dict[str, int]) -> dict:
     """The declared uses in force this month, with how many of each.
 
-    A community use is there from the start; a productive one waits for the line as the
-    calibrated trades do, so its count is scaled by the share of households connected and
-    may round to none in the early months.
+    A community use is there from the start, and so is anything the plant serves for itself:
+    the street lighting is lit the night the line is energised, and the inverter room is air
+    conditioned before a single household is connected. A productive use waits for the line
+    as the calibrated trades do, so its count is scaled by the share of households connected
+    and may round to none in the early months.
     """
     declared = getattr(site, "declared_uses", None)
     if not declared:
@@ -271,10 +294,15 @@ def _declared_counts(site, counts: dict[str, int]) -> dict:
     share = connected / max(getattr(site, "n_households", 0) or 1, 1)
     productive = getattr(site, "productive_mix", None) or {}
     community = getattr(site, "community_mix", None) or {}
+    # Street lighting was counted among the community uses before it had a category of its
+    # own, so a site saved then is read there as well. One place or the other, never both.
+    own = getattr(site, "self_mix", None) or {}
 
     out = {}
     for use in declared:
-        if use.category == "community":
+        if use.category == "self_consumption":
+            count = int(own.get(use.key, community.get(use.key, 0)))
+        elif use.category == "community":
             count = int(community.get(use.key, 0))
         else:
             count = int(round(int(productive.get(use.key, 0)) * share))
@@ -532,6 +560,11 @@ class DemandYear:
     #: serves it and must be sized for it. ``None`` when the community declares nothing of
     #: the kind, which is not the same as zero only in that it costs nothing to carry.
     unbilled_kw: np.ndarray | None = None
+    #: The part of ``hourly_kw`` that sits at the plant rather than out on the network: the
+    #: air conditioning of the inverter room and whatever else the plant draws to run
+    #: itself. Carried apart because no distribution loss applies to it -- it never travels
+    #: the conductor the losses occur in. A subset of ``unbilled_kw``.
+    at_plant_kw: np.ndarray | None = None
 
     @property
     def annual_energy_kwh(self) -> float:
@@ -541,6 +574,11 @@ class DemandYear:
     def unbilled_kwh(self) -> float:
         """Energy delivered over the year that nobody is invoiced for [kWh]."""
         return 0.0 if self.unbilled_kw is None else float(self.unbilled_kw.sum())
+
+    @property
+    def at_plant_kwh(self) -> float:
+        """Energy the plant drew to run itself, which crossed no network [kWh]."""
+        return 0.0 if self.at_plant_kw is None else float(self.at_plant_kw.sum())
 
     @property
     def billable_kwh(self) -> float:
@@ -605,6 +643,7 @@ def simulate_demand_year(
 
     hourly: list[np.ndarray] = []
     unbilled: list[np.ndarray] = []
+    at_plant: list[np.ndarray] = []
     composition: dict[int, dict[str, int]] = {}
     enterprises: dict[int, dict[str, int]] = {}
     for month in range(1, 13):
@@ -648,13 +687,19 @@ def simulate_demand_year(
             profile = profile + monthly_profile_kw(units, productive,
                                                    profile.size // 24, rng)
 
-        # The community classes the meters could speak to -- one, the place of worship --
-        # contribute their measured day exactly as a productive class does, spread and all.
-        measured = _measured_community(site)
-        if measured is not None:
-            community, calibration = measured
-            profile = profile + monthly_profile_kw(community, calibration,
-                                                   profile.size // 24, rng)
+        # The classes the meters could speak to contribute their measured day exactly as a
+        # productive class does, spread and all. Each group goes where its own kind of load
+        # belongs: a place of worship into the load alone, the plant's own supply into the
+        # load, the unbilled energy and the part that carries no distribution loss.
+        measured_unbilled = np.zeros(profile.size)
+        measured_at_plant = np.zeros(profile.size)
+        for counts, calibration, billable, on_network in _measured_groups(site):
+            part = monthly_profile_kw(counts, calibration, profile.size // 24, rng)
+            profile = profile + part
+            if not billable:
+                measured_unbilled = measured_unbilled + part
+            if not on_network:
+                measured_at_plant = measured_at_plant + part
 
         # The uses the developer declared, simulated device by device. Community uses are
         # connected from the first month rather than scaled by how far the line has reached:
@@ -662,35 +707,45 @@ def simulate_demand_year(
         # waits its turn behind the households. Declared productive uses wait like the
         # calibrated ones do.
         #
-        # The uses nobody is billed for are drawn apart from the rest, so that what they
-        # consume is known rather than inferred from a share of the total. They are added to
-        # the load all the same: the plant serves the street lighting whether or not it
-        # invoices anyone for it.
+        # Three groups, drawn apart, because two questions divide them and each decides
+        # something different. Whether a customer is billed decides the revenue; whether the
+        # load sits on the network decides whether a distribution loss applies to it. The
+        # street lighting answers no and yes, the plant's own supply no and no. All three
+        # are added to the load: the plant serves every one of them.
         declared = _declared_counts(site, counts)
-        unbilled_month = np.zeros(profile.size)
+        unbilled_month = measured_unbilled
+        at_plant_month = measured_at_plant
         if declared:
             month_seed = int(rng.integers(0, 2**31 - 1))
-            billed = {u: n for u, n in declared.items() if u.billable}
-            unpaid = {u: n for u, n in declared.items() if not u.billable}
-            if billed:
-                minutes = _declared_use_minutes(
-                    billed, year, month, calendar.monthrange(year, month)[1],
-                    seed=month_seed)
-                if minutes is not None:
-                    profile = profile + _to_hourly_kw(minutes)
-            if unpaid:
-                # Derived from the month's seed rather than drawn from the stream, so that
+            n_days = calendar.monthrange(year, month)[1]
+            groups = (
+                ("billed", 0, {u: n for u, n in declared.items() if u.billable}),
+                ("network", 0x5EED, {u: n for u, n in declared.items()
+                                     if not u.billable and u.on_network}),
+                ("plant", 0x0AC1, {u: n for u, n in declared.items()
+                                   if not u.billable and not u.on_network}),
+            )
+            for kind, salt, uses in groups:
+                if not uses:
+                    continue
+                # Salted from the month's seed rather than drawn from the stream, so that
                 # declaring a street lamp does not move the households of every later month.
-                minutes = _declared_use_minutes(
-                    unpaid, year, month, calendar.monthrange(year, month)[1],
-                    seed=month_seed ^ 0x5EED)
-                if minutes is not None:
-                    unbilled_month = _to_hourly_kw(minutes)
-                    profile = profile + unbilled_month
+                minutes = _declared_use_minutes(uses, year, month, n_days,
+                                                seed=month_seed ^ salt)
+                if minutes is None:
+                    continue
+                part = _to_hourly_kw(minutes)
+                profile = profile + part
+                if kind != "billed":
+                    unbilled_month = unbilled_month + part
+                if kind == "plant":
+                    at_plant_month = at_plant_month + part
         hourly.append(profile)
         unbilled.append(unbilled_month)
+        at_plant.append(at_plant_month)
 
-    series = np.concatenate(unbilled)
+    unbilled_series = np.concatenate(unbilled)
+    at_plant_series = np.concatenate(at_plant)
     return DemandYear(
         site=site.name,
         year=year,
@@ -698,5 +753,6 @@ def simulate_demand_year(
         hourly_kw=np.concatenate(hourly),
         composition=composition,
         enterprises=enterprises,
-        unbilled_kw=series if series.any() else None,
+        unbilled_kw=unbilled_series if unbilled_series.any() else None,
+        at_plant_kw=at_plant_series if at_plant_series.any() else None,
     )

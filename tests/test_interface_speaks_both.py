@@ -249,3 +249,50 @@ def test_the_page_and_the_script_agree_on_the_language_picker() -> None:
         ident = element.split('"')[1]
         assert f'"#{ident}"' in script, f"the script never wires #{ident} up"
     assert "setLanguage" in script
+
+
+def test_the_catalogue_carries_no_string_nothing_asks_for() -> None:
+    """A string written for a feature and wired nowhere is how a hole stays hidden.
+
+    "Describe its devices" sat in this catalogue, translated, for as long as the community
+    classes existed, and the page never offered it: ticking a school and giving it a count
+    produced no load at all, silently. The string was the only trace of the missing action,
+    and it read as deliberate because dead wording looks exactly the same.
+
+    So the catalogue is kept clean, and the next orphan means something.
+    """
+    source = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted((STATIC.parent).rglob("*"))
+        if path.suffix in (".py", ".js", ".html") and path.name != "i18n.py")
+
+    # Keys the source assembles rather than writes out. A prefix will not do: the server
+    # builds "use.<key>" for whatever the catalogues hold, so exempting everything under
+    # "use." would have exempted "use.declare" -- the one orphan that mattered, the string
+    # for an action the page never offered. The wildcards are therefore resolved to the
+    # values they can actually take, which every one of them can be asked for.
+    from microgrid_expansion.demand.productive import CLASSES
+    from microgrid_expansion.demand.uses import (COMMUNITY_CATALOGUE,
+                                                 SELF_CONSUMPTION_CATALOGUE)
+    from microgrid_expansion.ui.schema import GROUPS
+
+    named = set(re.findall(r'["\']([a-z][a-z0-9_.]{2,})["\']', source))
+    named |= {f"{key}.hint" for key in named}      # schema.py names "f.x" and uses "f.x.hint"
+    for key in (*COMMUNITY_CATALOGUE, *SELF_CONSUMPTION_CATALOGUE):
+        named |= {f"use.{key}", f"use.{key}.hint"}
+    for klass in CLASSES:
+        named |= {f"pue.{klass}", f"pue.{klass}.hint"}
+    for group, _title, fields in GROUPS:
+        named.add(f"group.{group}")
+        for field in fields:
+            named |= {f"choice.{choice}" for choice in field.choices}
+    # Assembled from values that are not a catalogue of ours: a job's status, a node column,
+    # an export format, a saturated ceiling, a phase of the archive's own progress.
+    loose = (re.compile(r"^job\.[a-z0-9_.]+$"), re.compile(r"^csv\.node\.[a-z0-9_]+$"),
+             re.compile(r"^export\.[a-z0-9_]+$"), re.compile(r"^res\.ceiling\.[a-z0-9_]+$"))
+
+    orphans = sorted(key for key in i18n.STRINGS
+                     if key not in named and not any(t.match(key) for t in loose))
+    assert not orphans, (
+        "the catalogue carries strings nothing asks for; either wire the feature they "
+        f"describe or remove them: {orphans}")

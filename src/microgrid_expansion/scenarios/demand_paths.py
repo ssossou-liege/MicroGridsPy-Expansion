@@ -45,14 +45,20 @@ def draw_trajectory(rng: np.random.Generator,
 POOL_SIZE = 4
 
 
-def _pool_path(site_name: str, trajectory: str, maturity: int) -> Path:
-    return DEMAND_POOL_DIR / f"demand_{site_name.lower()}_{trajectory}_m{maturity}.npy"
+def _pool_path(site_name: str, trajectory: str, maturity: int,
+               kind: str = "demand") -> Path:
+    return DEMAND_POOL_DIR / f"{kind}_{site_name.lower()}_{trajectory}_m{maturity}.npy"
 
 
 def demand_pool(site: Site | str = "Samionta", trajectory: str = "central",
                 maturity_months: int = 12, size: int = POOL_SIZE,
-                year: int = 2025, seed: int = 0) -> np.ndarray:
+                year: int = 2025, seed: int = 0) -> tuple[np.ndarray, np.ndarray]:
     """Realisations of one community-year, cached on disk.
+
+    Returns the load and, beside it, the part of that load which sits at the plant rather
+    than out on the network -- the air conditioning of the inverter room and the rest of
+    what the plant draws to run itself. The second is needed to apply a distribution loss
+    to the first, and it is held apart so that changing the loss costs nothing.
 
     The cache is keyed on the demand fingerprint as well as on the site and the trajectory:
     the calibration tables, the code that reads them and the appliance library alike, so a
@@ -64,19 +70,29 @@ def demand_pool(site: Site | str = "Samionta", trajectory: str = "central",
 
     DEMAND_POOL_DIR.mkdir(parents=True, exist_ok=True)
     stamp = _demand_fingerprint()
-    path = _pool_path(f"{site.name}_{stamp}", trajectory, maturity_months)
+    name = f"{site.name}_{stamp}"
+    path = _pool_path(name, trajectory, maturity_months)
+    own = _pool_path(name, trajectory, maturity_months, kind="atplant")
     if path.exists():
         cached = np.load(path)
         if cached.shape[0] >= size:
-            return cached[:size]
+            plant = np.load(own) if own.exists() else np.zeros_like(cached)
+            return cached[:size], plant[:size]
 
-    drawn = [np.asarray(simulate_demand_year(
+    years = [simulate_demand_year(
         site, year, seed=seed + k, maturity_months=maturity_months,
-        trajectory=trajectory, include_productive=True).hourly_kw, dtype=float)
-        for k in range(size)]
-    pool = np.array(drawn)
+        trajectory=trajectory, include_productive=True) for k in range(size)]
+    pool = np.array([np.asarray(y.hourly_kw, dtype=float) for y in years])
+    # The plant's own supply is held in its own pool rather than folded into the first,
+    # because the network loss does not apply to it and because the loss is a figure a
+    # developer changes. Kept apart, trying another loss costs nothing; folded in, every
+    # attempt would rebuild an hour of simulated years.
+    plant = np.array([np.zeros(pool.shape[1]) if y.at_plant_kw is None
+                      else np.asarray(y.at_plant_kw, dtype=float) for y in years])
     np.save(path, pool)
-    return pool
+    if plant.any():
+        np.save(own, plant)
+    return pool, plant
 
 
 def simulate_stage_demand(demand_axis: DemandAxis, stage_year: int,
@@ -84,8 +100,18 @@ def simulate_stage_demand(demand_axis: DemandAxis, stage_year: int,
                           site: Site | str = "Samionta",
                           trajectory: str = "central",
                           base_maturity_months: int = 12,
-                          year: int = 2025) -> np.ndarray:
-    """Hourly demand [kW] at a stage, for a community that has aged into it."""
+                          year: int = 2025,
+                          network_loss_fraction: float = 0.0) -> np.ndarray:
+    """Hourly load the plant must produce at a stage, for a community aged into it.
+
+    The distribution loss is applied here, through the same function the single certified
+    year uses, so that a plan and a sizing of one village are asked for the same energy.
+    """
+    from ..instances import check_network_loss, with_network_loss
+
     maturity = base_maturity_months + 12 * int(stage_year)
-    pool = demand_pool(site, trajectory, maturity, year=year)
-    return pool[int(rng.integers(0, pool.shape[0]))]
+    pool, plant = demand_pool(site, trajectory, maturity, year=year)
+    k = int(rng.integers(0, pool.shape[0]))
+    served, _ = with_network_loss(pool[k], plant[k],
+                                  check_network_loss(network_loss_fraction))
+    return served

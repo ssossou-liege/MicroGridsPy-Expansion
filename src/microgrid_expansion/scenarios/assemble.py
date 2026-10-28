@@ -67,7 +67,9 @@ def sample_scenario_paths(
                                   cost_scenario=stage["cost_scenario"],
                                   grid_connected=bool(stage.get("grid_connected", False))))
             demand[y] = demand_paths.simulate_stage_demand(
-                space.demand, y, rng, site=site, trajectory=stage["trajectory"])
+                space.demand, y, rng, site=site, trajectory=stage["trajectory"],
+                base_maturity_months=getattr(cfg, "maturity_months", 12),
+                network_loss_fraction=getattr(cfg, "network_loss_fraction", 0.0))
             pv_unit[y], t_amb[y] = pv_paths.simulate_stage_pv(
                 stage["resource"], y, site=site, rng=rng)
         resolved.append(ScenarioPath(pid, draws, demand, pv_unit, t_amb))

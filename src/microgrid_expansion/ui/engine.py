@@ -35,9 +35,10 @@ def size_site(job: Job, overrides: dict[str, Any],
     job.total = total_steps
 
     job.announce("job.build")
-    instance = build_site_year(settings.site, settings.year,
-                               trajectory=settings.demand_trajectory,
-                               maturity_months=settings.maturity_months)
+    instance = build_site_year(
+        settings.site, settings.year, trajectory=settings.demand_trajectory,
+        maturity_months=settings.maturity_months,
+        network_loss_fraction=settings.infrastructure.network_loss_fraction)
     job.done = step + 1
 
     job.announce("job.lattice")
@@ -124,17 +125,30 @@ def plan_expansion(job: Job, overrides: dict[str, Any],
     from ..model import build_model
     from ..post import expected_npc_lcoe, extract_solution, node_kpis
     from ..run import _NodeInstance
-    from ..scenarios import sample_scenario_paths
+    from ..scenarios import sample_scenario_paths, space_from_settings
     from ..solve import solve
     from ..timedomain import reduce_to_rep_days
     from ..tree import build_tree
 
     settings = settings_from(overrides)
-    cfg = ModelConfig(solver=settings.solver.name)
+    # The village described, not the one the configuration defaults to. Left unsaid, every
+    # expansion plan this page produced was Samionta's, whatever community had been entered
+    # on the first page -- the plant, the costs and the tariff all belonged to a village the
+    # reader had not asked about, and nothing on the page said so.
+    cfg = ModelConfig(
+        site=settings.site, solver=settings.solver.name,
+        maturity_months=settings.maturity_months,
+        horizon_years=settings.economics.horizon_years,
+        discount_rate=settings.economics.discount_rate,
+        battery_chemistry=settings.battery.chemistry,
+        network_loss_fraction=settings.infrastructure.network_loss_fraction)
     job.total = total_steps
 
     job.announce("job.sample")
-    tree = build_tree(sample_scenario_paths(cfg), cfg)
+    # The uncertainty this village faces, not the library's default. Drawn from the
+    # defaults, the tree branched on the arrival of a line in a village that already had
+    # one, and ignored the hazard a developer had entered for a village that did not.
+    tree = build_tree(sample_scenario_paths(cfg, space_from_settings(settings)), cfg)
     job.done = step + 1
 
     job.announce("job.reduce", n=len(tree.nodes))

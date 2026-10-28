@@ -1052,6 +1052,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--trajectory", default="central",
                         choices=["slow", "central", "fast"])
     parser.add_argument("--maturity-months", type=int, default=12)
+    parser.add_argument("--network-loss", type=float, default=None,
+                        help="share of the energy injected that the distribution network "
+                             "consumes; measured at Gbowele, unmeasurable at Samionta")
     parser.add_argument("--voll", type=float, default=None,
                         help="value of lost load; defaults to the project setting")
     parser.add_argument("--max-relaxations", type=int, default=350)
@@ -1079,6 +1082,8 @@ def main(argv: list[str] | None = None) -> int:
         low, high = settings.economics.value_of_lost_load_range_usd_kwh
         settings.economics.value_of_lost_load_range_usd_kwh = (min(low, args.voll),
                                                                max(high, args.voll))
+    if args.network_loss is not None:
+        settings.infrastructure.network_loss_fraction = args.network_loss
     settings.validate()
 
     instance = build_site_year(

@@ -693,12 +693,22 @@ class InfrastructureSpec:
     #: would. Applied to what travels the conductor and not to the plant's own supply, which
     #: draws from the busbar beside it.
     #:
-    #: Zero by default, and that is a finding rather than a convenience. At the two
-    #: reference villages, once the street lighting and the plant's own supply were counted
-    #: as the loads they are, what remained varying with the load could not be told from
-    #: zero: the constant that had looked like a loss was those two. A village whose
-    #: distribution meters show a real gap should enter what they show.
-    network_loss_fraction: float = 0.0
+    #: Thirteen per cent by default, measured rather than assumed. Gbowele has meters on
+    #: its two feeders, and the energy they pass exceeds what its customers, its street
+    #: lighting and its own supply account for by that much -- which the operator's own
+    #: energy balance puts at fifteen or sixteen per cent over a longer window.
+    #:
+    #: Samionta is given the same figure because its instruments cannot produce one: it has
+    #: no feeder meter, and the only loss visible there is whatever the plant's generation
+    #: exceeds the sum of its loads, which its generation records do not resolve. Carrying
+    #: Gbowele's figure makes the two villages comparable, and it is a borrowed figure, not
+    #: a measurement of Samionta.
+    #:
+    #: It was zero until the feeders were read, on the ground that what remained varying
+    #: with the load at plant level could not be told from zero once the lighting and the
+    #: plant's own supply were counted as the loads they are. The feeder meters answer the
+    #: same question one step closer to the customer, and they answer it differently.
+    network_loss_fraction: float = 0.13
 
     provenance: Provenance = field(default_factory=lambda: Provenance(
         source="", verified=False,

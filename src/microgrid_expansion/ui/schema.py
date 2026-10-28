@@ -134,7 +134,9 @@ BALANCE: tuple[Field, ...] = (
           hint="Share of the energy the plant sends into the network that the network "
                "itself consumes. The plant must produce it and nobody is billed for it, so "
                "it sizes the plant like a customer and earns nothing. It does not apply to "
-               "the powerhouse, which draws from the busbar beside it.",
+               "the powerhouse, which draws from the busbar beside it. The default is the "
+               "thirteen per cent measured on one reference village's feeder meters; a "
+               "village with feeder meters of its own should enter what they show.",
           key="f.network_loss"),
     Field("economics.collection_rate", "Customer bills collected", "", step=0.01,
           hint="Share of what is invoiced to customers that is actually paid. It does not "

@@ -148,8 +148,9 @@ class ModelConfig:
     # Share of the energy injected that the distribution network consumes. Held here as
     # well as in the project settings, for the same reason the horizon and the discount
     # rate are: the tree is drawn before a settings object exists, and the demand it draws
-    # is the demand the plant must produce.
-    network_loss_fraction: float = 0.0
+    # is the demand the plant must produce. The two defaults must agree, or a plan and the
+    # certificate of its first year would be sized for different demands.
+    network_loss_fraction: float = 0.13
 
     def validate(self) -> None:
         """Check internal consistency (stage count vs branching, etc.)."""

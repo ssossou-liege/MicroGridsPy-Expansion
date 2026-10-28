@@ -142,12 +142,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--branching", type=int, nargs="+",
                         default=list(defaults.branching))
     parser.add_argument("--seed", type=int, default=defaults.seed)
+    parser.add_argument("--network-loss", type=float,
+                        default=defaults.network_loss_fraction,
+                        help="share of the energy injected that the distribution network "
+                             "consumes; it decides the demand every node is sized for")
     args = parser.parse_args(argv)
 
     cfg = ModelConfig(solver=args.solver, n_rep_days=args.rep_days,
                       n_mc_paths=args.mc_paths, seed=args.seed,
                       stage_years=tuple(args.stage_years),
-                      branching=tuple(args.branching))
+                      branching=tuple(args.branching),
+                      network_loss_fraction=args.network_loss)
     cfg.site = args.site
     run(cfg)
     return 0

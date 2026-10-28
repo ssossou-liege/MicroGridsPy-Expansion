@@ -331,6 +331,20 @@ def test_the_network_loss_is_a_share_of_the_injection_not_of_the_delivery() -> N
             check_network_loss(impossible)
 
 
+def test_the_plan_and_the_certificate_default_to_the_same_loss() -> None:
+    """One village, two entry points, and nothing on the command line.
+
+    The tree is drawn before a settings object exists, so it carries its own copy of the
+    loss. Two copies with two defaults would size a plan and the certificate of its first
+    year for different demands, and the gap would be invisible: neither run would say
+    which figure it used, because neither was asked for one.
+    """
+    from microgrid_expansion.config import ModelConfig
+
+    assert (ModelConfig().network_loss_fraction
+            == default_settings().infrastructure.network_loss_fraction)
+
+
 def test_the_loss_is_applied_through_one_function_for_the_year_and_for_the_tree() -> None:
     """A plan and a sizing of one village must be asked for the same energy.
 

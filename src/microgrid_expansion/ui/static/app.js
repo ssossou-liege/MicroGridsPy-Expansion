@@ -25,6 +25,11 @@ const T = (key, vars) => {
   return out;
 };
 
+/* English and French both make a plural from two upward, and the catalogue holds no
+   machinery for it. A second key and a choice is the whole of what is needed, and it is
+   needed: "1 devices" on a sheet a lender holds is a small thing done carelessly. */
+const TN = (key, n, vars) => T(n === 1 ? `${key}.one` : key, { ...(vars || {}), n });
+
 /* The markup carries data-t on anything static; this fills them in. Everything else is
    rendered from the catalogue as it is built. */
 function paintStatic() {
@@ -528,15 +533,27 @@ function renderSizing(r) {
 }
 
 
-/* ------------------------------------------------------------------ the new project page
-   Everything asked for here comes off a field survey: a name, a point on a map, a count of
-   households by type and a roster of the enterprises the village runs. Nothing on this page
-   has to be guessed at a desk, and nothing that can be derived is asked for -- the time zone
-   follows from the longitude, and the interface reads it there rather than inviting an hour
-   of error into the one place a storage sizing is least able to absorb it. */
+/* ------------------------------------------------------------- the project and its site
+   Where the village is, and nothing else. What it consumes is a page of its own: the two
+   were one page and it asked a developer to hold a map, a census, a roster of trades and
+   the plant's own supply in a single breath. Nothing here has to be guessed at a desk, and
+   nothing that can be derived is asked for -- the time zone follows from the longitude, and
+   the interface reads it there rather than inviting an hour of error into the one place a
+   storage sizing is least able to absorb it.
+
+   The weather starts downloading from this page and keeps going while the next one is
+   filled in, which is the whole reason the site comes first. */
 let map = null, pin = null;
 
+/* Both pages of the description, redrawn together. They read one state, and a change on
+   either can move the other: a use added from the demand page is counted against the census
+   the site page holds, and a village opened from the front door fills both at once. */
 function renderCommunity() {
+  renderSite();
+  renderDemand();
+}
+
+function renderSite() {
   const s = state.site || {};
   const tpl = s.origin === "template";
   const roster = s.productive_mix || {};
@@ -586,63 +603,6 @@ function renderCommunity() {
           <button class="btn link" id="site-drop">${T("action.delete")}</button>`}
       </div>
       ${s.has_resource ? "" : `<p class="hint" style="margin-top:10px">${T("site.series.hint")}</p>`}
-    </div>
-
-    <div class="card">
-      <div class="field wide">
-        <div><label for="hh1">${T("site.households")}</label>${info("site.households.hint")}</div>
-        <div class="control" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
-          ${["HH1", "HH2", "HH3"].map(k => `<div>
-             <label for="${k.toLowerCase()}"
-               style="font-size:11.5px;color:var(--ink-faint)">${k}</label>
-             <input id="${k.toLowerCase()}" type="number" min="0" step="1"
-               value="${(s.census || {})[k] ?? 0}"${lock}></div>`).join("")}
-        </div>
-      </div>
-      <div class="field wide">
-        <div><label>${T("site.productive")}</label>${info("site.productive.hint")}</div>
-        <div class="control">
-          <div class="roster">
-            ${state.classes.map(c => {
-              const n = roster[c.key] || 0;
-              return `<label class="pue${n ? " on" : ""}" data-class="${esc(c.key)}">
-                <input type="checkbox" data-pue="${esc(c.key)}"${n ? " checked" : ""}${lock}>
-                <span class="lbl">${esc(c.label)}${info(`pue.${c.key}.hint`)}</span>
-                <input type="number" min="0" step="1" data-count="${esc(c.key)}"
-                  aria-label="${esc(c.label)} — ${esc(T("pue.count"))}"
-                  value="${n || ""}" placeholder="0"${n ? "" : " disabled"}${lock}>
-              </label>`;
-            }).join("")}
-            ${(s.declared_uses || []).filter(u => u.category === "productive")
-              .map(u => `<label class="pue on" data-class="${esc(u.key)}">
-                <input type="checkbox" checked disabled>
-                <span class="lbl">${esc(u.label)} <span class="badge warn"
-                  style="font-size:11px">${T("use.declared", { n: u.devices.length })}</span></span>
-                <input type="number" min="0" step="1" data-count="${esc(u.key)}"
-                  aria-label="${esc(u.label)}" value="${roster[u.key] || 1}"${lock}>
-              </label>`).join("")}
-          </div>
-          <div class="roster-foot" id="pue-total"></div>
-          <button class="btn quiet" id="pue-add" style="margin-top:12px"${lock}>${
-            T("use.add")}</button>
-        </div>
-      </div>
-      <div class="field wide">
-        <div><label>${T("site.community")}</label>${info("site.community.hint")}</div>
-        <div class="control">
-          <div class="roster" id="community"></div>
-          <button class="btn quiet" id="com-add" style="margin-top:12px"${lock}>${
-            T("use.add")}</button>
-        </div>
-      </div>
-      <div class="field wide">
-        <div><label>${T("site.self")}</label>${info("site.self.hint")}</div>
-        <div class="control">
-          <div class="roster" id="selfuse"></div>
-          <button class="btn quiet" id="self-add" style="margin-top:12px"${lock}>${
-            T("use.add")}</button>
-        </div>
-      </div>
     </div>`;
 
   $("#project-name").oninput = e => state.projectName = e.target.value;
@@ -656,7 +616,7 @@ function renderCommunity() {
   };
   $("#get-resource").onclick = async () => {
     if (!state.site.has_resource && state.site.origin === "user"
-        && !(await saveSite("meteo"))) return;
+        && !(await saveSite("site"))) return;
     const r = await fetch(`/api/sites/${encodeURIComponent(state.site.name)}/resource`,
                           { method: "POST" });
     // The weather runs on its own. It blocks nothing: a developer who has just placed the
@@ -674,43 +634,63 @@ function renderCommunity() {
     offerNearbySeries();
   }));
 
-  $$("#lieu input[data-pue]").forEach(box => box.onchange = e => {
-    const key = e.target.dataset.pue;
-    const count = $(`#lieu input[data-count="${key}"]`);
-    count.disabled = !e.target.checked;
-    if (e.target.checked && !count.value) count.value = 1;
-    if (!e.target.checked) count.value = "";
-    e.target.closest(".pue").classList.toggle("on", e.target.checked);
-    readRoster();
-  });
-  $$("#lieu input[data-count]").forEach(box => box.oninput = readRoster);
-  // The census belongs in the state as the roster does. Held only in the boxes, it was
-  // rebuilt from the saved site on every redraw -- and the page is redrawn whenever a use
-  // is added, a language changes or the weather lands, so what had been typed went back to
-  // zero without anything being said.
-  $$("#hh1, #hh2, #hh3").forEach(box => box.oninput = readCensus);
-
-  renderCommunity_();
-  renderSelfUses();
   paintWeather();
-  $("#pue-add").onclick = async () => {
-    const use = await openUseDialog("productive");
-    if (use) addDeclaredUse(use);
-  };
-  $("#com-add").onclick = async () => {
-    const use = await openUseDialog("community");
-    if (use) addDeclaredUse(use);
-  };
-  $("#self-add").onclick = async () => {
-    const use = await openUseDialog("self_consumption");
-    if (use) addDeclaredUse(use);
-  };
-
-  readRoster();
-  readCensus();
   offerNearbySeries();
   showTimezone();
   mountMap(s.latitude, s.longitude);
+}
+
+/* ------------------------------------------------------------------------- the demand
+   Four kinds of load on one page: the households, the trades, the buildings the community
+   already has, and what the plant draws for itself. They were spread over two pages and a
+   dialog, and the one thing a developer most needs to see -- what the village is going to
+   ask of the plant -- could not be seen anywhere at once.
+
+   Every row answers the same two questions: how many, and what describes it. The second is
+   the new one. A class our meters measured carries a measured day; a developer who counted
+   the devices on site would rather use theirs; and until now describing one silently
+   replaced the other with no way back. The two now sit side by side and the row says which
+   is in force, so going to one's own figures and back again costs nothing.
+
+   A class nothing measures has only the second answer, and a row that has neither is a row
+   that would draw nothing: the page refuses to leave until that is settled, by name. */
+const CATEGORIES = [
+  { key: "households", title: "demand.households", hint: "site.households.hint" },
+  { key: "productive", title: "site.productive", hint: "site.productive.hint" },
+  { key: "community", title: "site.community", hint: "site.community.hint" },
+  { key: "self_consumption", title: "site.self", hint: "site.self.hint" },
+];
+
+/* Which description is in force for one use. A class with no description is calibrated
+   whatever is stored, and a class nothing measures is described whatever is stored: the
+   stored answer only decides between two that both exist. */
+function activeSource(key) {
+  const site = state.site || {};
+  const described = (site.declared_uses || []).some(u => u.key === key);
+  const row = catalogueRow(key);
+  if (!described) return "calibrated";
+  if (!row || !row.measured) return "described";
+  return (site.use_source || {})[key] === "calibrated" ? "calibrated" : "described";
+}
+
+function catalogueRow(key) {
+  return (state.classes || []).find(c => c.key === key)
+      || (state.communityUses || []).find(c => c.key === key);
+}
+
+function describedUse(key) {
+  return ((state.site || {}).declared_uses || []).find(u => u.key === key);
+}
+
+/* What one of these draws in a day, under the description in force. A measured class
+   carries the mean of its class; a described one is added up from its devices. */
+function rowDailyKwh(key) {
+  if (activeSource(key) === "described") {
+    const use = describedUse(key);
+    return use ? useTotals(use.devices).kwh : 0;
+  }
+  const row = catalogueRow(key);
+  return row && row.kwh_per_day ? row.kwh_per_day : 0;
 }
 
 /* The loads that are neither a household nor a trade, in two lists on one page.
@@ -724,12 +704,74 @@ function renderCommunity() {
    as a lamp count and a rating, because that is how it is known and because it has no
    behaviour to describe. */
 const ROSTERS = {
+  productive: { host: "productive", field: "productive_mix" },
   community: { host: "community", field: "community_mix" },
   self_consumption: { host: "selfuse", field: "self_mix" },
 };
 
-function renderCommunity_() { drawRoster("community"); }
-function renderSelfUses() { drawRoster("self_consumption"); }
+function renderDemand() {
+  const host = $("#demand");
+  if (!host) return;
+  const s = state.site || {};
+  const tpl = s.origin === "template";
+  const lock = tpl ? " disabled" : "";
+
+  host.innerHTML = `
+    <div class="card">
+      <div class="field wide">
+        <div><label for="hh1">${T("site.households")}</label>${info("site.households.hint")}
+          ${state.arch ? `<div class="hint">${state.arch.note}</div>` : ""}</div>
+        <div class="control">
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+            ${["HH1", "HH2", "HH3"].map(k => `<div>
+               <label for="${k.toLowerCase()}"
+                 style="font-size:11.5px;color:var(--ink-faint)">${k}</label>
+               <input id="${k.toLowerCase()}" type="number" min="0" step="1"
+                 value="${(s.census || {})[k] ?? 0}"${lock}></div>`).join("")}
+          </div>
+          <div class="roster-foot" id="hh-total"></div>
+          <button class="btn quiet" id="arch-open" style="margin-top:12px">${
+            T("demand.adjust")}</button>
+        </div>
+      </div>
+    </div>
+
+    ${["productive", "community", "self_consumption"].map(cat => {
+      const spec = CATEGORIES.find(c => c.key === cat);
+      return `<div class="card">
+        <div class="field wide">
+          <div><label>${T(spec.title)}</label>${info(spec.hint)}</div>
+          <div class="control">
+            <div class="roster" id="${ROSTERS[cat].host}"></div>
+            <div class="roster-foot" id="${ROSTERS[cat].host}-total"></div>
+            <button class="btn quiet" data-add="${cat}" style="margin-top:12px"${lock}>${
+              T("use.add")}</button>
+          </div>
+        </div>
+      </div>`;
+    }).join("")}
+
+    <div class="card">
+      <div class="figures">
+        ${figure(T("demand.estimate"), "—", T("demand.perday"))}
+      </div>
+      <p class="hint" style="margin-top:10px">${T("demand.estimate.hint")}</p>
+    </div>`;
+
+  // The census belongs in the state as the rosters do. Held only in the boxes, it was
+  // rebuilt from the saved site on every redraw -- and the page is redrawn whenever a use
+  // is added or a language changes, so what had been typed went back to zero in silence.
+  $$("#hh1, #hh2, #hh3").forEach(box => box.oninput = () => { readCensus(); paintTotals(); });
+  $$("#demand [data-add]").forEach(b => b.onclick = async () => {
+    const use = await openUseDialog(b.dataset.add);
+    if (use) addDeclaredUse(use);
+  });
+  $("#arch-open").onclick = openArchetypes;
+
+  for (const cat of Object.keys(ROSTERS)) drawRoster(cat);
+  readCensus();
+  paintTotals();
+}
 
 function drawRoster(category) {
   const spec = ROSTERS[category];
@@ -741,15 +783,18 @@ function drawRoster(category) {
   const declared = (s.declared_uses || []).filter(u => u.category === category);
   const lamp = (s.declared_uses || []).find(u => u.key === "public_lighting");
   const watts = lamp ? lamp.devices[0].power_w : 60;
-  const rows = (state.communityUses || []).filter(c => c.category === category);
+  const rows = (category === "productive" ? state.classes || []
+                : (state.communityUses || []).filter(c => c.category === category));
+  const extra = declared.filter(u => !rows.some(c => c.key === u.key))
+    .map(u => ({ key: u.key, label: u.label, measured: false, lamps: false }));
 
-  host.innerHTML = rows.map(c => {
+  host.innerHTML = [...rows, ...extra].map(c => {
     const n = mix[c.key] || 0;
-    const described = declared.find(u => u.key === c.key);
     if (c.lamps) {
       // Two boxes on one row need saying apart. The unit goes beside each, visibly: a
       // label only a screen reader can hear leaves everyone else guessing which number is
-      // the count and which the rating.
+      // the count and which the rating. The street lighting has no source to choose: a
+      // lamp count and a rating are the whole of it, and nothing of ours measures it.
       return `<label class="pue lamps${n ? " on" : ""}">
         <input type="checkbox" data-com="${esc(c.key)}"${n ? " checked" : ""}${tpl ? " disabled" : ""}>
         <span class="lbl">${esc(c.label)}${info(`use.${c.key}.hint`)}</span>
@@ -763,52 +808,59 @@ function drawRoster(category) {
             T("use.lamp_watts")}</span></span>
       </label>`;
     }
-    // Whether a class is measured belongs in its note, not on a badge beside its name: the
-    // row is a thing to count, and a mark that changes nothing about the counting only
-    // competes with it. What does belong there is whether its devices have been described,
-    // because a class nothing of ours measures and nobody has described draws nothing --
-    // and it drew nothing silently, with a tick beside its name and a count in its box.
-    //
-    // The way to describe them is offered on every row, the measured one included: a
-    // village that knows its own place of worship is better evidence than five meters in
-    // two other villages. A description then replaces the measured shape rather than
-    // adding to it. Where the shape is measured and nothing has been described the row
-    // says nothing, because the note already says where its day comes from.
-    const badge = described
-      ? `<span class="badge ok" style="font-size:11px">${
-           T("use.declared", { n: described.devices.length })}</span>`
-      : c.measured ? ""
-      : `<span class="badge warn" style="font-size:11px">${T("use.undescribed")}</span>`;
-    return `<label class="pue${n ? " on" : ""}${tpl ? "" : " declarable"}"
+    const described = describedUse(c.key);
+    const source = activeSource(c.key);
+    const daily = n ? rowDailyKwh(c.key) * n : 0;
+    // An unticked row is one line, as it was. Everything else only appears once the row is
+    // counted, because until then there is nothing to describe.
+    const choice = !n || tpl ? "" : (c.measured
+      ? `<span class="pair src">
+           <button type="button" class="btn link${source === "calibrated" ? " on" : ""}"
+             data-src="${esc(c.key)}" data-to="calibrated">${T("src.calibrated")}</button>
+           <button type="button" class="btn link${source === "described" ? " on" : ""}"
+             data-src="${esc(c.key)}" data-to="described">${described
+               ? TN("src.described", described.devices.length)
+               : T("src.describe")}</button>
+         </span>`
+      : `<span class="pair src">${described
+           ? `<span class="badge ok" style="font-size:11px">${
+                TN("use.declared", described.devices.length)}</span>`
+           : `<span class="badge warn" style="font-size:11px">${T("use.undescribed")}</span>`}
+         <button type="button" class="btn link declare"
+           data-declare="${esc(c.key)}">${T("use.declare")}</button></span>`);
+    return `<label class="pue${n ? " on" : ""}${n && !tpl ? " declarable" : ""}"
         data-class="${esc(c.key)}">
       <input type="checkbox" data-com="${esc(c.key)}"${n ? " checked" : ""}${tpl ? " disabled" : ""}>
-      <span class="lbl">${esc(c.label)}${info(`use.${c.key}.hint`)}</span>
-      ${tpl ? "" : `<span class="pair">${badge}
-        <button type="button" class="btn link declare"
-          data-declare="${esc(c.key)}">${T("use.declare")}</button></span>`}
+      <span class="lbl">${esc(c.label)}${info(`use.${c.key}.hint`)}${
+        daily ? ` <span class="sub">${nf(daily, 2)} ${T("demand.perday")}</span>` : ""}</span>
+      ${choice}
       <input type="number" min="0" step="1" data-comcount="${esc(c.key)}"
-        aria-label="${esc(c.label)}" value="${n || ""}" placeholder="0"
+        aria-label="${esc(c.label)}, ${esc(T("pue.count"))}" value="${n || ""}" placeholder="0"
         ${n ? "" : "disabled"}${tpl ? " disabled" : ""}>
     </label>`;
-  }).join("") + declared.filter(u => !rows.some(c => c.key === u.key)).map(u => `
-    <label class="pue on" data-class="${esc(u.key)}">
-      <input type="checkbox" checked disabled>
-      <span class="lbl">${esc(u.label)} <span class="badge warn"
-        style="font-size:11px">${T("use.declared", { n: u.devices.length })}</span></span>
-      <input type="number" min="0" step="1" data-comcount="${esc(u.key)}"
-        value="${mix[u.key] || 1}"${tpl ? " disabled" : ""}>
-    </label>`).join("");
+  }).join("");
 
-  const read = () => readRosterCounts(category);
+  const read = () => { readRosterCounts(category); paintTotals(); };
+  // A click on either of these sits inside the row's own <label>. Without stopping the
+  // event it would also reach the tick and turn the row off on its way.
   $$(`#${spec.host} [data-declare]`).forEach(button => button.onclick = async e => {
-    // The button sits inside the row's own <label>. Without stopping the event here the
-    // click would also reach the tick and turn the row off on its way to the panel.
     e.preventDefault();
     e.stopPropagation();
-    const row = (state.communityUses || []).find(c => c.key === button.dataset.declare);
-    if (!row) return;
-    const use = await openUseDialog(category, { key: row.key, label: row.label });
-    if (use) addDeclaredUse(use);
+    await describeRow(category, button.dataset.declare);
+  });
+  $$(`#${spec.host} [data-src]`).forEach(button => button.onclick = async e => {
+    e.preventDefault();
+    e.stopPropagation();
+    const key = button.dataset.src;
+    if (button.dataset.to === "described" && !describedUse(key)) {
+      await describeRow(category, key);
+      return;
+    }
+    // Switching back does not throw the description away: it is kept and simply not used,
+    // so a developer who tried their own figures can return to them.
+    state.site.use_source = { ...(state.site.use_source || {}),
+                              [key]: button.dataset.to };
+    renderDemand();
   });
   $$(`#${spec.host} input[data-com]`).forEach(box => box.onchange = e => {
     const row = e.target.closest(".pue");
@@ -818,15 +870,74 @@ function drawRoster(category) {
       if (!e.target.checked && n.dataset.comcount) n.value = "";
     });
     row.classList.toggle("on", e.target.checked);
-    read();
+    readRosterCounts(category);
+    renderDemand();                       // the row grows a source choice when it is ticked
   });
   $$(`#${spec.host} input[type=number]`).forEach(box => box.oninput = read);
   read();
 }
 
-/* The download's own line, under the button that asked for it. It survives a redraw of the
-   page, because the page is redrawn whenever anything on it changes and the download
-   outlives all of that. */
+/* Open the panel for one row of a catalogue, and keep what it returns against that row. */
+async function describeRow(category, key) {
+  const row = [...(state.classes || []), ...(state.communityUses || [])]
+    .find(c => c.key === key);
+  const use = await openUseDialog(category,
+    row ? { key: row.key, label: row.label } : null);
+  if (use) addDeclaredUse(use);
+}
+
+/* What the page adds up to, by category and over all of it. An estimate, and the card it
+   sits in says so: the sizing simulates a year appliance by appliance, ages the connection
+   month by month and draws a spread between days, none of which a sum of mean days can
+   show. What it does show is a figure of the wrong order, which is what a mistyped count
+   looks like and what this is here to catch. */
+function paintTotals() {
+  const s = state.site || {};
+  let whole = 0;
+  const households = Object.values(s.census || {}).reduce((a, b) => a + (b || 0), 0);
+  const perHousehold = (state.arch?.archetypes || [])
+    .reduce((sum, a) => sum + (a.mean_daily_kwh || 0) * (a.share_pct || 0) / 100, 0);
+  const hh = households * perHousehold;
+  whole += hh;
+  const foot = $("#hh-total");
+  if (foot) foot.textContent = perHousehold
+    ? `${nf(hh, 1)} ${T("demand.perday")}` : "";
+
+  for (const [cat, spec] of Object.entries(ROSTERS)) {
+    const mix = s[spec.field] || {};
+    let total = 0, counted = 0;
+    for (const [key, n] of Object.entries(mix)) {
+      total += rowDailyKwh(key) * n;
+      counted += n;
+    }
+    whole += total;
+    const box = $(`#${spec.host}-total`);
+    if (box) box.textContent = total
+      ? `${T("pue.total", { n: nf(counted) })} · ${nf(total, 1)} ${T("demand.perday")}`
+      : T("pue.none");
+  }
+  const card = $("#demand .figures .v");
+  if (card) card.textContent = nf(whole, 1);
+}
+
+/* A row that is counted and that nothing describes would draw nothing, and would do it in
+   silence. Named, so the reader knows which one. */
+function demandProblem() {
+  const s = state.site || {};
+  if (s.origin === "template") return "";
+  for (const spec of Object.values(ROSTERS)) {
+    for (const [key, n] of Object.entries(s[spec.field] || {})) {
+      if (!n) continue;
+      const row = catalogueRow(key);
+      if (row && row.lamps) continue;                 // a lamp count is its own description
+      if (row && row.measured && activeSource(key) === "calibrated") continue;
+      if (describedUse(key)) continue;
+      return (row && row.label) || key;
+    }
+  }
+  return "";
+}
+
 function paintWeather() {
   const line = $("#weather-state");
   if (!line) return;
@@ -886,7 +997,7 @@ async function offerNearbySeries() {
       <button class="btn quiet" id="series-borrow">${T("series.use")}</button>
     </div>`;
   $("#series-borrow").onclick = async () => {
-    if (s.origin === "user" && !(await saveSite("meteo"))) return;
+    if (s.origin === "user" && !(await saveSite("site"))) return;
     const r = await fetch(
       `/api/sites/${encodeURIComponent(state.site.name)}/borrow-series`
       + `?source=${encodeURIComponent(best.site)}`, { method: "POST" });
@@ -927,8 +1038,7 @@ function readRosterCounts(category) {
 }
 
 function readCommunity() {
-  readRosterCounts("community");
-  readRosterCounts("self_consumption");
+  for (const category of Object.keys(ROSTERS)) readRosterCounts(category);
 }
 
 /* A use the developer described joins the list it belongs to, with a count of one, and is
@@ -943,22 +1053,19 @@ function addDeclaredUse(use) {
   const field = ROSTERS[use.category]?.field || "productive_mix";
   const mix = (state.site[field] = { ...(state.site[field] || {}) });
   mix[use.key] = mix[use.key] || 1;
-  renderCommunity();
+  // A use just described is the one in force. A reader who went to the trouble did not do
+  // it to leave the measured day switched on.
+  state.site.use_source = { ...(state.site.use_source || {}), [use.key]: "described" };
+  renderDemand();
 }
 
 
 /* The roster the reader has ticked, kept on the site as it is typed so that a page rebuilt
-   in another language, or returned to from the next step, still holds it. */
+   in another language, or returned to from the next step, still holds it. The productive
+   trades read through the shared path now; this stays as the name the rest of the file
+   uses for "re-read every roster". */
 function readRoster() {
-  const mix = {};
-  $$("#lieu input[data-count]").forEach(box => {
-    const n = parseInt(box.value || "0", 10);
-    if (Number.isFinite(n) && n > 0) mix[box.dataset.count] = n;
-  });
-  if (state.site) state.site.productive_mix = mix;
-  const total = Object.values(mix).reduce((a, b) => a + b, 0);
-  const foot = $("#pue-total");
-  if (foot) foot.textContent = total ? T("pue.total", { n: nf(total) }) : T("pue.none");
+  readCommunity();
 }
 
 function mountMap(lat, lon) {
@@ -1041,26 +1148,30 @@ function fail(key) {
    nothing of households -- and demanding a census there refused the fetch with "no
    households to connect", which is true, unrelated, and arrives while the developer is
    still filling the page in the order the page presents it. */
-async function saveSite(pour = "etude") {
+async function saveSite(need = "site") {
   const s = state.site;
   if (!s || s.origin === "template") return true;
   const name = ($("#site-name")?.value || s.name || "").trim();
   const lat = parseFloat($("#lat").value), lon = parseFloat($("#lon").value);
-  readRoster();
-  const census = Object.fromEntries(["HH1", "HH2", "HH3"].map(
-    k => [k, parseInt($("#" + k.toLowerCase()).value || 0, 10)]));
-  const households = Object.values(census).reduce((a, b) => a + b, 0);
+  // Each page asks for what it is about, and for nothing else. The census moved to the
+  // demand page, so demanding it on the way out of the site page made that page
+  // impossible to leave -- the fault this argument now exists to prevent, and the reason
+  // it is named for what is needed rather than for what the save is for.
+  if (state.site.origin !== "template" && $("#hh1")) readCensus();
+  const census = state.site.census || {};
+  const households = Object.values(census).reduce((a, b) => a + (b || 0), 0);
   // Said before the request rather than after it: a run that fails a minute in for want of
   // a coordinate is a worse way to find out.
   if (!name) return fail("state.need_name");
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return fail("state.need_point");
-  if (pour === "etude" && households <= 0) return fail("state.need_households");
-  readCommunity();
+  if (need === "demand" && households <= 0) return fail("state.need_households");
+  if ($("#productive")) readCommunity();
   const body = {
     name, latitude: lat, longitude: lon, census,
     productive_mix: state.site.productive_mix || {},
     community_mix: state.site.community_mix || {},
     self_mix: state.site.self_mix || {},
+    use_source: state.site.use_source || {},
     declared_uses: state.site.declared_uses || [],
     lamp_watts: state.site.lamp_watts || null,
   };
@@ -1291,70 +1402,120 @@ function useProblem(name, devices) {
 }
 
 
-/* ------------------------------------------------------------------ archetypes */
+/* ------------------------------------------------------------------ archetypes
+   The four household behaviours the demand is built on, and the two figures of each that a
+   developer can check against a survey. They had a page to themselves and it asked a reader
+   to study a calibration before they had said how many households there are. They open from
+   the households section instead, where the question arises, and the note about where they
+   come from stays on that section rather than only here. */
 async function loadArchetypes() {
   if (!state.site) return;
   state.arch = await (await fetch(
     `/api/archetypes/${encodeURIComponent(state.site.name)}?lang=${state.lang || ""}`)).json();
-  renderArchetypes();
+  // The behaviours decide what a household draws, so the page's running estimate moves
+  // with them.
+  renderDemand();
 }
 
-function renderArchetypes() {
+function openArchetypes() {
   const a = state.arch;
   if (!a) return;
-  $("#usages").innerHTML = `
-    <div class="notice">
-      <b>${T("arch.origin")}.</b> ${a.note}
-      ${a.adjusted ? ` <b>${T("arch.adjusted")}</b>` : ""}
-    </div>
-    <div class="card">
-      <h3>${T("arch.title")}</h3>
-      <div class="arch">
-        <div class="who"><b>${T("arch.behaviour")}</b></div>
-        <div class="head">${T("arch.energy")}</div>
-        <div class="head">${T("arch.peak")}</div>
-        <div class="head">${T("arch.load_factor")}</div>
-      </div>
-      ${a.archetypes.map(x => `
-        <div class="arch">
-          <div class="who"><b>${x.label}</b>
-            <span>${nf(x.share_pct, 1)} ${T("arch.share")} · ${nf(x.n_observations)} ${T("arch.records")}
-              ${x.well_supported ? "" : ` · <b>${T("arch.weak")}</b>`}</span></div>
-          <div><input type="number" step="0.001" data-c="${x.cluster}" data-k="mean_daily_kwh"
-               value="${x.mean_daily_kwh}"></div>
-          <div><input type="number" step="1" data-c="${x.cluster}" data-k="mean_peak_w"
-               value="${x.mean_peak_w}"></div>
-          <div><input type="number" step="0.01" data-c="${x.cluster}" data-k="mean_load_factor"
-               value="${x.mean_load_factor}" disabled></div>
-        </div>`).join("")}
-      <p class="hint" style="margin-top:14px">${T("arch.hint")}</p>
-      <div style="margin-top:16px;display:flex;gap:10px">
-        <button class="btn primary" id="arch-save">${T("action.apply")}</button>
-        <button class="btn quiet" id="arch-reset">${T("action.reset")}</button>
-      </div>
-    </div>`;
+  const host = document.createElement("div");
+  host.className = "sheet";
+  document.body.appendChild(host);
 
-  $("#arch-save").onclick = async () => {
-    const payload = {};
-    $$("#usages input[data-c]").forEach(el => {
-      if (el.disabled) return;
-      (payload[el.dataset.c] ||= {})[el.dataset.k] = parseFloat(el.value);
-    });
-    state.arch = await (await fetch("/api/archetypes", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ site: state.site.name, archetypes: payload })
-    })).json();
-    renderArchetypes();
-    setState(T("state.applied"), null);
+  const draw = () => {
+    host.innerHTML = `
+      <div class="sheet-panel" role="dialog" aria-modal="true"
+           aria-label="${esc(T("arch.title"))}">
+        <h3>${T("arch.title")}</h3>
+        <div class="notice">
+          <b>${T("arch.origin")}.</b> ${state.arch.note}
+          ${state.arch.adjusted ? ` <b>${T("arch.adjusted")}</b>` : ""}
+        </div>
+        <div class="arch">
+          <div class="who"><b>${T("arch.behaviour")}</b></div>
+          <div class="head">${T("arch.energy")}</div>
+          <div class="head">${T("arch.peak")}</div>
+          <div class="head">${T("arch.load_factor")}</div>
+        </div>
+        ${state.arch.archetypes.map(x => `
+          <div class="arch">
+            <div class="who"><b>${x.label}</b>
+              <span>${nf(x.share_pct, 1)} ${T("arch.share")} · ${nf(x.n_observations)} ${T("arch.records")}
+                ${x.well_supported ? "" : ` · <b>${T("arch.weak")}</b>`}</span></div>
+            <div><input type="number" step="0.001" data-c="${x.cluster}" data-k="mean_daily_kwh"
+                 value="${x.mean_daily_kwh}"></div>
+            <div><input type="number" step="1" data-c="${x.cluster}" data-k="mean_peak_w"
+                 value="${x.mean_peak_w}"></div>
+            <div><input type="number" step="0.01" data-c="${x.cluster}" data-k="mean_load_factor"
+                 value="${x.mean_load_factor}" disabled></div>
+          </div>`).join("")}
+        <p class="hint" style="margin-top:14px">${T("arch.hint")}</p>
+        <div class="sheet-actions">
+          <button class="btn quiet" id="arch-reset">${T("action.reset")}</button>
+          <button class="btn quiet" id="arch-close">${T("demand.adjust.close")}</button>
+          <button class="btn primary" id="arch-save">${T("action.apply")}</button>
+        </div>
+      </div>`;
+
+    $("#arch-save").onclick = async () => {
+      const payload = {};
+      $$(".sheet input[data-c]").forEach(el => {
+        if (el.disabled) return;
+        (payload[el.dataset.c] ||= {})[el.dataset.k] = parseFloat(el.value);
+      });
+      state.arch = await (await fetch("/api/archetypes", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ site: state.site.name, archetypes: payload })
+      })).json();
+      draw();
+      renderDemand();
+      setState(T("state.applied"), null);
+    };
+    $("#arch-reset").onclick = async () => {
+      state.arch = await (await fetch(
+        `/api/archetypes/${encodeURIComponent(state.site.name)}`,
+        { method: "DELETE" })).json();
+      draw();
+      renderDemand();
+    };
+    $("#arch-close").onclick = () => host.remove();
   };
-  $("#arch-reset").onclick = async () => {
-    state.arch = await (await fetch(
-      `/api/archetypes/${encodeURIComponent(state.site.name)}`, { method: "DELETE" })).json();
-    renderArchetypes();
-  };
+  draw();
 }
 
 /* ------------------------------------------------------------------ projects */
+/* What describes each use, on the sheet a lender reads. A plant sized on a measured day and
+   one sized on the developer's own count of the devices are two different claims, and the
+   difference has to survive printing: without this the sheet showed the capacities and left
+   the reader to assume where the demand behind them came from. */
+function printedSources() {
+  const s = state.site || {};
+  const rows = [];
+  for (const spec of Object.values(ROSTERS)) {
+    for (const [key, n] of Object.entries(s[spec.field] || {})) {
+      if (!n) continue;
+      const row = catalogueRow(key);
+      const described = describedUse(key);
+      const label = (row && row.label) || (described && described.label) || key;
+      const how = row && row.lamps
+        ? T("src.describe")
+        : (activeSource(key) === "described" && described
+            ? TN("src.described", described.devices.length)
+            : T("src.calibrated"));
+      rows.push(`${esc(label)} (${nf(n)}) : ${how}`);
+    }
+  }
+  const households = Object.values(s.census || {}).reduce((a, b) => a + (b || 0), 0);
+  if (households) {
+    rows.unshift(`${T("site.households")} (${nf(households)}) : ${T("src.calibrated")}`);
+  }
+  if (!rows.length) return "";
+  return `<p style="color:#444;margin:8px 0 0;font-size:10.5px">`
+    + `<b>${T("page.demand.title")}.</b> ${rows.join(" · ")}</p>`;
+}
+
 function printReport() {
   // Print, rather than a PDF written by hand: the browser already lays this page out and
   // already knows how to make a file of it, and a second renderer would be a second thing
@@ -1373,6 +1534,7 @@ function printReport() {
         ${T("print.behaviour")} ${state.arch?.adjusted
           ? T("print.arch.adjusted") : T("print.arch.shipped")}
         ${state.arch?.note ?? ""}</p>
+      ${printedSources()}
     </div>`;
   const main = $(".main");
   main.prepend(header);
@@ -1689,7 +1851,7 @@ async function openExample(name) {
    not opened yet. */
 const PAGES = [
   { id: "project",     label: "page.project.title" },
-  { id: "uses",        label: "nav.uses" },
+  { id: "demand",      label: "nav.demand" },
   { id: "parameters",  label: "nav.parameters" },
   { id: "sizing",      label: "page.sizing.title" },
 ];
@@ -1732,11 +1894,19 @@ async function goNext() {
     // The community is saved on the way out rather than behind a button of its own: what
     // was typed is what the next page reads, and a study run against a half-saved village
     // is the kind of error that only shows up in its results.
-    if (state.site && state.site.origin !== "template" && !(await saveSite())) return;
-    show("uses");
+    if (state.site && state.site.origin !== "template" && !(await saveSite("site"))) return;
+    show("demand");
     return;
   }
-  if (state.page === "uses") { show("parameters"); return; }
+  if (state.page === "demand") {
+    // A row counted and undescribed draws nothing, and would do it in silence. Said here
+    // rather than discovered in a result, and said with the row's name in it.
+    const empty = demandProblem();
+    if (empty) { setState(T("src.empty", { use: empty }), null); return; }
+    if (state.site && state.site.origin !== "template" && !(await saveSite("demand"))) return;
+    show("parameters");
+    return;
+  }
   if (state.page === "parameters") show("sizing");   // the run fills it as it arrives
   launch();
 }

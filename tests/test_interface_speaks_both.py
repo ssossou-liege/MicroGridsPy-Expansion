@@ -30,8 +30,12 @@ def _keys_the_page_asks_for() -> set[str]:
     """Every catalogue key the page reaches for, from the script and the markup."""
     script = (STATIC / "app.js").read_text(encoding="utf-8")
     markup = (STATIC / "index.html").read_text(encoding="utf-8")
-    keys = set(re.findall(r'T\("([^"]+)"', script))
+    keys = set(re.findall(r'(?<![A-Za-z])T\("([^"]+)"', script))
     keys |= set(re.findall(r'data-t="([^"]+)"', markup))
+    # TN(key, n) asks for the key and its singular sibling, because neither language makes
+    # a plural from one.
+    for key in re.findall(r'TN\("([^"]+)"', script):
+        keys |= {key, f"{key}.one"}
     # T("job." + job.status) is assembled at run time; its four values are named here so the
     # test still covers them.
     keys.discard("job.")
@@ -278,6 +282,8 @@ def test_the_catalogue_carries_no_string_nothing_asks_for() -> None:
 
     named = set(re.findall(r'["\']([a-z][a-z0-9_.]{2,})["\']', source))
     named |= {f"{key}.hint" for key in named}      # schema.py names "f.x" and uses "f.x.hint"
+    # TN(key, n) reaches for key and key.one, and only one of the two is written out.
+    named |= {f"{key}.one" for key in re.findall(r'TN\("([^"]+)"', source)}
     for key in (*COMMUNITY_CATALOGUE, *SELF_CONSUMPTION_CATALOGUE):
         named |= {f"use.{key}", f"use.{key}.hint"}
     for klass in CLASSES:

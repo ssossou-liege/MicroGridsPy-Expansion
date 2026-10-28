@@ -54,6 +54,8 @@ class SiteRequest(BaseModel):
     self_mix: dict[str, int] = Field(default_factory=dict)
     #: Uses the developer described device by device, because no class of ours fits them.
     declared_uses: list[dict] = Field(default_factory=list)
+    #: Which description is in force for each use, by key: "calibrated" or "described".
+    use_source: dict[str, str] = Field(default_factory=dict)
     #: What one street lamp draws, when the village has any.
     lamp_watts: float | None = None
     #: Omitted by the interface, which reads it off the longitude: an hour's displacement
@@ -106,11 +108,29 @@ def create_app() -> FastAPI:
 
     @app.get("/api/productive-classes")
     def productive_classes(lang: str = i18n.DEFAULT) -> list[dict]:
-        """The activity classes the demand model knows, named for a reader."""
-        from ..demand.productive import CLASSES
+        """The activity classes the demand model knows, named for a reader.
 
-        return [{"key": c, "label": i18n.t(f"pue.{c}", lang),
-                 "hint": i18n.t(f"pue.{c}.hint", lang)} for c in CLASSES]
+        Each carries the daily energy its measured day comes to, so that a row the reader
+        has just ticked can say what it will draw rather than leaving the figure to appear
+        an hour later in a result. It is the mean of the class, not a simulation of this
+        village, and the page says so.
+        """
+        from ..demand.productive import CLASSES, ProductiveCalibration
+
+        calibration = ProductiveCalibration.load()
+        hours = ([h for h in range(24) if h in calibration.profiles.columns]
+                 if calibration is not None else [])
+        out = []
+        for name in CLASSES:
+            row = {"key": name, "label": i18n.t(f"pue.{name}", lang),
+                   "hint": i18n.t(f"pue.{name}.hint", lang),
+                   "category": "productive", "measured": False}
+            if calibration is not None and name in calibration.profiles.index:
+                row["measured"] = True
+                row["kwh_per_day"] = round(
+                    float(calibration.profiles.loc[name, hours].astype(float).sum()), 3)
+            out.append(row)
+        return out
 
     @app.get("/api/community-uses")
     def community_uses(lang: str = i18n.DEFAULT) -> list[dict]:
@@ -214,6 +234,7 @@ def create_app() -> FastAPI:
                     productive_mix=roster or None,
                     community_mix=community or None,
                     self_mix=own or None,
+                    use_source=dict(request.use_source) or None,
                     declared_uses=tuple(uses) or None,
                     utc_offset_hours=offset, origin="user")
         if not site.name:

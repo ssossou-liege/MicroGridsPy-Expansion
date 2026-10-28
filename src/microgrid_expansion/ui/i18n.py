@@ -17,16 +17,55 @@ DEFAULT = "en"
 #: Keyed strings. The English entry is authoritative; French follows it.
 STRINGS: dict[str, dict[str, str]] = {
     # ---------------------------------------------------------------- chrome
-    "nav.uses": {"en": "Uses and archetypes", "fr": "Usages et archétypes"},
+    "nav.demand": {"en": "Demand", "fr": "Demande"},
     "nav.parameters": {"en": "Parameters", "fr": "Paramètres"},
 
-    "page.uses.title": {"en": "Uses and archetypes", "fr": "Usages et archétypes"},
-    "page.uses.lead": {
-        "en": "The consumption behaviours the demand is built on. Check them against what "
-              "you know of the community, and correct them if need be.",
-        "fr": "Les comportements de consommation sur lesquels la demande est bâtie. "
-              "Vérifiez-les contre ce que vous connaissez de la communauté, et corrigez-les "
-              "si besoin."},
+    "page.demand.title": {"en": "Demand", "fr": "Demande"},
+    "page.demand.lead": {
+        "en": "Everything the plant will have to serve: the households, the trades, the "
+              "buildings the community already has, and what the plant draws for itself. "
+              "Count what is there and say, for each, whether a measured day describes it "
+              "or you would rather describe it device by device.",
+        "fr": "Tout ce que la centrale devra servir : les ménages, les commerces, les "
+              "bâtiments que la communauté possède déjà, et ce que la centrale consomme "
+              "pour elle-même. Comptez ce qui existe et dites, pour chacun, si une journée "
+              "mesurée le décrit ou si vous préférez le décrire appareil par appareil."},
+
+    # ------------------------------------------------- which description is in force
+    "src.calibrated": {"en": "Calibrated", "fr": "Calibré"},
+    "src.described": {"en": "Described ({n} devices)",
+                      "fr": "Décrit ({n} appareils)"},
+    "src.described.one": {"en": "Described (one device)",
+                          "fr": "Décrit (un appareil)"},
+    "src.describe": {"en": "Described", "fr": "Décrit"},
+    "src.hint": {
+        "en": "A measured day comes from meters in the two reference villages; your own "
+              "description comes from what you counted on site. The description replaces "
+              "the measured day, it does not add to it, and switching back keeps it.",
+        "fr": "Une journée mesurée provient des compteurs des deux villages de référence ; "
+              "votre description provient de ce que vous avez compté sur place. La "
+              "description remplace la journée mesurée, elle ne s'y ajoute pas, et revenir "
+              "en arrière la conserve."},
+    "src.empty": {
+        "en": "{use} is counted and nothing describes it. Either give it devices or take "
+              "its count back to zero: as it stands it would draw nothing, silently.",
+        "fr": "{use} est compté et rien ne le décrit. Donnez-lui des appareils ou remettez "
+              "son compte à zéro : en l'état il ne consommerait rien, en silence."},
+
+    # ------------------------------------------------- the running estimate
+    "demand.estimate": {"en": "Indicative total", "fr": "Total indicatif"},
+    "demand.estimate.hint": {
+        "en": "The measured days and the devices you described, added up. It is an order "
+              "of magnitude to check your entries against, not the simulation: the sizing "
+              "draws a year appliance by appliance, with the growth of the connection and "
+              "the spread from one day to the next.",
+        "fr": "Les journées mesurées et les appareils que vous avez décrits, additionnés. "
+              "C'est un ordre de grandeur pour vérifier votre saisie, non la simulation : "
+              "le dimensionnement tire une année appareil par appareil, avec la montée en "
+              "charge du raccordement et la dispersion d'un jour à l'autre."},
+    "demand.perday": {"en": "kWh a day", "fr": "kWh par jour"},
+    "demand.adjust": {"en": "Adjust the behaviours", "fr": "Ajuster les comportements"},
+    "demand.adjust.close": {"en": "Close", "fr": "Fermer"},
     "page.parameters.title": {"en": "Parameters", "fr": "Paramètres"},
     "page.parameters.lead": {
         "en": "Prices, service lives and control. Every value carries a default you may "
@@ -96,7 +135,7 @@ STRINGS: dict[str, dict[str, str]] = {
               "grid, so its series is what a new request would return — the same numbers, "
               "after a wait that can run to hours.",
         "fr": "{site} est à {km} km et dans la même maille de la grille de l'archive "
-              "météorologique : sa série est ce qu'une nouvelle demande renverrait — les "
+              "météorologique : sa série est ce qu'une nouvelle demande renverrait : les les "
               "mêmes nombres, au bout d'une attente qui peut durer des heures."},
     "series.nearby": {
         "en": "{site} is {km} km away and has a series. It is a neighbour's weather rather "
@@ -297,8 +336,8 @@ STRINGS: dict[str, dict[str, str]] = {
               "take, with the tariff it implies and proof that no cheaper plant exists.",
         "fr": "Un village ne s'électrifie qu'une fois, avec un budget qu'on ne dépense pas "
               "deux fois, et nul ne sait jusqu'où sa demande montera. L'outil répond à la "
-              "seule question qui en découle : quelle capacité acheter maintenant — champ, "
-              "stockage, conversion, groupe électrogène — pesée sur tous les avenirs que "
+              "seule question qui en découle : quelle capacité acheter maintenant : champ, champ, "
+              "stockage, conversion, groupe électrogène, pesée pesée sur tous les avenirs que "
               "la demande peut prendre, avec le tarif qu'elle implique et la preuve qu'il "
               "n'existe pas de centrale moins chère."},
     "home.new": {"en": "Create a new project", "fr": "Créer un nouveau projet"},
@@ -319,7 +358,7 @@ STRINGS: dict[str, dict[str, str]] = {
     "home.test.hint": {
         "en": "Two surveyed communities in southern and central Benin, shipped whole — "
               "households, enterprises and weather. A study runs on them with no network.",
-        "fr": "Deux communautés enquêtées du sud et du centre du Bénin, livrées entières — "
+        "fr": "Deux communautés enquêtées du sud et du centre du Bénin, livrées entières : "
               "foyers, entreprises et météorologie. Une étude s'y déroule sans connexion."},
     "home.mine": {"en": "Villages you have described",
                   "fr": "Les villages que vous avez décrits"},
@@ -382,7 +421,7 @@ STRINGS: dict[str, dict[str, str]] = {
               "what a storage sizing is most sensitive to.",
         "fr": "Plusieurs pays gardent un fuseau éloigné d'une heure ou plus de leur soleil, "
               "et une heure d'erreur ici décale la production d'une heure par rapport à la "
-              "consommation — ce à quoi un dimensionnement de stockage est le plus sensible."},
+              "consommation, ce à quoi ce à quoi un dimensionnement de stockage est le plus sensible."},
     "pue.count": {"en": "how many", "fr": "combien"},
     "pue.none": {
         "en": "No activity selected: the mix will be drawn from the reference villages.",
@@ -399,7 +438,7 @@ STRINGS: dict[str, dict[str, str]] = {
               "run for them. Each is a customer with a meter. Leave a count at zero where "
               "there is none, or where the building is wired but not supplied.",
         "fr": "Les bâtiments que le village a déjà. Ce ne sont ni des foyers ni des "
-              "commerces, et ils sont raccordés dès les premiers mois — c'est souvent pour "
+              "commerces, et ils sont raccordés dès les premiers mois, car c'est souvent pour c'est souvent pour "
               "eux que la ligne est tirée. Chacun est un abonné muni d'un compteur. Laissez "
               "un compte à zéro là où il n'y en a pas, ou là où le bâtiment est équipé sans "
               "être alimenté."},
@@ -412,7 +451,7 @@ STRINGS: dict[str, dict[str, str]] = {
               "because neither grows when the village consumes more.",
         "fr": "Ce que la centrale sert sans le facturer à personne : l'éclairage public, et "
               "ce que la centrale consomme pour fonctionner. Les deux sont alimentés dès le "
-              "premier jour et dimensionnent la centrale exactement comme un abonné — ils "
+              "premier jour et dimensionnent la centrale exactement comme un abonné, mais ils ils "
               "ne rapportent simplement rien. Comptés ici plutôt que retirés de l'énergie "
               "vendue en pourcentage, parce que ni l'un ni l'autre ne croît quand le "
               "village consomme davantage."},
@@ -441,8 +480,8 @@ STRINGS: dict[str, dict[str, str]] = {
               "there is nothing measured to go on and its devices must be declared.",
         "fr": "Éclairage, ventilation et le matériel de bureau que l'école possède, aux "
               "seules heures de classe. Une école est équipée d'un compteur sur les deux "
-              "villages de référence et son relais n'a jamais été fermé — elle est "
-              "équipée, non alimentée — de sorte qu'il n'y a rien de mesuré sur quoi "
+              "villages de référence et son relais n'a jamais été fermé : elle est elle est "
+              "équipée, non alimentée, de sorte de sorte qu'il n'y a rien de mesuré sur quoi "
               "s'appuyer et que ses appareils doivent être déclarés."},
     "use.health_centre": {"en": "Health centre", "fr": "Centre de santé"},
     "use.health_centre.hint": {
@@ -490,6 +529,8 @@ STRINGS: dict[str, dict[str, str]] = {
     "use.declare": {"en": "Describe its devices", "fr": "Décrire ses appareils"},
     "use.undescribed": {"en": "no devices yet", "fr": "aucun appareil"},
     "use.declared": {"en": "{n} devices described", "fr": "{n} appareils décrits"},
+    "use.declared.one": {"en": "one device described",
+                         "fr": "un appareil décrit"},
 
     # ---------------------------------------------------------------- declaring a use
     "use.add": {"en": "Add a use", "fr": "Ajouter un usage"},
@@ -616,7 +657,7 @@ STRINGS: dict[str, dict[str, str]] = {
 
     # ---------------------------------------------------------------- the sizing
     "action.size": {"en": "Size the plant", "fr": "Dimensionner la centrale"},
-    "job.size": {"en": "Sizing — {site}", "fr": "Dimensionnement — {site}"},
+    "job.size": {"en": "Sizing — {site}", "fr": "Dimensionnement, {site}"},
     "page.sizing.title": {"en": "The sizing", "fr": "Le dimensionnement"},
     "page.sizing.lead": {
         "en": "What to buy this year, sized over every trajectory the demand may take, and "
@@ -671,7 +712,7 @@ STRINGS: dict[str, dict[str, str]] = {
               "la demande telle quelle ; la précédente l'est en sachant que la demande "
               "bougera et qu'on pourra ajouter à la prochaine échéance. Là où la "
               "précédente est plus grande, l'écart est le prix de la croissance anticipée ; "
-              "là où elle est plus petite, l'écart est ce que vaut l'option d'étendre — une "
+              "là où elle est plus petite, l'écart est ce que vaut l'option d'étendre : une une "
               "capacité qu'il est inutile d'acheter avant que l'incertitude ne se lève."},
     "sizing.proven.yes": {"en": "Proven optimal", "fr": "Optimalité prouvée"},
     "sizing.proven.no": {"en": "Best found, not yet proven",
@@ -682,7 +723,7 @@ STRINGS: dict[str, dict[str, str]] = {
               "no bound has yet closed — it is the best found and not the proven best.",
         "fr": "La première année est certifiée en examinant tous les dimensionnements que "
               "les bornes admettent. La décision d'année zéro sur l'arbre entier provient "
-              "d'une descente coordonnée, qu'aucune borne n'a encore refermée — c'est la "
+              "d'une descente coordonnée, qu'aucune borne n'a encore refermée : la c'est la "
               "meilleure trouvée et non la meilleure prouvée."},
 
     "csv.section.sizing": {"en": "BUILD THIS YEAR", "fr": "À CONSTRUIRE CETTE ANNÉE"},
@@ -756,7 +797,7 @@ STRINGS: dict[str, dict[str, str]] = {
     "csv.node.served": {"en": "Energy served (kWh)", "fr": "Énergie servie (kWh)"},
     "csv.node.unserved": {"en": "Unserved (kWh)", "fr": "Non distribuée (kWh)"},
 
-    "job.resource": {"en": "Weather series — {site}", "fr": "Série météorologique — {site}"},
+    "job.resource": {"en": "Weather series — {site}", "fr": "Série météorologique, {site}"},
     "job.starting": {"en": "starting", "fr": "démarrage"},
     "job.build": {"en": "building demand and resource",
                   "fr": "construction de la demande et de la ressource"},
@@ -781,7 +822,7 @@ STRINGS: dict[str, dict[str, str]] = {
     "job.era5.queued": {
         "en": "waiting in the archive's queue — this can take minutes, and the rest of the "
               "study can be filled in meanwhile",
-        "fr": "en attente dans la file de l'archive — cela peut prendre des minutes, et le "
+        "fr": "en attente dans la file de l'archive : cela cela peut prendre des minutes, et le "
               "reste de l'étude peut se remplir pendant ce temps"},
     "job.era5.running": {
         "en": "the archive is preparing {years} of hourly weather",
@@ -862,7 +903,7 @@ STRINGS: dict[str, dict[str, str]] = {
               "Elle ne s'applique pas au local technique, pris sur le jeu de barres voisin. "
               "Zéro par défaut, car dans les deux villages de référence, une fois "
               "l'éclairage public et l'autoconsommation comptés comme des charges, ce qui "
-              "restait de variable avec la charge ne se distinguait pas de zéro — portez ce "
+              "restait de variable avec la charge ne se distinguait pas de zéro ; portez ce portez ce "
               "que montrent vos propres compteurs de départ."},
     "f.collection": {"en": "Customer bills collected",
                      "fr": "Factures effectivement encaissées"},

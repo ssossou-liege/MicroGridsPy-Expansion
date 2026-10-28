@@ -82,6 +82,13 @@ class Site:
     #: devices that make it up. Their counts live in the two mixes above, under the same
     #: key, so that a declared use is counted exactly as a calibrated one is.
     declared_uses: tuple | None = None
+    #: Which description of a use is in force, by use key: ``"calibrated"`` for the measured
+    #: shape, ``"described"`` for the devices the developer entered. Only classes that have
+    #: both can differ, and the two are kept side by side rather than one overwriting the
+    #: other: a developer who tries their own figures and goes back to the measured ones has
+    #: not thrown their work away. A key absent here is described if a description exists and
+    #: calibrated otherwise, which is what a site saved before this field meant.
+    use_source: dict[str, str] | None = None
     #: The village whose series this one is using, when it borrowed rather than downloaded.
     #: Carried so that a certificate can say whose sun it rests on: a plant sized on a
     #: neighbour's weather is a fact about the result, not a detail of how it was obtained.
@@ -264,6 +271,7 @@ def to_record(site: Site) -> dict:
             "productive_mix": site.productive_mix,
             "community_mix": site.community_mix,
             "self_mix": site.self_mix,
+            "use_source": site.use_source,
             "declared_uses": ([u.to_record() for u in site.declared_uses]
                               if site.declared_uses else None),
             "utc_offset_hours": site.utc_offset_hours, "origin": site.origin}
@@ -295,6 +303,26 @@ def _migrate_self_consumption(community: dict | None, own: dict | None,
     return community or None, own or None, moved
 
 
+#: The two answers to "which description of this use is in force".
+CALIBRATED, DESCRIBED = "calibrated", "described"
+
+
+def _sources_from(stored, use_records) -> dict[str, str] | None:
+    """Which description is in force for each use, for a record that may predate the field.
+
+    A site saved before the interface let the two coexist carried a description only when
+    the developer meant it to be used -- there was no way to keep one and ignore it. So an
+    absent entry against a described use reads as described, which is what it meant then,
+    and anything else reads as calibrated.
+    """
+    described = {str(r.get("key")) for r in (use_records or ()) if r.get("devices")}
+    out = {str(k): (DESCRIBED if str(v) == DESCRIBED else CALIBRATED)
+           for k, v in (stored or {}).items()}
+    for key in described:
+        out.setdefault(key, DESCRIBED)
+    return out or None
+
+
 def from_record(record: dict) -> Site:
     census = {k: int(v) for k, v in (record.get("census") or {}).items() if int(v) >= 0}
     community, own, uses = _migrate_self_consumption(
@@ -309,6 +337,7 @@ def from_record(record: dict) -> Site:
                 productive_mix=record.get("productive_mix"),
                 community_mix=community,
                 self_mix=own,
+                use_source=_sources_from(record.get("use_source"), uses),
                 declared_uses=_uses_from(uses),
                 utc_offset_hours=int(record.get("utc_offset_hours", 1)),
                 origin=record.get("origin", "user"))

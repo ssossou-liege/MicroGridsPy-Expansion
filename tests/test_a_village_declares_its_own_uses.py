@@ -340,3 +340,54 @@ def test_declaring_the_unbilled_loads_is_what_moves_the_billable_share() -> None
     assert declared.billable_fraction < 0.95, (
         "declaring the street lighting and the plant room changed nothing")
     assert declared.unbilled_kwh > plain.unbilled_kwh
+
+
+# ------------------------------------------------- which description is in force
+def test_the_source_in_force_survives_being_written_down() -> None:
+    """A description and a measured day now sit side by side, and the site says which runs.
+
+    Before this the two could not coexist: describing a class replaced its measured day and
+    going back meant describing it again from nothing. Keeping both costs one field, and
+    what it buys is that a developer can try their own figures against the calibration
+    without the trying being destructive.
+    """
+    from microgrid_expansion.sites import Site, from_record, to_record
+
+    own = UseSpec(key="place_of_worship", label="Place of worship", category="community",
+                  devices=(Device(name="lamp", power_w=20, number=6, func_time_min=240),))
+    site = Site(name="t", census={"HH1": 10}, community_mix={"place_of_worship": 1},
+                declared_uses=(own,), use_source={"place_of_worship": "calibrated"},
+                origin="user")
+    back = from_record(to_record(site))
+    assert back.use_source == {"place_of_worship": "calibrated"}
+    assert back.declared_uses[0] == own, "the description was thrown away by the round trip"
+
+    site = Site(name="t", census={"HH1": 10}, community_mix={"place_of_worship": 1},
+                declared_uses=(own,), use_source={"place_of_worship": "described"},
+                origin="user")
+    assert from_record(to_record(site)).use_source == {"place_of_worship": "described"}
+
+
+def test_a_site_saved_before_the_source_existed_keeps_meaning_what_it_meant() -> None:
+    """It had no way to keep a description and ignore it, so a description meant use it.
+
+    Reading an old record as calibrated would silently switch off work the developer had
+    done and had no way of marking as active, which is the worse of the two mistakes: the
+    plant would be sized on a shape they had deliberately replaced.
+    """
+    from microgrid_expansion.sites import from_record
+
+    record = {
+        "name": "older", "census": {"HH1": 20},
+        "community_mix": {"place_of_worship": 1},
+        "declared_uses": [{"key": "place_of_worship", "label": "Place of worship",
+                           "category": "community",
+                           "devices": [{"name": "lamp", "power_w": 20.0,
+                                        "func_time_min": 240.0}]}],
+    }
+    assert from_record(record).use_source == {"place_of_worship": "described"}
+
+    # And a record with no description at all carries no opinion to read.
+    bare = {"name": "older", "census": {"HH1": 20},
+            "community_mix": {"place_of_worship": 1}}
+    assert from_record(bare).use_source is None

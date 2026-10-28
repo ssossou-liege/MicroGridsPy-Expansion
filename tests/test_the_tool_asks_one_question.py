@@ -123,22 +123,26 @@ def test_the_page_states_the_zone_it_derived_and_lets_it_be_corrected() -> None:
     assert "utc_offset_hours" in script, "a correction never reaches the server"
 
 
-def test_the_weather_is_fetched_for_a_point_and_asks_for_nothing_else() -> None:
-    """A reanalysis knows nothing of households, and must not wait for a census.
+def test_each_page_asks_only_for_what_it_is_about() -> None:
+    """A reanalysis knows nothing of households, and nor does the page that fetches it.
 
-    The page asks for the community in the order it presents it: a name, then where it is,
-    then who lives there. Fetching the series sits beside the map, so it is reached before
-    the households are typed -- and refusing it with "no households to connect" is true,
-    unrelated, and arrives at exactly the wrong moment.
+    The site page asks where the village is; the demand page asks what it consumes. Saving
+    on the way out of either must check what that page collected and nothing else. Both
+    halves of that have gone wrong. Fetching the series once refused with "no households to
+    connect", which was true, unrelated, and arrived while the developer was still placing
+    the point. And when the census moved to the demand page, leaving the site page still
+    demanded one -- which made that page impossible to leave at all, since the boxes that
+    would satisfy it were on the page behind the button.
     """
     script = (STATIC / "app.js").read_text(encoding="utf-8")
-    assert 'saveSite("meteo")' in script, (
+    assert 'saveSite("site")' in script, (
         "fetching the series saves the site under the full validation")
-    assert 'pour === "etude" && households <= 0' in script, (
-        "the household check is not conditioned on why the site is being saved")
-    # And leaving the page still requires them: that is where a village is needed whole.
-    assert "if (state.site && state.site.origin !== \"template\" && !(await saveSite()))" \
-        in script, "the page may now be left without a census"
+    assert 'need === "demand" && households <= 0' in script, (
+        "the household check is not conditioned on what the save has to satisfy")
+    assert 'saveSite("site"))) return;\n    show("demand")' in script, (
+        "leaving the site page demands a census the site page does not collect")
+    assert 'saveSite("demand"))) return;\n    show("parameters")' in script, (
+        "the demand page may be left without a census")
 
 
 # ------------------------------------------------------- the weather of a nearby point

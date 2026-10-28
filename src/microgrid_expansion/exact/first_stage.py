@@ -34,6 +34,7 @@ remain an upper bound; it is the year-0 design, and only that, which comes out p
 from __future__ import annotations
 
 import heapq
+import math
 import time
 from dataclasses import dataclass, field, replace
 
@@ -168,14 +169,18 @@ class FreeBound:
     the year. Applied at the root alone: the descendants may add capacity, so nothing can be
     asserted about what they will have to burn.
 
-    The two terms are minimised independently over the box, which is why the array enters
-    the capital term at the box's floor and the energy term at its ceiling. The sum of two
-    lower bounds is a lower bound; it is not the tightest one available, since a plan cannot
-    hold both arrays at once, and a bound that scanned the array dimension for the least sum
-    would prune harder near the root of the tree. What matters first is that it never
-    exceeds the programme, which is what the test of that name checks and what this failed
-    until the equipment was priced at what the operator pays to land it: with a cheap plant
-    the optimum fell below a bound that had always overstated the fuel.
+    Both terms are minimised over the box exactly, and not at a corner. Corners were the
+    first way this was written and they are both loose and easy to get wrong: the array
+    wants to be large for the running cost and small for the capital, no plan is both, and
+    the version that took it small for the running cost overstated the fuel at every box it
+    was ever asked about. ``of`` therefore minimises the sum, which is available in closed
+    form; ``_least_over_the_array`` carries the argument.
+
+    On the reference instance the three readings of the same box, the whole lattice, are
+    149 927 dollars for the corner that overstated, 6 219 for the corners taken one term at
+    a time, and 22 554 for the least over the box, against a programme that finds 96 027.
+    The last is three and a half times the strength of the second at twelve microseconds a
+    box, which is still nothing beside the solver call it saves.
     """
 
     weights: TreeWeights
@@ -205,20 +210,79 @@ class FreeBound:
         from_set = min(residual, generator_kw * self.hours)
         return self.fuel_usd_kwh * from_set + self.voll_usd_kwh * (residual - from_set)
 
+    def _array_capital(self, box: RootBox, total: int) -> float:
+        """Least the box can pay to hold ``total`` modules, split between the two buses.
+
+        The running cost sees only how many modules there are; the capital sees which bus
+        they sit on, and under a divided array the two are not priced alike. So the cheapest
+        way to hold a given total fills the cheaper bus as far as the box allows and puts
+        the remainder on the other.
+        """
+        a_pv, _, _, _, a_pv_ac = self.unit_costs
+        if a_pv <= a_pv_ac:
+            (cheap_lo, cheap_hi), (dear_lo, _) = box.n_pv, box.n_pv_ac
+            cheap, dear = a_pv, a_pv_ac
+        else:
+            (cheap_lo, cheap_hi), (dear_lo, _) = box.n_pv_ac, box.n_pv
+            cheap, dear = a_pv_ac, a_pv
+        on_cheap = min(total - cheap_lo - dear_lo, cheap_hi - cheap_lo)
+        on_dear = total - cheap_lo - dear_lo - on_cheap
+        return self.lattice.pv_unit_kw * (cheap * (cheap_lo + on_cheap)
+                                          + dear * (dear_lo + on_dear))
+
+    def _totals_worth_trying(self, box: RootBox, rating: float) -> list[int]:
+        """Array totals at which the least sum can sit, and no others.
+
+        Capital and running cost are both piecewise linear in the number of modules, so
+        their sum is too, and a piecewise-linear function attains its minimum over an
+        interval at a breakpoint or at an end -- over the integers, at an integer either
+        side of one. Three breakpoints exist. The cheaper bus fills up, after which capital
+        climbs faster; the residual stops needing the generating set, after which it is
+        charged at fuel rather than at lost load; and the array covers the demand, after
+        which there is no residual at all.
+        """
+        a_pv, _, _, _, a_pv_ac = self.unit_costs
+        floor = box.n_pv[0] + box.n_pv_ac[0]
+        ceiling = box.n_pv[1] + box.n_pv_ac[1]
+        room_on_the_cheap_bus = (box.n_pv[1] - box.n_pv[0] if a_pv <= a_pv_ac
+                                 else box.n_pv_ac[1] - box.n_pv_ac[0])
+        breaks = [float(floor), float(ceiling), float(floor + room_on_the_cheap_bus)]
+        per_module = self.round_trip * self.lattice.pv_unit_kw * self.yield_kwh_per_kw
+        if per_module > 0:
+            breaks.append(self.demand_kwh / per_module)
+            breaks.append((self.demand_kwh - rating * self.hours) / per_module)
+        totals = set()
+        for value in breaks:
+            for side in (math.floor(value), math.ceil(value)):
+                totals.add(min(max(int(side), floor), ceiling))
+        return sorted(totals)
+
+    def _least_over_the_array(self, box: RootBox, rating: float,
+                              settled_capital: float) -> float:
+        """The least sum over the array, with the set and the rest of the plant fixed."""
+        a_gen = self.unit_costs[3]
+        fixed = self.weights.total * (settled_capital + a_gen * rating)
+        return min(fixed
+                   + self.weights.total * self._array_capital(box, total)
+                   + self.weights.root * self.root_operating(total, 0, rating)
+                   for total in self._totals_worth_trying(box, rating))
+
     def of(self, box: RootBox) -> float:
-        """The bound for a box: its cheapest capital, its least possible running cost."""
+        """The least this bound can take over the box, which is the bound for the box.
+
+        Storage and conversion enter the capital and nothing else, so their floor is their
+        best and they are settled first. The generating set enters both terms and pulls them
+        opposite ways -- a larger set costs more and burns cheaper than lost load -- so it is
+        taken over the ratings the box still allows, one pass each, rather than at a corner
+        of each term. The array is then the only coordinate left, and the pass over it is
+        exact.
+        """
         low = box.corner(low=True)
-        capital = self.capital(low["b_pv"], low["b_batt"], low["b_inv"], low["b_pv_ac"],
-                               min(box.generator_ratings))
-        # Each term is taken at the corner that minimises it, which keeps the bound a bound
-        # even though no single design sits at both corners. For the running cost that is
-        # the array at its *largest*, because a larger array leaves less for the set to
-        # burn, and the set at its largest too, because fuel is cheaper than lost load.
-        # Taking the array at its smallest, as this did until the equipment prices fell far
-        # enough to expose it, maximises the residual and so overstates the bound.
-        operating = self.root_operating(box.n_pv[1], box.n_pv_ac[1],
-                                        max(box.generator_ratings))
-        return self.weights.total * capital + self.weights.root * operating
+        _, a_batt, a_inv, _, _ = self.unit_costs
+        settled = (a_batt * low["b_batt"] * self.lattice.batt_unit_kwh
+                   + a_inv * low["b_inv"] * self.lattice.inv_unit_kw)
+        return min(self._least_over_the_array(box, rating, settled)
+                   for rating in box.generator_ratings)
 
 
 @dataclass(order=True)

@@ -78,6 +78,60 @@ def test_a_box_of_one_names_the_plant_it_holds(tiny) -> None:
 
 
 # ------------------------------------------------------------------ the costless bound
+def test_the_costless_bound_is_the_least_over_the_box_and_not_a_corner(tiny) -> None:
+    """Enumerate small boxes and compare with the closed form the bound computes.
+
+    The bound is the minimum, over a box, of a quantity every plan in that box has. Where
+    the box is small enough to walk, the two can be compared directly, and that is the only
+    test that distinguishes a minimum from a plausible corner. The version this replaced
+    took the array where the running cost is highest and called the result a minimum; it
+    would fail here on the first box, and went unnoticed for months because overstating a
+    lower bound is invisible until the optimum falls below it.
+
+    The last box opens both buses, which the reference lattice does not: under direct
+    coupling the alternating side is empty, so the split between the two is only exercised
+    by asking for a box the certification would not itself produce.
+    """
+    cfg, settings, tree, rep, lattice = tiny
+    free = free_bound_for(tree, rep, lattice, settings, "dc")
+    ratings = tuple(lattice.generator_ratings)
+
+    boxes = [
+        # One plant, where the minimum is the only point there is.
+        RootBox(n_pv=(0, 0), n_batt=(0, 0), n_inv=(1, 1), n_pv_ac=(0, 0),
+                generator_ratings=(ratings[0],)),
+        # An array small enough that the residual still needs the set, so the rating and
+        # the value of lost load both bite.
+        RootBox(n_pv=(0, 60), n_batt=(0, 2), n_inv=(1, 2), n_pv_ac=(0, 0),
+                generator_ratings=ratings),
+        # Across the total that covers the demand, where the running cost goes flat.
+        RootBox(n_pv=(100, 140), n_batt=(5, 6), n_inv=(3, 4), n_pv_ac=(0, 0),
+                generator_ratings=(ratings[len(ratings) // 2],)),
+        # The dear end, where capital alone decides.
+        RootBox(n_pv=(lattice.n_pv[1] - 19, lattice.n_pv[1]),
+                n_batt=(lattice.n_batt[1] - 9, lattice.n_batt[1]),
+                n_inv=(lattice.n_inv[1] - 5, lattice.n_inv[1]), n_pv_ac=(0, 0),
+                generator_ratings=(ratings[0], ratings[-1])),
+        # Both buses open, and wide enough that the least total needs more modules than
+        # the cheaper bus can hold. Unless the cheaper bus is filled first the capital
+        # comes out above its minimum, and a bound above its minimum can overstate.
+        RootBox(n_pv=(0, 80), n_batt=(0, 1), n_inv=(1, 2), n_pv_ac=(0, 40),
+                generator_ratings=(ratings[0],)),
+    ]
+
+    for box in boxes:
+        walked = min(
+            free.weights.total * free.capital(n_pv, n_batt, n_inv, n_ac, rating)
+            + free.weights.root * free.root_operating(n_pv, n_ac, rating)
+            for n_pv in range(box.n_pv[0], box.n_pv[1] + 1)
+            for n_batt in range(box.n_batt[0], box.n_batt[1] + 1)
+            for n_inv in range(box.n_inv[0], box.n_inv[1] + 1)
+            for n_ac in range(box.n_pv_ac[0], box.n_pv_ac[1] + 1)
+            for rating in box.generator_ratings)
+        assert free.of(box) == pytest.approx(walked, rel=1e-9), (
+            f"the bound is not the least over {box.describe(lattice)}")
+
+
 def test_the_costless_bound_never_exceeds_the_programme(tiny) -> None:
     """A bound that overstates prunes the optimum, which is worse than no bound at all."""
     from microgrid_expansion.model import build_model

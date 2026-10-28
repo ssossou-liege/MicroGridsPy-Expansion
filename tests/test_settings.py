@@ -217,10 +217,11 @@ def test_costs_convert_between_the_field_and_the_model_currency():
     # the peg is fixed; only the euro-dollar rate moves
     assert currency.xof_per_eur == pytest.approx(655.957)
     assert currency.to_local(currency.to_usd(250_000.0)) == pytest.approx(250_000.0)
-    # The inverter price restates to the figure it was quoted at. That figure moved when the
-    # operator's procurement budget replaced a single market quotation: 108 894 FCFA/kW
-    # capacity-weighted over the hybrid inverters actually bought, against 250 000 before.
-    assert currency.to_local(settings.inverter.cost_usd_kw) == pytest.approx(108_894, rel=0.01)
+    # The inverter price restates to the figure it was quoted at. That figure has moved
+    # twice: a single market quotation at 250 000 FCFA/kW, then 108 894 capacity-weighted
+    # over the hybrid inverters the operator's budget buys in Benin, and now 70 883, which
+    # is the supplier's own price plus the duty and freight the operator pays to land it.
+    assert currency.to_local(settings.inverter.cost_usd_kw) == pytest.approx(70_883, rel=0.01)
     assert currency.to_local(settings.economics.tariff_usd_kwh) == pytest.approx(160, rel=0.01)
 
 

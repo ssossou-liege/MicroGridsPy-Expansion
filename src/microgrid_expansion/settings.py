@@ -81,16 +81,33 @@ class PhotovoltaicSpec:
     """A photovoltaic module and the array losses around it."""
 
     unit_kw: float = 0.5                       # rated power of one panel
-    #: 169 765 FCFA/kW, the capacity-weighted price of the modules the operator's October
-    #: 2025 procurement budget buys: 764 Risen RSM132-8-650BMDG at 110 000 FCFA and forty
-    #: LONGI LR5-72HBD-550M at 100 000 FCFA, delivered in Benin. It replaces a single
-    #: 100 000 FCFA/kW market quotation and is seventy per cent above it.
+    #: 55 438 FCFA/kW, which is what it costs this operator to have a module on site: the
+    #: supplier's price in its procurement budget of October 2025, capacity-weighted over
+    #: the 764 Risen RSM132-8-650BMDG and forty LONGI LR5-72HBD-550M it buys, plus 9.56 %
+    #: for duty and sea freight. That uplift is measured and not assumed: the payment
+    #: ledger of July 2025 to September 2026 charges 47.9 million FCFA of duty and 3.6
+    #: million of identified sea leg against 539 million of invoices from manufacturers
+    #: outside the customs union.
     #:
-    #: The module and nothing else, which is the basis the quotation it replaces had. The
-    #: same budget puts the mounting structure, the direct-current cable and the connectors
-    #: at a further 88 214 FCFA/kW -- more than half as much again as the modules -- and the
-    #: array capital is understated by that much until someone decides to widen the basis.
-    cost_usd_kw: float = 279.5
+    #: The same budget prices the module bought in Benin at 169 765 FCFA/kW, three times as
+    #: much, which is the price of the importer's margin rather than of the module. Four
+    #: fifths of this operator's equipment comes straight from the manufacturer, so the
+    #: landed price is the one its projects face. A developer without that capacity faces
+    #: the other, and the basis changes what the sizing chooses and not only what it costs.
+    #:
+    #: The array and not the module, which is a widening of the basis and is deliberate.
+    #: The modules land at 55 438 FCFA/kW and the same budget prices what holds them up and
+    #: wires them at a further 32 115 FCFA/kW landed: 22 094 of mounting structure, 9 612 of
+    #: solar cable and 409 of connectors. The sizing spends this figure per kilowatt of
+    #: array, so leaving the structure out was tolerable while the modules were priced at
+    #: retail and absurd once they are priced at the manufacturer's gate, where it is more
+    #: than a third of what an installed kilowatt of array costs.
+    #:
+    #: Labour is still nowhere, here or anywhere else in these settings. The operator's
+    #: turnkey construction contract runs at about 118 000 dollars a village, which is
+    #: comparable to everything the sizing does price, and it belongs to the project
+    #: perimeter rather than to a capacity cost.
+    cost_usd_kw: float = 144.2
     lifetime_years: int = 25
     om_rate: float = 0.018                     # annual, as a fraction of capital
     noct_c: float = 45.0
@@ -99,14 +116,16 @@ class PhotovoltaicSpec:
     faiman_u0_w_m2_k: float = 25.0
     faiman_u1_w_s_m3_k: float = 6.84
     provenance: Provenance = field(default_factory=lambda: Provenance(
-        source="169 765 FCFA/kW, capacity-weighted over the modules of the operator's "
-               "procurement budget of October 2025; crystalline silicon, open rack, "
-               "generic thermal characteristics",
+        source="87 553 FCFA/kW landed, over the array: 55 438 of modules, capacity-weighted "
+               "over those the operator's procurement budget of October 2025 buys, plus "
+               "32 115 of mounting structure, solar cable and connectors from the same "
+               "budget, all at the supplier's price plus the 9.56 % duty and freight "
+               "measured on its payment ledger; crystalline silicon, open rack, generic "
+               "thermal characteristics",
         verified=True,
-        note="the price is sourced and it is the module alone; the same budget puts the "
-             "structure, the direct-current cable and the connectors at a further "
-             "88 214 FCFA/kW, which nothing here carries. The thermal characteristics "
-             "remain generic"))
+        note="the price is sourced and landed, and it covers the array rather than the "
+             "module alone; no labour is in it, here or anywhere else in these settings. "
+             "The thermal characteristics remain generic"))
 
 
 @dataclass
@@ -115,12 +134,22 @@ class BatterySpec:
 
     chemistry: str = "lfp"
     unit_kwh: float = 5.0                      # usable energy of one module
-    #: 115 792 FCFA/kWh, capacity-weighted over the packs the operator's October 2025
-    #: procurement budget buys: 146 DEYE SE-G10.2 of 10.24 kWh at 105 469 FCFA/kWh and
-    #: twenty-three BYD LV Flex of 5 kWh at 250 000, delivered in Benin. The weighting
-    #: matters here more than anywhere: the cheaper pack is nine tenths of the energy
-    #: bought, and the quotation this replaces was the dearer one alone, at 200 000.
-    cost_usd_kwh: float = 190.6
+    #: 62 770 FCFA/kWh landed: the supplier's price in the operator's procurement budget
+    #: of October 2025, capacity-weighted over the 146 DEYE SE-G10.2 packs of 10.24 kWh and
+    #: twenty-three BYD LV Flex of 5 kWh it buys, plus the duty and freight its payment
+    #: ledger shows. The weighting matters here more than anywhere: the DEYE pack is nine
+    #: tenths of the energy bought and half the price per kilowatt-hour of the BYD, which
+    #: is the pack the market quotation this all replaces was taken from.
+    #:
+    #: Storage is the capacity the basis moves least, a factor of 1.8 against three for the
+    #: modules and nearly four for the generator. Against the array it therefore hardly
+    #: moves at all: a kilowatt-hour of storage costs 0.72 kilowatts of array landed and
+    #: 0.68 bought in Benin, so the storage-against-array arbitration is very nearly the
+    #: one the retail prices gave. What the change of basis moves is the generator, which
+    #: halves against everything else, and the conversion, which gains a quarter. The
+    #: sizing is pushed towards a standby set and away from a divided array, not away from
+    #: storage.
+    cost_usd_kwh: float = 103.4
     lifetime_years: int = 16
     cycles: int = 6000
     om_rate: float = 0.060
@@ -133,12 +162,13 @@ class BatterySpec:
     #: State of charge the plant starts from, as a fraction of the usable ceiling.
     initial_soc_fraction: float = 0.5
     provenance: Provenance = field(default_factory=lambda: Provenance(
-        source="115 792 FCFA/kWh, capacity-weighted over the packs of the operator's "
-               "procurement budget of October 2025; DEYE SE-G10.2 and BYD LV Flex, "
-               "lithium iron phosphate",
+        source="62 770 FCFA/kWh landed: the supplier's price in the operator's "
+               "procurement budget of October 2025, capacity-weighted over the packs it "
+               "buys, plus the 9.56 % duty and freight measured on its payment ledger; "
+               "DEYE SE-G10.2 and BYD LV Flex, lithium iron phosphate",
         verified=True,
-        note="the price is sourced, and weighted: the DEYE pack is nine tenths of the "
-             "energy bought and half the price of the BYD the earlier quotation used "
+        note="the price is sourced, landed and weighted: the DEYE pack is nine tenths of "
+             "the energy bought and half the price of the BYD the earlier quotation used "
              "alone. Cycle life and efficiencies remain manufacturer figures"))
 
     def degradation_usd_kwh(self) -> float:
@@ -216,12 +246,17 @@ class GeneratorSpec:
     #: power, so the quotation and the power factor are held separately rather than
     #: silently conflated: at a factor of 0.8 a kVA buys only 0.8 kW.
     #:
-    #: 325 000 FCFA/kVA, the delivered price of the 20 kVA set in the operator's
-    #: procurement budget of October 2025. It is the only generator that budget prices
-    #: delivered -- the 30, 66 and 80 kVA sets carry a supplier price without transport,
-    #: customs or logistics -- so every rating of the catalogue below is costed from the
-    #: smallest, and the three ratings share one figure per kVA rather than three.
-    cost_usd_kva: float = 535.1
+    #: 87 891 FCFA/kVA landed: the supplier's price of the 20 kVA set in the operator's
+    #: procurement budget of October 2025, plus the duty and freight its payment ledger
+    #: shows. That set alone, because the same budget's 30, 66 and 80 kVA sets cost half as
+    #: much per kVA and the catalogue below holds 10, 15 and 20 kVA units: a figure
+    #: weighted over the large sets would price a village's standby plant at the cost of a
+    #: town's. The three ratings therefore share one figure per kVA rather than three.
+    #:
+    #: Bought in Benin the same set is 325 000 FCFA/kVA, nearly four times as much. Of the
+    #: four capacities priced here this is the one the basis moves furthest, which matters
+    #: because it is the generator that decides how much storage a plant needs.
+    cost_usd_kva: float = 144.7
     power_factor: float = 0.8
     lifetime_years: int = 15
     om_rate: float = 0.080
@@ -291,17 +326,20 @@ class InverterSpec:
     """The hybrid inverter coupling the assets to the load."""
 
     unit_kw: float = 2.5
-    #: 108 894 FCFA/kW, capacity-weighted over the hybrid inverters the operator's October
-    #: 2025 procurement budget buys: nineteen DEYE SUN-20K at 105 000 FCFA/kW and three
-    #: SUN-12K at 150 000, delivered in Benin. The quotation it replaces was 250 000, so
-    #: this is well under half, and it is the price that moves a divided array most.
+    #: 70 883 FCFA/kW landed: the supplier's price in the operator's procurement budget of
+    #: October 2025, capacity-weighted over the nineteen DEYE SUN-20K and three SUN-12K it
+    #: buys, plus the duty and freight its payment ledger shows. Bought in Benin the same
+    #: inverters are 108 894 FCFA/kW, and the market quotation both of those replace was
+    #: 250 000. It is the price that moves a divided array most.
     #: Restate through the currency block if the euro-dollar rate is updated.
-    cost_usd_kw: float = 179.3
+    cost_usd_kw: float = 116.7
     lifetime_years: int = 10
     om_rate: float = 0.020
     provenance: Provenance = field(default_factory=lambda: Provenance(
-        source="hybrid inverter, 108 894 FCFA/kW, capacity-weighted over the DEYE "
-               "SUN-20K and SUN-12K of the operator's procurement budget of October 2025",
+        source="hybrid inverter, 70 883 FCFA/kW landed: the supplier's price in the "
+               "operator's procurement budget of October 2025, capacity-weighted over the "
+               "DEYE SUN-20K and SUN-12K it buys, plus the duty and freight measured on "
+               "its payment ledger",
         verified=True,
         note="restate through the currency block if the euro-dollar rate is updated"))
 
@@ -353,6 +391,13 @@ class CouplingSpec:
     ac_ratio_max: float = 1.0
     #: String inverters for an alternating-coupled array, 50 000 FCFA/kW. Nothing
     #: corresponds to this under direct-current coupling, the conversion being integrated.
+    #:
+    #: This one price is still on the Beninese market and not landed, because the operator's
+    #: budget buys no string inverter: it builds on hybrids. So the arrangement comparison
+    #: now prices the alternating side at retail and the direct side at the manufacturer's
+    #: invoice, which penalises alternating coupling by whatever the margin on a string
+    #: inverter is. The architecture the sizing selects should not be read as settled while
+    #: that holds, and the way to settle it is one quotation from the same supplier.
     string_inverter_cost_usd_kw: float = 82.3
     lifetime_years: int = 12
     om_rate: float = 0.020

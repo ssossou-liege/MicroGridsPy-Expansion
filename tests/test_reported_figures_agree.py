@@ -23,16 +23,22 @@ OPERATING = 4_000.0
 SERVED = 44_800.0
 
 
-def _both(**kwargs):
+def _both(tariff: float | None = None, **kwargs):
+    """The two readings of one plant, computed from one set of settings.
+
+    ``tariff`` moves the levelised cost's target and the appraisal's revenue together,
+    because a grant sized to one tariff and received at another is not the same claim.
+    """
     settings = default_settings()
     assets = assets_from_settings(settings, architecture="ac")
+    price = settings.economics.tariff_usd_kwh if tariff is None else float(tariff)
     cost = life_cycle_cost(
         PLANT, OPERATING, SERVED,
         horizon_years=settings.economics.horizon_years,
         discount_rate=settings.economics.discount_rate, assets=assets,
-        tariff_target_usd_kwh=settings.economics.tariff_usd_kwh)
+        tariff_target_usd_kwh=price)
     money = appraise(
-        PLANT, OPERATING, SERVED, tariff_usd_kwh=settings.economics.tariff_usd_kwh,
+        PLANT, OPERATING, SERVED, tariff_usd_kwh=price,
         horizon_years=settings.economics.horizon_years,
         discount_rate=settings.economics.discount_rate, assets=assets, **kwargs)
     return settings, cost, money
@@ -75,10 +81,15 @@ def test_a_subsidy_sized_to_the_target_tariff_brings_the_project_to_break_even()
     its rate of return is the discount rate. Any real gap between them is the two models
     disagreeing about the same plant.
     """
-    settings, cost, _ = _both()
-    if not cost.subsidy_usd:
-        pytest.skip("no subsidy is needed at this tariff")
-    _, _, money = _both(subsidy_usd=cost.subsidy_usd)
+    # The project's own tariff no longer needs a grant: the equipment prices of the
+    # operator's procurement budget put this plant's levelised cost under it, where the
+    # earlier market quotations left it 6 % above. Asserted at that tariff the test would
+    # pass by having nothing to compare, so it is asserted at a tariff that does need a
+    # grant -- four fifths of what this plant costs to serve a kilowatt-hour.
+    settings, reference, _ = _both()
+    settings, cost, _ = _both(tariff=0.8 * reference.lcoe_usd_kwh)
+    assert cost.subsidy_usd > 0, "the test is about sizing a grant; size one"
+    _, _, money = _both(tariff=0.8 * reference.lcoe_usd_kwh, subsidy_usd=cost.subsidy_usd)
     assert money.net_present_value == pytest.approx(0.0, abs=0.02 * abs(money.initial_capital))
     assert money.irr == pytest.approx(settings.economics.discount_rate, abs=0.01)
 

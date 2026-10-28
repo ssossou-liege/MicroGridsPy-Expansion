@@ -81,8 +81,16 @@ class PhotovoltaicSpec:
     """A photovoltaic module and the array losses around it."""
 
     unit_kw: float = 0.5                       # rated power of one panel
-    #: 100 000 FCFA/kW quoted on the Beninese market.
-    cost_usd_kw: float = 164.6
+    #: 169 765 FCFA/kW, the capacity-weighted price of the modules the operator's October
+    #: 2025 procurement budget buys: 764 Risen RSM132-8-650BMDG at 110 000 FCFA and forty
+    #: LONGI LR5-72HBD-550M at 100 000 FCFA, delivered in Benin. It replaces a single
+    #: 100 000 FCFA/kW market quotation and is seventy per cent above it.
+    #:
+    #: The module and nothing else, which is the basis the quotation it replaces had. The
+    #: same budget puts the mounting structure, the direct-current cable and the connectors
+    #: at a further 88 214 FCFA/kW -- more than half as much again as the modules -- and the
+    #: array capital is understated by that much until someone decides to widen the basis.
+    cost_usd_kw: float = 279.5
     lifetime_years: int = 25
     om_rate: float = 0.018                     # annual, as a fraction of capital
     noct_c: float = 45.0
@@ -91,10 +99,14 @@ class PhotovoltaicSpec:
     faiman_u0_w_m2_k: float = 25.0
     faiman_u1_w_s_m3_k: float = 6.84
     provenance: Provenance = field(default_factory=lambda: Provenance(
-        source="100 000 FCFA/kW quoted on the Beninese market (2026); crystalline "
-               "silicon, open rack, generic technical characteristics",
+        source="169 765 FCFA/kW, capacity-weighted over the modules of the operator's "
+               "procurement budget of October 2025; crystalline silicon, open rack, "
+               "generic thermal characteristics",
         verified=True,
-        note="the price is sourced; the thermal characteristics remain generic"))
+        note="the price is sourced and it is the module alone; the same budget puts the "
+             "structure, the direct-current cable and the connectors at a further "
+             "88 214 FCFA/kW, which nothing here carries. The thermal characteristics "
+             "remain generic"))
 
 
 @dataclass
@@ -103,8 +115,12 @@ class BatterySpec:
 
     chemistry: str = "lfp"
     unit_kwh: float = 5.0                      # usable energy of one module
-    #: 200 000 FCFA/kWh quoted on the Beninese market.
-    cost_usd_kwh: float = 329.3
+    #: 115 792 FCFA/kWh, capacity-weighted over the packs the operator's October 2025
+    #: procurement budget buys: 146 DEYE SE-G10.2 of 10.24 kWh at 105 469 FCFA/kWh and
+    #: twenty-three BYD LV Flex of 5 kWh at 250 000, delivered in Benin. The weighting
+    #: matters here more than anywhere: the cheaper pack is nine tenths of the energy
+    #: bought, and the quotation this replaces was the dearer one alone, at 200 000.
+    cost_usd_kwh: float = 190.6
     lifetime_years: int = 16
     cycles: int = 6000
     om_rate: float = 0.060
@@ -117,11 +133,13 @@ class BatterySpec:
     #: State of charge the plant starts from, as a fraction of the usable ceiling.
     initial_soc_fraction: float = 0.5
     provenance: Provenance = field(default_factory=lambda: Provenance(
-        source="200 000 FCFA/kWh quoted on the Beninese market (2026); BYD LV Flex, "
+        source="115 792 FCFA/kWh, capacity-weighted over the packs of the operator's "
+               "procurement budget of October 2025; DEYE SE-G10.2 and BYD LV Flex, "
                "lithium iron phosphate",
         verified=True,
-        note="the price is sourced; cycle life and efficiencies remain manufacturer "
-             "figures"))
+        note="the price is sourced, and weighted: the DEYE pack is nine tenths of the "
+             "energy bought and half the price of the BYD the earlier quotation used "
+             "alone. Cycle life and efficiencies remain manufacturer figures"))
 
     def degradation_usd_kwh(self) -> float:
         """Throughput cost of storage [$ per kWh discharged].
@@ -197,7 +215,13 @@ class GeneratorSpec:
     #: Generators are quoted per kVA of apparent power while the model sizes active
     #: power, so the quotation and the power factor are held separately rather than
     #: silently conflated: at a factor of 0.8 a kVA buys only 0.8 kW.
-    cost_usd_kva: float = 411.6
+    #:
+    #: 325 000 FCFA/kVA, the delivered price of the 20 kVA set in the operator's
+    #: procurement budget of October 2025. It is the only generator that budget prices
+    #: delivered -- the 30, 66 and 80 kVA sets carry a supplier price without transport,
+    #: customs or logistics -- so every rating of the catalogue below is costed from the
+    #: smallest, and the three ratings share one figure per kVA rather than three.
+    cost_usd_kva: float = 535.1
     power_factor: float = 0.8
     lifetime_years: int = 15
     om_rate: float = 0.080
@@ -267,12 +291,17 @@ class InverterSpec:
     """The hybrid inverter coupling the assets to the load."""
 
     unit_kw: float = 2.5
-    #: 250 000 FCFA/kW quoted on the Beninese market, at 655.957 XOF/EUR and 1.08 USD/EUR.
-    cost_usd_kw: float = 412.0
+    #: 108 894 FCFA/kW, capacity-weighted over the hybrid inverters the operator's October
+    #: 2025 procurement budget buys: nineteen DEYE SUN-20K at 105 000 FCFA/kW and three
+    #: SUN-12K at 150 000, delivered in Benin. The quotation it replaces was 250 000, so
+    #: this is well under half, and it is the price that moves a divided array most.
+    #: Restate through the currency block if the euro-dollar rate is updated.
+    cost_usd_kw: float = 179.3
     lifetime_years: int = 10
     om_rate: float = 0.020
     provenance: Provenance = field(default_factory=lambda: Provenance(
-        source="hybrid inverter, 250 000 FCFA/kW quoted on the Beninese market (2026)",
+        source="hybrid inverter, 108 894 FCFA/kW, capacity-weighted over the DEYE "
+               "SUN-20K and SUN-12K of the operator's procurement budget of October 2025",
         verified=True,
         note="restate through the currency block if the euro-dollar rate is updated"))
 

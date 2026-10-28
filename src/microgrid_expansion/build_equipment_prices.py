@@ -54,16 +54,19 @@ ITEMS = {
     # so a figure weighted over the large sets would price a village's standby generator
     # at the cost of a town's. The others are printed because that scale effect is worth
     # seeing, and because a catalogue of larger units would want them.
+    # The designations below are the budget's own, and the budget is written in French:
+    # accents intentional, since a fragment that drops them matches nothing.
     "generator": (
         ("Groupe électrogène 20 kVA", 20.0, "kVA"),
         ("Groupe électrogène 30 kVA", 30.0, "kVA", False),
-        ("Groupe électrogène 66 kVA", 66.0, "kVA", False),
+        ("Groupe électrogène 66 kVA", 66.0, "kVA", False),   # accents intentional
         ("Groupe électrogène 80 kVA", 80.0, "kVA", False),
     ),
 }
 
-#: What the array needs beyond its modules, which the capacity cost does not carry today.
-#: Allocated over the photovoltaic capacity the same budget buys.
+#: What the array needs beyond its modules. Allocated over the photovoltaic capacity the
+#: same budget buys, and added to the module price, since the sizing spends one figure per
+#: kilowatt of array. The budget's own designations: accents intentional.
 ARRAY_EXTRAS = ("Structure métallique de fixation", "Câble solaire 1x6",
                 "Connecteur module solaire MC4")
 

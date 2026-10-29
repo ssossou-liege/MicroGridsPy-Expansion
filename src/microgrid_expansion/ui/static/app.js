@@ -70,8 +70,12 @@ const info = key => `<button class="info" type="button"
    aria-label="${esc(T("wiz.info"))}" data-tip="${esc(T(key))}">i</button>`;
 
 function figure(k, v, u, note) {
+  // The amount gets a node of its own so that repainting it cannot take the unit with it.
+  // It did: the running total on the demand page was written with textContent onto the
+  // whole value, which emptied the unit beside it, and the figure read 94.3 of nothing.
   return `<div class="figure"><div class="k">${k}</div>
-    <div class="v">${v}${u ? `<span class="u">${u}</span>` : ""}</div>
+    <div class="v"><span class="amount">${v}</span>${
+      u ? `<span class="u">${u}</span>` : ""}</div>
     ${note ? `<div class="n">${note}</div>` : ""}</div>`;
 }
 
@@ -736,11 +740,12 @@ function renderDemand() {
       </div>
     </div>
 
-    ${["productive", "community", "self_consumption"].map(cat => {
+    ${["productive", "community", "self_consumption"].map((cat, i) => {
       const spec = CATEGORIES.find(c => c.key === cat);
       return `<div class="card">
         <div class="field wide">
-          <div><label>${T(spec.title)}</label>${info(spec.hint)}</div>
+          <div><label>${T(spec.title)}</label>${info(spec.hint)}
+            ${i === 0 && !tpl ? `<div class="hint">${T("src.hint")}</div>` : ""}</div>
           <div class="control">
             <div class="roster" id="${ROSTERS[cat].host}"></div>
             <div class="roster-foot" id="${ROSTERS[cat].host}-total"></div>
@@ -788,7 +793,14 @@ function drawRoster(category) {
   const extra = declared.filter(u => !rows.some(c => c.key === u.key))
     .map(u => ({ key: u.key, label: u.label, measured: false, lamps: false }));
 
-  host.innerHTML = [...rows, ...extra].map(c => {
+  // The column is headed once the first row grows it. Two words with nothing above them
+  // answer a question the page never asked, and the answer is the same for every roster,
+  // so the heading repeats and the sentence that explains it does not.
+  const counted = [...rows, ...extra].some(c => !c.lamps && (mix[c.key] || 0) > 0);
+  const head = counted && !tpl
+    ? `<div class="roster-head">${T("src.column")}</div>` : "";
+
+  host.innerHTML = head + [...rows, ...extra].map(c => {
     const n = mix[c.key] || 0;
     if (c.lamps) {
       // Two boxes on one row need saying apart. The unit goes beside each, visibly: a
@@ -813,21 +825,25 @@ function drawRoster(category) {
     const daily = n ? rowDailyKwh(c.key) * n : 0;
     // An unticked row is one line, as it was. Everything else only appears once the row is
     // counted, because until then there is nothing to describe.
-    const choice = !n || tpl ? "" : (c.measured
-      ? `<span class="pair src">
-           <button type="button" class="btn link${source === "calibrated" ? " on" : ""}"
-             data-src="${esc(c.key)}" data-to="calibrated">${T("src.calibrated")}</button>
-           <button type="button" class="btn link${source === "described" ? " on" : ""}"
-             data-src="${esc(c.key)}" data-to="described">${described
-               ? TN("src.described", described.devices.length)
-               : T("src.describe")}</button>
-         </span>`
-      : `<span class="pair src">${described
-           ? `<span class="badge ok" style="font-size:11px">${
-                TN("use.declared", described.devices.length)}</span>`
-           : `<span class="badge warn" style="font-size:11px">${T("use.undescribed")}</span>`}
-         <button type="button" class="btn link declare"
-           data-declare="${esc(c.key)}">${T("use.declare")}</button></span>`);
+    // One shape for every counted row, whether or not we have measured its kind. Two bare
+    // words side by side read as a label and a greyed-out one, and the colouring made it
+    // worse: the half already in force was the blue one, which is the half a reader expects
+    // to be able to click. A framed pair cut in two is the one form that says "choose one
+    // of these", and a use nobody metered keeps the frame with its measured half disabled,
+    // so that the column holds its meaning down the roster instead of changing grammar on
+    // the rows a developer added.
+    const mine = described ? TN("src.described", described.devices.length)
+                           : T("src.describe");
+    const choice = !n || tpl ? "" : `<span class="seg" role="group"
+        aria-label="${esc(T("src.column"))}">
+      <button type="button" class="seg-half${
+          c.measured && source === "calibrated" ? " on" : ""}"${
+          c.measured ? "" : ` disabled title="${esc(T("src.nomeasure"))}"`}
+        data-src="${esc(c.key)}" data-to="calibrated">${T("src.calibrated")}</button>
+      <button type="button" class="seg-half${
+          !c.measured || source === "described" ? " on" : ""}"
+        data-src="${esc(c.key)}" data-to="described">${mine}</button>
+    </span>`;
     return `<label class="pue${n ? " on" : ""}${n && !tpl ? " declarable" : ""}"
         data-class="${esc(c.key)}">
       <input type="checkbox" data-com="${esc(c.key)}"${n ? " checked" : ""}${tpl ? " disabled" : ""}>
@@ -841,13 +857,8 @@ function drawRoster(category) {
   }).join("");
 
   const read = () => { readRosterCounts(category); paintTotals(); };
-  // A click on either of these sits inside the row's own <label>. Without stopping the
-  // event it would also reach the tick and turn the row off on its way.
-  $$(`#${spec.host} [data-declare]`).forEach(button => button.onclick = async e => {
-    e.preventDefault();
-    e.stopPropagation();
-    await describeRow(category, button.dataset.declare);
-  });
+  // A click on one of these sits inside the row's own <label>. Without stopping the event
+  // it would also reach the tick and turn the row off on its way.
   $$(`#${spec.host} [data-src]`).forEach(button => button.onclick = async e => {
     e.preventDefault();
     e.stopPropagation();
@@ -916,7 +927,7 @@ function paintTotals() {
       ? `${T("pue.total", { n: nf(counted) })} · ${nf(total, 1)} ${T("demand.perday")}`
       : T("pue.none");
   }
-  const card = $("#demand .figures .v");
+  const card = $("#demand .figures .amount");
   if (card) card.textContent = nf(whole, 1);
 }
 
@@ -1409,7 +1420,11 @@ function useProblem(name, devices) {
    the households section instead, where the question arises, and the note about where they
    come from stays on that section rather than only here. */
 async function loadArchetypes() {
-  if (!state.site) return;
+  // A project begins with no name, and the route is keyed on one. Asked anyway, the fetch
+  // answered 404 and the page kept the error body as though it were the calibration: the
+  // note under the census read "undefined" and a household counted for nothing until the
+  // site was first saved and the call made again. Nothing threw, so only the console knew.
+  if (!state.site || !state.site.name) return;
   state.arch = await (await fetch(
     `/api/archetypes/${encodeURIComponent(state.site.name)}?lang=${state.lang || ""}`)).json();
   // The behaviours decide what a household draws, so the page's running estimate moves

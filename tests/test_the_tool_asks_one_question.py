@@ -123,6 +123,23 @@ def test_the_page_states_the_zone_it_derived_and_lets_it_be_corrected() -> None:
     assert "utc_offset_hours" in script, "a correction never reaches the server"
 
 
+def test_a_repainted_figure_keeps_the_unit_beside_it() -> None:
+    """94.3 of what?
+
+    The demand page's running total is built once with its unit and repainted whenever a
+    count changes. Painted onto the value as a whole it replaced everything inside, unit
+    included, so the figure carried a unit until the first keystroke and none afterwards.
+    The amount therefore has a node of its own, and the painter writes into that.
+    """
+    script = (STATIC / "app.js").read_text(encoding="utf-8")
+    assert '<span class="amount">' in script, (
+        "the amount has no node of its own, so repainting it takes the unit with it")
+    assert '$("#demand .figures .amount")' in script, (
+        "the running total is painted onto the value rather than onto the amount")
+    assert '$("#demand .figures .v")' not in script, (
+        "a painter still writes over the node that holds the unit")
+
+
 def test_each_page_asks_only_for_what_it_is_about() -> None:
     """A reanalysis knows nothing of households, and nor does the page that fetches it.
 

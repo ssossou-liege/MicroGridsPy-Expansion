@@ -498,12 +498,25 @@ button.door .door-foot { margin-top: 8px; padding-top: 0; }
 /* A counted row carries, beside its count, which description is in force and the way to
    change it. That needs the width of the roster. */
 .roster .pue.declarable { grid-column: 1 / -1; grid-template-columns: 22px 1fr auto 78px; }
-.pue .declare { padding: 0; font-size: 12px; }
-/* The two answers sit side by side and the one in force is marked, so the row reads as a
-   state rather than as two buttons of equal weight. */
-.pue .src { gap: 10px; }
-.pue .src .btn.link { padding: 0; font-size: 12px; color: var(--ink-soft); }
-.pue .src .btn.link.on { color: var(--accent); font-weight: 600; }
+/* Where a row's figure comes from: one frame cut in two, with the half in force filled.
+   Two unframed words could not say they were a choice, and the one in force took the
+   accent colour, so the half a reader could act on was the grey one. */
+.roster-head {
+  grid-column: 1 / -1; text-align: right; font-size: 11px; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--ink-faint); padding-right: 92px;
+}
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px;
+       overflow: hidden; background: var(--surface); }
+.seg-half {
+  appearance: none; border: 0; background: transparent; cursor: pointer;
+  font: inherit; font-size: 12px; color: var(--ink-soft); padding: 5px 12px;
+  white-space: nowrap; transition: background .16s var(--ease), color .16s var(--ease);
+}
+.seg-half + .seg-half { border-left: 1px solid var(--line); }
+.seg-half:hover:not(:disabled):not(.on) { background: var(--surface-sunk); color: var(--ink); }
+.seg-half.on { background: var(--accent); color: #fff; font-weight: 600; }
+.seg-half:disabled { opacity: .4; cursor: not-allowed; }
+.seg-half:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .pue .lbl .sub { display: block; font-size: 11.5px; color: var(--ink-faint);
                  font-weight: 400; margin-top: 2px; }
 .pue .pair { display: flex; align-items: baseline; gap: 6px; }

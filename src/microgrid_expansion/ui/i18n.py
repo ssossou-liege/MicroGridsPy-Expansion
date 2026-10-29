@@ -32,12 +32,20 @@ STRINGS: dict[str, dict[str, str]] = {
               "mesurée le décrit ou si vous préférez le décrire appareil par appareil."},
 
     # ------------------------------------------------- which description is in force
-    "src.calibrated": {"en": "Calibrated", "fr": "Calibré"},
-    "src.described": {"en": "Described ({n} devices)",
-                      "fr": "Décrit ({n} appareils)"},
-    "src.described.one": {"en": "Described (one device)",
-                          "fr": "Décrit (un appareil)"},
-    "src.describe": {"en": "Described", "fr": "Décrit"},
+    # The two halves of the choice, in the reader's words rather than ours. "Calibrated"
+    # is what the archetypes are called inside this project, and a developer filling in a
+    # census has no way to know that, nor against what.
+    "src.column": {"en": "Where the figure comes from",
+                   "fr": "D'où vient le chiffre"},
+    "src.calibrated": {"en": "Measured", "fr": "Mesuré"},
+    "src.described": {"en": "My devices ({n})", "fr": "Mes appareils ({n})"},
+    "src.described.one": {"en": "My devices (1)", "fr": "Mes appareils (1)"},
+    "src.describe": {"en": "My devices", "fr": "Mes appareils"},
+    "src.nomeasure": {
+        "en": "No meter of ours has seen this use, so it has no measured day. Your own "
+              "devices are the only description it can have.",
+        "fr": "Aucun de nos compteurs n'a vu cet usage : il n'a donc pas de journée "
+              "mesurée. Vos propres appareils sont la seule description possible."},
     "src.hint": {
         "en": "A measured day comes from meters in the two reference villages; your own "
               "description comes from what you counted on site. The description replaces "
@@ -526,11 +534,6 @@ STRINGS: dict[str, dict[str, str]] = {
               "en vaut au plus six."},
     "use.lamps": {"en": "lamps lit", "fr": "lampadaires allumés"},
     "use.lamp_watts": {"en": "W each", "fr": "W chacun"},
-    "use.declare": {"en": "Describe its devices", "fr": "Décrire ses appareils"},
-    "use.undescribed": {"en": "no devices yet", "fr": "aucun appareil"},
-    "use.declared": {"en": "{n} devices described", "fr": "{n} appareils décrits"},
-    "use.declared.one": {"en": "one device described",
-                         "fr": "un appareil décrit"},
 
     # ---------------------------------------------------------------- declaring a use
     "use.add": {"en": "Add a use", "fr": "Ajouter un usage"},

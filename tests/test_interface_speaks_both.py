@@ -265,10 +265,16 @@ def test_the_catalogue_carries_no_string_nothing_asks_for() -> None:
 
     So the catalogue is kept clean, and the next orphan means something.
     """
+    # Our own source, and only ours. The vendored map library is excluded because it would
+    # otherwise name our keys by accident: it holds the bare literal "src", which through
+    # the ".hint" rule below covered "src.hint" -- a sentence written in both languages
+    # explaining the one choice this page offers, and which no code ever reached for. A
+    # test that reads code nobody here wrote vouches for strings nobody here uses.
     source = "\n".join(
         path.read_text(encoding="utf-8")
         for path in sorted((STATIC.parent).rglob("*"))
-        if path.suffix in (".py", ".js", ".html") and path.name != "i18n.py")
+        if path.suffix in (".py", ".js", ".html") and path.name != "i18n.py"
+        and "vendor" not in path.parts)
 
     # Keys the source assembles rather than writes out. A prefix will not do: the server
     # builds "use.<key>" for whatever the catalogues hold, so exempting everything under

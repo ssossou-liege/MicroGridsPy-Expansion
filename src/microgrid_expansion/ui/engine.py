@@ -22,11 +22,18 @@ def settings_from(overrides: dict[str, Any]) -> ProjectSettings:
 
 
 def size_site(job: Job, overrides: dict[str, Any],
-              step: int = 0, total_steps: int = 3) -> dict:
+              step: int = 0, total_steps: int = 3,
+              trajectory: str | None = None) -> dict:
     """Certify the sizing of one site over a reference year.
 
     ``step`` and ``total_steps`` let this run as part of a longer piece of work without the
     progress it reports jumping back to zero halfway through.
+
+    ``trajectory`` is the growth the certified year is built on. Given, it is the one the
+    tree put under its own root, so that the proven plant and the plant the tree chooses
+    are answers about the same demand and their difference is the provision made for
+    growth. Omitted, it falls back to the project's own choice, which is the "what if this
+    village grows slowly" study rather than the decision.
     """
     from ..exact.certify import Lattice, certify_exhaustive
     from ..instances import build_site_year
@@ -35,8 +42,9 @@ def size_site(job: Job, overrides: dict[str, Any],
     job.total = total_steps
 
     job.announce("job.build")
+    certified_on = trajectory or settings.demand_trajectory
     instance = build_site_year(
-        settings.site, settings.year, trajectory=settings.demand_trajectory,
+        settings.site, settings.year, trajectory=certified_on,
         maturity_months=settings.maturity_months,
         network_loss_fraction=settings.infrastructure.network_loss_fraction)
     job.done = step + 1
@@ -76,7 +84,10 @@ def size_site(job: Job, overrides: dict[str, Any],
         "binding_ceilings": list(priced.binding_ceilings),
         "battery_life_years": priced.battery_life_years,
         "infrastructure_usd": priced.infrastructure_usd,
-        "trajectory": settings.demand_trajectory,
+        "trajectory": certified_on,
+        # Whether the year was certified on the demand the tree put under its root or on a
+        # trajectory the reader picked. The two are different claims and the sheet says so.
+        "trajectory_from_root": trajectory is not None,
         "currency": _currency(settings),
         "finance": finance.to_dict(),
         "finance_unsubsidised": {"irr": unsubsidised.irr,
@@ -115,10 +126,16 @@ def size_site(job: Job, overrides: dict[str, Any],
 
 
 def plan_expansion(job: Job, overrides: dict[str, Any],
-                   step: int = 0, total_steps: int = 4) -> dict:
+                   step: int = 0, total_steps: int = 4,
+                   fixed_root: dict[str, float] | None = None) -> dict:
     """Build the scenario tree and descend to the expansion plan.
 
     ``step`` and ``total_steps`` place its four stages inside a longer run, as above.
+
+    ``fixed_root`` holds year zero at a plant decided elsewhere and leaves every later
+    node free. What comes back is then not the decision but its price: the expected cost
+    of having committed to that plant, which against the free root is what the tree was
+    worth.
     """
     from ..config import ModelConfig
     from ..exact.tree_certify import certify_tree
@@ -158,7 +175,19 @@ def plan_expansion(job: Job, overrides: dict[str, Any],
 
     architecture = settings.coupling.architectures()[0]
     job.announce("job.solve")
-    programme = build_model(tree, rep, cfg, architecture=architecture, settings=settings)
+    # Held at a plant chosen some other way, the tree answers a different question: what
+    # the whole horizon costs when year zero is already decided. The descendants stay free,
+    # so what it prices is the recourse that plant leaves, not a plan frozen whole.
+    box = None
+    if fixed_root is not None:
+        from ..exact.certify import Lattice
+        from ..exact.first_stage import _box_of
+
+        box = _box_of(fixed_root, Lattice.around(
+            _NodeInstance(tree.node_data[0], settings), settings,
+            architecture=architecture))
+    programme = build_model(tree, rep, cfg, architecture=architecture, settings=settings,
+                            root_box=box)
     solved = solve(programme, settings, solver=cfg.solver)
     if solved.objective == float("inf"):
         raise RuntimeError("no feasible plan under these settings")
@@ -172,7 +201,10 @@ def plan_expansion(job: Job, overrides: dict[str, Any],
 
     job.announce("job.descend")
     certificate = certify_tree(plans, tree, rep, lower,
-                               architecture=architecture, settings=settings, verbose=False)
+                               architecture=architecture, settings=settings,
+                               fixed_nodes=frozenset({0}) if box is not None
+                               else frozenset(),
+                               verbose=False)
     traces = certificate.traces
     from ..exact.certify import _infrastructure_usd_yr
 
@@ -200,6 +232,11 @@ def plan_expansion(job: Job, overrides: dict[str, Any],
         "leaves": len(tree.leaves),
         "stages": sorted(set(tree.stage.values())),
         "reduction_error": tree.reduction_error,
+        # What the root node assumed, which is what the reference year should be certified
+        # against: the branching is one at the first stage, so the root carries a single
+        # representative path rather than an average of the three trajectories.
+        "root_trajectory": tree.node_data[0].trajectory,
+        "trajectory_weights": list(settings.trajectory_weights.as_probabilities()),
         "root_plan": {"pv_kw": root.pv_kw, "pv_ac_kw": getattr(root, "pv_ac_kw", 0.0),
                       "battery_kwh": root.battery_kwh, "inverter_kw": root.inverter_kw,
                       "generator_kw": root.generator_kw},
@@ -237,7 +274,11 @@ def size(job: Job, overrides: dict[str, Any]) -> dict:
     root materially above the certified plant is the cost of the growth being provided for.
     """
     plan = plan_expansion(job, overrides, step=0, total_steps=7)
-    certificate = size_site(job, overrides, step=4, total_steps=7)
+    # Certified on the demand the tree put under its root, not on a trajectory chosen on
+    # the form. Chosen there, the two halves of the answer described different villages and
+    # the gap between them mixed the provision for growth with the reader's own guess.
+    certificate = size_site(job, overrides, step=4, total_steps=7,
+                            trajectory=plan["root_trajectory"])
 
     root, certified = plan["root_plan"], certificate["design"]
     parts = ("pv_kw", "battery_kwh", "inverter_kw", "generator_kw")
@@ -259,11 +300,35 @@ def size(job: Job, overrides: dict[str, Any]) -> dict:
         "proven": {"reference_year": bool(certificate["proven"]), "first_stage": False},
         "expected": plan["expected"],
         "tree": {"nodes": plan["nodes"], "leaves": plan["leaves"],
+                 "root_trajectory": plan["root_trajectory"],
+                 "trajectory_weights": plan["trajectory_weights"],
                  "stages": plan["stages"], "reduction_error": plan["reduction_error"],
                  "bound_usd": plan["bound_usd"], "rule_usd": plan["rule_usd"],
                  "per_node": plan["per_node"]},
         "reference": certificate,
         "agreement": agreement,
+    }
+
+
+def cost_if_built(job: Job, overrides: dict[str, Any],
+                  root: dict[str, float]) -> dict:
+    """What committing to one plant now would cost over the whole horizon.
+
+    Offered on demand rather than computed with every sizing, because it is a second tree
+    solved and descended and it doubles the wait for an answer most readers will not ask
+    for. The one who does ask is weighing the plant certified on the reference year
+    against the plant the tree chose, and the honest comparison is not between the two
+    capacities but between what each commits the community to.
+    """
+    priced = plan_expansion(job, overrides, step=0, total_steps=4, fixed_root=root)
+    return {
+        "site": priced["site"],
+        "currency": priced["currency"],
+        "root_asked": root,
+        "root_held": priced["root_plan"],
+        "expected": priced["expected"],
+        "rule_usd": priced["rule_usd"],
+        "bound_usd": priced["bound_usd"],
     }
 
 

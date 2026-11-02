@@ -34,9 +34,13 @@ class Field:
 
 #: What a developer states about the site. Everything else has a default worth trusting.
 ESSENTIAL: tuple[Field, ...] = (
-    Field("demand_trajectory", "Demand growth", kind="choice",
-          choices=("slow", "central", "fast"),
-          hint="How fast consumption grows with the age of the connection.", key="f.trajectory"),
+    # The three weights replace the single growth choice that used to sit here. That choice
+    # moved nothing: the tree, which decides what to build, never read it, and a reader who
+    # picked "slow" changed only a side study while believing they had changed the answer.
+    Field("trajectory_weights.slow", "Slow growth", "", step=0.05, key="f.weight_slow"),
+    Field("trajectory_weights.central", "Central growth", "", step=0.05,
+          key="f.weight_central"),
+    Field("trajectory_weights.fast", "Fast growth", "", step=0.05, key="f.weight_fast"),
     Field("maturity_months", "Age of the connection", "months", kind="integer",
           hint="Zero for a new site; twelve for a grid a year into service.", key="f.maturity"),
     Field("economics.horizon_years", "Project horizon", "years", kind="integer", key="f.horizon"),
@@ -146,6 +150,15 @@ BALANCE: tuple[Field, ...] = (
 )
 
 #: How the plant is wired and run. Changing these changes what the certificate means.
+#: The one-trajectory study, which is no longer how the answer is reached. It is kept
+#: because "what would this village need if it grew slowly" is a fair question; it is kept
+#: here, away from the decision, because answering it is not taking the decision.
+WHAT_IF: tuple[Field, ...] = (
+    Field("demand_trajectory", "Certify a single trajectory instead", kind="choice",
+          choices=("slow", "central", "fast"), key="f.trajectory"),
+)
+
+
 ADVANCED: tuple[Field, ...] = (
     Field("coupling.architecture", "Coupling", kind="choice",
           choices=("mixed", "dc", "ac", "auto"),
@@ -172,6 +185,7 @@ GROUPS: tuple[tuple[str, str, tuple[Field, ...]], ...] = (
     ("equipment", "Prices and equipment", EQUIPMENT),
     ("balance", "Beyond the plant", BALANCE),
     ("advanced", "Architecture and control", ADVANCED),
+    ("what_if", "A single trajectory, as a study", WHAT_IF),
 )
 
 

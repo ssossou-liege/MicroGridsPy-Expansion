@@ -299,6 +299,7 @@ function renderForm() {
       const raw = el.type === "number" ? parseFloat(el.value) : el.value;
       state.overrides[path] = raw;
       if (path.startsWith("currency.")) { refreshCurrency(); return; }
+      if (path.startsWith("trajectory_weights.")) { shareTheWeight(path, raw); return; }
       const loc = $("#" + el.id + "-loc");
       if (loc && Number.isFinite(raw))
         loc.textContent = `≈ ${nf(raw * currency.per_usd, currency.per_usd > 50 ? 0 : 2)} `
@@ -308,6 +309,37 @@ function renderForm() {
         "changed", String(raw) !== String(state.defaults[path]));
     });
   });
+}
+
+/* The three growth weights are one distribution, so moving one has to move the others.
+   The settings refuse a set that does not sum to one rather than quietly rescaling it,
+   which is right for a file and would be unusable on a form: a reader typing a half into
+   the first box would be told their project is invalid before reaching the second. The
+   other two therefore give way in proportion, and the last of them absorbs the rounding so
+   that what the form sends always sums to one exactly. */
+const WEIGHTS = ["trajectory_weights.slow", "trajectory_weights.central",
+                 "trajectory_weights.fast"];
+
+function shareTheWeight(changed, value) {
+  const kept = Math.min(Math.max(Number.isFinite(value) ? value : 0, 0), 1);
+  const others = WEIGHTS.filter(k => k !== changed);
+  const before = others.reduce((sum, k) => sum + (Number(state.overrides[k]) || 0), 0);
+  const round = x => Math.round(x * 1e6) / 1e6;
+  // Proportionally where there is something to be proportional to, and evenly where the
+  // other two are both zero -- which is where a reader lands who has just set one to one.
+  const first = round(before > 0 ? (1 - kept) * (Number(state.overrides[others[0]]) || 0)
+                                   / before : (1 - kept) / 2);
+  state.overrides[changed] = round(kept);
+  state.overrides[others[0]] = first;
+  state.overrides[others[1]] = round(1 - round(kept) - first);
+  for (const key of WEIGHTS) {
+    const box = $("#f-" + key.replace(/\./g, "-"));
+    // The box being typed in is left alone: rewriting it under the cursor would fight the
+    // reader for it, and its own value is already what they typed.
+    if (box && key !== changed) box.value = state.overrides[key];
+    if (box) box.closest(".field").classList.toggle(
+      "changed", String(state.overrides[key]) !== String(state.defaults[key]));
+  }
 }
 
 function fieldRow(f) {
@@ -451,6 +483,10 @@ function renderSizing(r) {
       ${(ref.binding_ceilings || []).length ? `<p class="hint" style="margin-top:8px">${
         T("res.ceiling_binds", {
           which: ref.binding_ceilings.map(c => T(`res.ceiling.${c}`)).join(", ") })}</p>` : ""}
+      <div id="whatif" style="margin-top:16px">
+        <button class="btn quiet" id="whatif-run">${T("res.whatif")}</button>
+        <p class="hint" style="margin-top:8px">${T("res.whatif.hint")}</p>
+      </div>
     </div>` : ""}
 
     ${ref.dispatch ? `
@@ -534,6 +570,12 @@ function renderSizing(r) {
         <button class="btn quiet" onclick="printReport()">${T("action.print")}</button>
       </div>
     </div>`;
+
+  // Wired here rather than where the job finishes, because the page is also drawn when a
+  // project is reopened, and a button that works only on a fresh run is a button that is
+  // dead most of the time a reader meets it.
+  const whatIf = $("#whatif-run");
+  if (whatIf) whatIf.onclick = askWhatIfCertified;
 }
 
 
@@ -1500,6 +1542,58 @@ function openArchetypes() {
   draw();
 }
 
+/* Two capacities on one page are not two answers: one is the decision and the other is a
+   corroboration on a demand that does not grow. What a reader actually wants to know is
+   what the second would cost if it were built, and that is a second tree held at it. It is
+   asked for rather than computed, because it costs what the first one cost. */
+async function askWhatIfCertified() {
+  const ref = state.result?.reference?.design;
+  if (!ref) return;
+  // Kept beside the answer it is compared with: the job comes back long after the page
+  // has been redrawn, and the expected cost it is measured against has to be the one on
+  // screen when the question was asked.
+  state.whatIfAgainst = state.result.expected.expected_rule_cost_usd;
+  const root = {pv_kw: ref.pv_kw, pv_ac_kw: ref.pv_ac_kw, battery_kwh: ref.battery_kwh,
+                inverter_kw: ref.inverter_kw, generator_kw: ref.generator_kw};
+  const r = await fetch("/api/cost-if-built", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ overrides: state.overrides, root })
+  });
+  const job = await r.json();
+  if (!r.ok) { setState(`<b>${T("state.failed")}</b> ${job.detail ?? ""}`, null); return; }
+  state.job = job;
+  $("#cancel").classList.remove("hidden");
+  buttons(false);
+  poll();
+}
+
+function showWhatIf(result) {
+  const host = $("#whatif");
+  if (!host || !result) return;
+  const gap = result.expected.expected_rule_cost_usd - (state.whatIfAgainst ?? 0);
+  const money = `${nf(Math.abs(gap) * currency.per_usd, 0)} ${currency.code}`;
+  host.innerHTML = `<p>${gap >= 0 ? T("res.whatif.answer", { n: money })
+                                  : T("res.whatif.cheaper", { n: money })}</p>`;
+}
+
+
+/* The futures the year-0 plant was sized against, on the sheet. The weights are not
+   estimated and the plant depends on them, so a reader handed capacities without them is
+   handed a decision whose premise has been left out. */
+function printedWeights() {
+  const w = state.result?.tree?.trajectory_weights;
+  if (!w) return "";
+  const pc = x => `${nf(100 * x, 0)} %`;
+  const root = state.result?.tree?.root_trajectory;
+  return `<p style="color:#444;margin:8px 0 0;font-size:10.5px">`
+    + `<b>${T("print.weights")}</b> ${T("f.weight_slow")} ${pc(w[0])} · `
+    + `${T("f.weight_central")} ${pc(w[1])} · ${T("f.weight_fast")} ${pc(w[2])}`
+    + (root ? ` · ${T("print.weights.root", { t: root === "slow" ? T("choice.slow")
+        : root === "fast" ? T("choice.fast") : T("choice.central") })}` : "")
+    + `</p>`;
+}
+
+
 /* ------------------------------------------------------------------ projects */
 /* What describes each use, on the sheet a lender reads. A plant sized on a measured day and
    one sized on the developer's own count of the devices are two different claims, and the
@@ -1549,6 +1643,7 @@ function printReport() {
         ${T("print.behaviour")} ${state.arch?.adjusted
           ? T("print.arch.adjusted") : T("print.arch.shipped")}
         ${state.arch?.note ?? ""}</p>
+      ${printedWeights()}
       ${printedSources()}
     </div>`;
   const main = $(".main");
@@ -1976,6 +2071,9 @@ function poll() {
     // rather than with a result. Telling them apart by what was asked for, rather than by
     // the shape of what came back, is what keeps an empty result page from appearing.
     if (job.kind === "resource") { await refreshSites(state.site?.name); return; }
+    // A priced plant is not a sizing: it answers about a plant the reader already has on
+    // the page, and taking it for a result would replace the answer with the question.
+    if (job.kind === "cost_if_built") { showWhatIf(job.result); return; }
     state.result = job.result;
     state.reached = PAGES.length;
     renderSizing(job.result);

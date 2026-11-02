@@ -28,6 +28,13 @@ class RunRequest(BaseModel):
     overrides: dict[str, Any] = Field(default_factory=dict)
 
 
+class CostIfBuiltRequest(BaseModel):
+    """A plant to settle year zero at, and the project it would be built in."""
+
+    overrides: dict[str, Any] = Field(default_factory=dict)
+    root: dict[str, float] = Field(default_factory=dict)
+
+
 class SaveRequest(BaseModel):
     name: str
     overrides: dict[str, Any] = Field(default_factory=dict)
@@ -104,6 +111,22 @@ def create_app() -> FastAPI:
         site = overrides.get("site", "?")
         job = registry.start("size", "job.size",
                              lambda j: engine.size(j, overrides), site=site)
+        return job.to_dict()
+
+    @app.post("/api/cost-if-built")
+    def cost_if_built(request: CostIfBuiltRequest) -> dict:
+        """What the horizon costs if year zero is settled at a given plant.
+
+        The answer to the tool's one question is the root of the tree. A reader who wants
+        to know what the plant certified on the reference year would cost instead is
+        asking a fair question and an expensive one: a second tree, solved and descended
+        with the root held. It is therefore asked for rather than computed every time.
+        """
+        overrides = request.overrides
+        site = overrides.get("site", "?")
+        job = registry.start("cost_if_built", "job.cost_if_built",
+                             lambda j: engine.cost_if_built(j, overrides, request.root),
+                             site=site)
         return job.to_dict()
 
     @app.get("/api/productive-classes")

@@ -660,6 +660,31 @@ STRINGS: dict[str, dict[str, str]] = {
 
     # ---------------------------------------------------------------- the sizing
     "action.size": {"en": "Size the plant", "fr": "Dimensionner la centrale"},
+    "job.cost_if_built": {
+        "en": "Costing the certified plant over the whole horizon",
+        "fr": "Chiffrage du parc certifié sur tout l'horizon"},
+    "res.whatif": {"en": "What if the certified plant were built instead?",
+                   "fr": "Et si on construisait plutôt le parc certifié ?"},
+    "res.whatif.hint": {
+        "en": "The answer is the tree's root. This prices the other plant on the page: a "
+              "second tree, solved with year zero held at the certified plant and every "
+              "later node left free. It takes about as long as the sizing did.",
+        "fr": "La réponse est la racine de l'arbre. Ceci chiffre l'autre parc de la page : "
+              "un second arbre, résolu avec l'année zéro figée au parc certifié et tous "
+              "les nœuds suivants laissés libres. Il demande à peu près le temps qu'a pris "
+              "le dimensionnement."},
+    "res.whatif.answer": {
+        "en": "Building the certified plant instead is expected to cost {n} more over the "
+              "horizon, which is what sizing for the futures is worth here.",
+        "fr": "Construire plutôt le parc certifié coûterait {n} de plus sur l'horizon, ce "
+              "qui est ce que vaut ici le dimensionnement pour les avenirs."},
+    "res.whatif.cheaper": {
+        "en": "Building the certified plant instead comes out {n} cheaper, which the "
+              "descent cannot rule out: both figures are upper bounds and this one found "
+              "a better plan from a different start.",
+        "fr": "Construire plutôt le parc certifié ressort {n} moins cher, ce que la "
+              "descente ne peut pas exclure : les deux chiffres majorent, et celui-ci a "
+              "trouvé un meilleur plan depuis un autre point de départ."},
     "job.size": {"en": "Sizing — {site}", "fr": "Dimensionnement, {site}"},
     "page.sizing.title": {"en": "The sizing", "fr": "Le dimensionnement"},
     "page.sizing.lead": {
@@ -927,10 +952,52 @@ STRINGS: dict[str, dict[str, str]] = {
     "group.advanced": {"en": "Architecture and control", "fr": "Architecture et conduite"},
 
     # ---------------------------------------------------------------- form fields
-    "f.trajectory": {"en": "Demand growth", "fr": "Croissance de la demande"},
+    "print.weights": {"en": "Growth weighed as:", "fr": "Croissance pondérée ainsi :"},
+    "print.weights.root": {
+        "en": "year-0 plant certified on the {t} demand the tree put under its root",
+        "fr": "parc de l'année zéro certifié sur la demande {t} placée par l'arbre sous "
+              "sa racine"},
+    "f.weight_slow": {"en": "Slow growth", "fr": "Croissance lente"},
+    "f.weight_central": {"en": "Central growth", "fr": "Croissance centrale"},
+    "f.weight_fast": {"en": "Fast growth", "fr": "Croissance rapide"},
+    "f.weight_slow.hint": {
+        "en": "How likely each growth is held to be. The three are weighed when the tree "
+              "is drawn, so they decide which futures the year-0 plant is sized against, "
+              "and they always add up to one: move one and the other two give way. They "
+              "are not estimated. Two reference villages cannot say that a community is "
+              "likelier to grow slowly than quickly, so an equal third each is a statement "
+              "of that ignorance and not a measurement. Change them to see how much the "
+              "plant depends on not knowing.",
+        "fr": "La vraisemblance accordée à chaque croissance. Les trois sont pesées au "
+              "tirage de l'arbre, donc elles décident des avenirs pour lesquels le parc de "
+              "l'année zéro est dimensionné, et leur somme vaut toujours un : déplacez-en "
+              "une et les deux autres cèdent. Elles ne sont pas estimées. Deux villages de "
+              "référence ne permettent pas de dire qu'une communauté a plus de chances de "
+              "croître lentement que vite ; un tiers chacune énonce cette ignorance et ne "
+              "mesure rien. Modifiez-les pour voir à quel point le parc dépend de ne pas "
+              "savoir."},
+    "f.weight_central.hint": {
+        "en": "See the slow-growth weight. The three sum to one.",
+        "fr": "Voir le poids de la croissance lente. Les trois somment à un."},
+    "f.weight_fast.hint": {
+        "en": "See the slow-growth weight. The three sum to one.",
+        "fr": "Voir le poids de la croissance lente. Les trois somment à un."},
+    "group.what_if": {"en": "A single trajectory, as a study",
+                      "fr": "Une seule trajectoire, à titre d'étude"},
+    "f.trajectory": {"en": "Certify a single trajectory instead",
+                     "fr": "Certifier plutôt une seule trajectoire"},
     "f.trajectory.hint": {
-        "en": "How fast consumption grows with the age of the connection.",
-        "fr": "Rythme auquel la consommation croît avec l'ancienneté du raccordement."},
+        "en": "A study, not the decision. The reference year is normally certified on the "
+              "demand the tree put under its own root, so that the proven plant and the "
+              "plant to build are answers about the same village. Set this to certify one "
+              "assumed growth instead, which answers \"what would be needed if it grew "
+              "like this\" and leaves the year-0 decision where it was.",
+        "fr": "Une étude, non la décision. L'année de référence est normalement certifiée "
+              "sur la demande que l'arbre a placée sous sa racine, de sorte que le parc "
+              "prouvé et le parc à construire répondent du même village. Renseignez ceci "
+              "pour certifier à la place une croissance supposée, ce qui répond à « de "
+              "quoi aurait-on besoin si elle croissait ainsi » et laisse la décision de "
+              "l'année zéro inchangée."},
     "f.maturity": {"en": "Age of the connection", "fr": "Ancienneté du raccordement"},
     "f.maturity.hint": {
         "en": "Zero for a new site; twelve for a grid in service for a year.",

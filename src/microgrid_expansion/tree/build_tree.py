@@ -57,7 +57,8 @@ def build_tree(paths: list[ScenarioPath], cfg: ModelConfig) -> ScenarioTree:
         tree.node_data[node] = NodeData(
             demand=path.demand[year], pv_unit=path.pv_unit[year], t_amb=path.t_amb[year],
             costs=draw.costs, resource=draw.resource, policy=draw.policy,
-            grid_connected=getattr(draw, "grid_connected", False))
+            grid_connected=getattr(draw, "grid_connected", False),
+            trajectory=str(getattr(draw, "trajectory", "central")))
         if parent is not None:
             tree.children[parent].append(node)
 

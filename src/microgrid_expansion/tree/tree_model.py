@@ -22,6 +22,11 @@ class NodeData:
     resource: str               # SSP pathway
     policy: float               # penetration target
     grid_connected: bool = False   # has the national grid reached the village by now
+    #: Which growth trajectory the path this node represents was drawn on. The demand array
+    #: above already embodies it; the label is kept because the year-0 decision has to be
+    #: certifiable against the demand the tree actually put under it, and a certificate
+    #: needs to name the trajectory it was built from rather than infer it from a series.
+    trajectory: str = "central"
 
 
 @dataclass

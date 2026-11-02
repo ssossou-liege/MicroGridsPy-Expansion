@@ -885,6 +885,30 @@ def _rebuild(existing, item):
 
 
 @dataclass
+class TrajectoryWeights:
+    """How likely each growth trajectory is held to be, when the tree is drawn.
+
+    The tree samples one trajectory per path and holds it over the horizon, so these three
+    numbers decide what futures the year-0 decision is sized against. They were implicit
+    before, a third each, written nowhere and therefore neither stated nor questionable.
+
+    They are not estimated, and nothing here pretends otherwise. Two reference villages
+    cannot say that a community is likelier to grow slowly than quickly; an equal third is
+    the honest statement of that ignorance, not a measurement. What they are for is the
+    other direction: a developer who does have a view, or a reader who wants to see how
+    much the answer depends on not having one, can move them and watch the plant move.
+    """
+
+    slow: float = 1.0 / 3
+    central: float = 1.0 / 3
+    fast: float = 1.0 / 3
+
+    def as_probabilities(self) -> tuple[float, float, float]:
+        """In the order ``demand_paths.TRAJECTORIES`` lists them."""
+        return (float(self.slow), float(self.central), float(self.fast))
+
+
+@dataclass
 class ProjectSettings:
     """Everything a project needs beyond its measured data."""
 
@@ -893,6 +917,11 @@ class ProjectSettings:
     demand_trajectory: str = "central"
     maturity_months: int = 12
     seed: int = 0
+
+    #: What the tree is drawn over. ``demand_trajectory`` above is a different question: it
+    #: fixes one trajectory for the reference year, which is a study of a demand assumed,
+    #: while these weigh the futures the expansion plan is sized against.
+    trajectory_weights: TrajectoryWeights = field(default_factory=TrajectoryWeights)
 
     currency: CurrencySettings = field(default_factory=CurrencySettings)
     photovoltaic: PhotovoltaicSpec = field(default_factory=PhotovoltaicSpec)
@@ -949,6 +978,17 @@ class ProjectSettings:
                                  "must lie in [0, 1)")
         if self.demand_trajectory not in ("slow", "central", "fast"):
             raise ValueError(f"unknown demand trajectory {self.demand_trajectory!r}")
+
+        # Refused rather than normalised. Weights that do not sum to one are not a scaling
+        # mistake to be absorbed: they are a reader who has changed one of three numbers and
+        # not the others, and quietly rescaling would answer a question they did not ask.
+        weights = self.trajectory_weights.as_probabilities()
+        if any(w < 0.0 for w in weights):
+            raise ValueError(f"trajectory weights must be non-negative, got {weights}")
+        if abs(sum(weights) - 1.0) > 1e-6:
+            raise ValueError(
+                f"trajectory weights must sum to one, got {sum(weights):.6f} "
+                f"from {weights}")
 
         low, high = self.economics.value_of_lost_load_range_usd_kwh
         if not 0 < low <= self.economics.value_of_lost_load_usd_kwh <= high:

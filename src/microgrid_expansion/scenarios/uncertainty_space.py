@@ -32,6 +32,10 @@ class DemandAxis:
     connections_dist: dict = field(default_factory=dict)
     appliance_stock_dist: dict = field(default_factory=dict)
     usage_pattern_dist: dict = field(default_factory=dict)
+    #: How the growth trajectory is drawn, in the order ``demand_paths.TRAJECTORIES``
+    #: lists them. ``None`` leaves the sampler's own equal thirds, which is what every
+    #: tree drawn before this carried without saying so.
+    trajectory_probabilities: tuple[float, ...] | None = None
 
 
 @dataclass
@@ -71,6 +75,11 @@ class EconomicAxis:
 
     fuel_price_growth_dist: dict = field(default_factory=dict)
     capex_learning_dist: dict = field(default_factory=dict)  # per technology
+    #: How the cost future is drawn, in the order ``cost_paths.COST_SCENARIOS`` lists
+    #: them. Like the growth trajectory it is drawn once per path and held, and like it
+    #: ``None`` leaves the sampler's own equal thirds. It exists so that every axis can be
+    #: made degenerate, which is what the mean-value problem is.
+    scenario_probabilities: tuple[float, ...] | None = None
 
 
 @dataclass
@@ -142,9 +151,16 @@ def space_from_settings(settings) -> "UncertaintySpace":
     axis was written for, a line announced without a date, and only there does the hazard
     apply.
     """
+    # The growth weights belong to the project whatever the grid axis says, so they are
+    # read before the early return: a site with no grid settings at all still has a view,
+    # or an absence of one, about how fast it will grow.
+    weights = getattr(settings, "trajectory_weights", None)
+    demand = DemandAxis(trajectory_probabilities=weights.as_probabilities()) if weights \
+        else DemandAxis()
+
     grid = getattr(settings, "grid", None)
     if grid is None:
-        return UncertaintySpace()
+        return UncertaintySpace(demand=demand)
     stages = len(getattr(grid, "arrival_hazard_by_stage", ()) or ()) or 5
     if grid.connected:
         # Already connected: certain from the start. A hazard of one at the first milestone
@@ -154,7 +170,7 @@ def space_from_settings(settings) -> "UncertaintySpace":
         hazard = tuple(float(h) for h in grid.arrival_hazard_by_stage)
     else:
         hazard = (0.0,) * stages
-    return UncertaintySpace(grid=GridArrivalAxis(
+    return UncertaintySpace(demand=demand, grid=GridArrivalAxis(
         hazard_by_stage=hazard,
         availability=float(grid.availability),
         mean_outage_hours=float(grid.mean_outage_hours)))

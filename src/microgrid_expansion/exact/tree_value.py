@@ -51,6 +51,7 @@ from ..settings import ProjectSettings, default_settings
 from ..solve import solve
 from ..timedomain import reduce_to_rep_days
 from ..tree import build_tree
+from ..tree.tree_model import ScenarioTree
 from .certify import Lattice
 from .first_stage import _box_of, _root_of
 from .tree_certify import certify_tree
@@ -116,6 +117,175 @@ def _mean_value_space(settings: ProjectSettings):
                    policy=policy)
 
 
+def _chain_of(tree: ScenarioTree, leaf: int) -> tuple[ScenarioTree, dict[int, int]]:
+    """The single path from the root to one leaf, as a tree in its own right.
+
+    A scenario known in advance is a chain: the same operating years, the same discounting
+    and the same years each milestone stands for, but nothing to hedge, because there is
+    nothing left to find out. Solved on it, the programme is the cost of having known, and
+    the probability-weighted sum of those costs over the leaves is the wait-and-see value.
+
+    The decomposition is exact rather than approximate: every node of the tree is on the
+    path of each leaf below it, and the leaf probabilities under a node sum to that node's
+    own, so the costs reassemble into the tree's expectation term for term. The chains are
+    carved from one draw, which is what makes the difference between them and the tree
+    readable at this sample size.
+    """
+    path = tree.ancestors(leaf)
+    renumbered = {old: new for new, old in enumerate(path)}
+    chain = ScenarioTree(
+        nodes=list(range(len(path))),
+        stage={renumbered[n]: tree.stage[n] for n in path},
+        parent={renumbered[n]: (renumbered[tree.parent[n]]
+                                if tree.parent[n] is not None else None) for n in path},
+        children={renumbered[n]: ([renumbered[path[i + 1]]] if i + 1 < len(path) else [])
+                  for i, n in enumerate(path)},
+        # Certain, every one of them: the whole point of the chain is that no branch is
+        # left to take.
+        prob={renumbered[n]: 1.0 for n in path},
+        disc={renumbered[n]: tree.disc[n] for n in path},
+        n_years={renumbered[n]: tree.n_years[n] for n in path},
+        leaves=[renumbered[leaf]],
+        node_data={renumbered[n]: tree.node_data[n] for n in path},
+        reduction_error=dict(tree.reduction_error),
+    )
+    return chain, renumbered
+
+
+def wait_and_see(cfg: ModelConfig, weights: tuple[float, float, float],
+                 seed: int, verbose: bool = True) -> dict:
+    """What the plant would cost if the whole future were known before it was built.
+
+    One deterministic problem per leaf, weighted by that leaf's probability. The gap to the
+    stochastic value is the value of perfect information on everything the tree carries at
+    once -- growth, costs, resource, policy and the arrival of the line -- and it bounds
+    what any foreknowledge whatever could be worth here.
+    """
+    started = time.perf_counter()
+    settings = _settings_with(weights)
+    cfg = replace(cfg, seed=seed)
+    tree = build_tree(sample_scenario_paths(cfg, space_from_settings(settings)), cfg)
+    tree.check_probabilities()
+    rep = {n: reduce_to_rep_days(_NodeInstance(tree.node_data[n], settings), cfg.n_rep_days)
+           for n in tree.nodes}
+    architecture = settings.coupling.architectures()[0]
+    built = time.perf_counter() - started
+
+    by_leaf = {}
+    for leaf in tree.leaves:
+        chain, renumbered = _chain_of(tree, leaf)
+        chain_rep = {renumbered[n]: rep[n] for n in tree.ancestors(leaf)}
+        programme = build_model(chain, chain_rep, cfg, architecture=architecture,
+                                settings=settings)
+        solved = solve(programme, settings, solver=cfg.solver)
+        if solved.objective == float("inf"):
+            raise RuntimeError(f"leaf {leaf}: no plan for a future that is known")
+        plans = extract_solution(programme, cfg)
+        certificate = certify_tree(plans, chain, chain_rep, solved.bound,
+                                   architecture=architecture, settings=settings,
+                                   verbose=False)
+        by_leaf[str(leaf)] = {
+            "probability": float(tree.prob[leaf]),
+            "programme": {"expected_usd": float(solved.objective),
+                          "bound_usd": float(solved.bound),
+                          "root": _root_of(plans, chain)},
+            "automaton": {"expected_usd": float(certificate.z_rule),
+                          "root": _root_of(certificate.plans, chain)},
+        }
+        if verbose:
+            print(f"    leaf {leaf:3d}  p={tree.prob[leaf]:.4f}  "
+                  f"programme {solved.objective:>11,.0f} $   "
+                  f"automaton {certificate.z_rule:>11,.0f} $", flush=True)
+
+    out = {"weights": list(weights), "seed": seed, "leaves": len(by_leaf),
+           "seconds_building": round(built, 1),
+           "seconds_total": round(time.perf_counter() - started, 1),
+           "by_leaf": by_leaf}
+    for oracle in ("programme", "automaton"):
+        out[oracle] = {"wait_and_see": sum(v["probability"] * v[oracle]["expected_usd"]
+                                           for v in by_leaf.values())}
+    return out
+
+
+#: A capacity has grown when it has grown at all. Counts are integers of half a kilowatt
+#: and of five kilowatt-hours, so nothing a plan actually does hides under this.
+GREW_BY = 1e-6
+
+#: The capacities an extension can consist of.
+CAPACITIES = ("pv_kw", "pv_ac_kw", "battery_kwh", "inverter_kw", "generator_kw")
+
+
+def _first_extension(plans: dict, tree, cfg: ModelConfig) -> dict:
+    """When the plan first adds capacity, and how probable each date is.
+
+    Read along paths rather than over nodes, because a date is a thing that happens to a
+    village and a village lives on one path. A path that never extends is counted as such
+    and kept out of the average date: folded in as a zero it would report an early
+    extension, and dropped silently it would report the average date of the futures that
+    did extend as though it were the average date.
+    """
+    years = tuple(cfg.stage_years)
+    extends = {}
+    for node in tree.nodes:
+        parent = tree.parent[node]
+        if parent is None:
+            continue
+        extends[node] = any(
+            float(getattr(plans[node], part, 0.0))
+            > float(getattr(plans[parent], part, 0.0)) + GREW_BY for part in CAPACITIES)
+
+    by_year: dict[int, float] = {}
+    never = 0.0
+    for leaf in tree.leaves:
+        first = next((n for n in tree.ancestors(leaf) if extends.get(n)), None)
+        probability = float(tree.prob[leaf])
+        if first is None:
+            never += probability
+            continue
+        year = years[tree.stage[first]]
+        by_year[year] = by_year.get(year, 0.0) + probability
+
+    extended = sum(by_year.values())
+    return {
+        "probability_by_year": {str(y): round(by_year[y], 4) for y in sorted(by_year)},
+        "earliest_year": min(by_year) if by_year else None,
+        "never_pct": round(100.0 * never, 2),
+        "expected_year_when_it_happens": (
+            round(sum(y * p for y, p in by_year.items()) / extended, 2)
+            if extended > 0 else None),
+    }
+
+
+def _unserved(tree, unserved_kwh: dict[int, float], demand_kwh: dict[int, float]) -> dict:
+    """Energy the plant does not serve over the horizon, expected over the tree.
+
+    Weighted by probability and by the years each node stands for, and not discounted: this
+    is energy, and a kilowatt-hour a household does not get in year fifteen is not worth
+    less to that household than one in year one. The denominator is each oracle's own
+    demand, because they do not read the same year -- the programme dispatches the
+    representative days it was reduced to, the automaton runs the eight thousand hours.
+    """
+    short = served = 0.0
+    for node in tree.nodes:
+        weight = float(tree.prob[node]) * float(tree.n_years[node])
+        short += weight * float(unserved_kwh[node])
+        served += weight * float(demand_kwh[node])
+    return {"unserved_kwh": round(short, 1), "demand_kwh": round(served, 1),
+            "share_pct": round(100.0 * short / served, 4) if served > 0 else None}
+
+
+def _programme_unserved(programme, cfg: ModelConfig) -> dict[int, float]:
+    """Unserved energy per node and per year, read off the solved programme."""
+    import numpy as np
+    import xarray as xr
+
+    v, c = programme.variables, programme.coords
+    days = xr.DataArray(np.asarray(c.hour_weight, dtype=float),
+                        coords={"step": c.step}, dims="step")
+    solution = v["unserved"].solution
+    return {int(n): float((solution.sel(node=int(n)) * days).sum()) for n in c.node}
+
+
 def run_case(case: Case, cfg: ModelConfig, mean_value: bool = False,
              verbose: bool = True) -> dict:
     """Draw the tree this case asks for, and cost it under both oracles."""
@@ -129,6 +299,10 @@ def run_case(case: Case, cfg: ModelConfig, mean_value: bool = False,
     rep = {n: reduce_to_rep_days(_NodeInstance(tree.node_data[n], settings), cfg.n_rep_days)
            for n in tree.nodes}
     root_node = min(tree.nodes)
+    # The demand the programme actually dispatches, node by node: the representative days
+    # it was reduced to, weighted by the days each stands for.
+    rep_demand = {n: float((rep[n].demand.sum(axis=1) * rep[n].weight).sum())
+                  for n in tree.nodes}
     built = time.perf_counter() - started
 
     box = None
@@ -153,6 +327,7 @@ def run_case(case: Case, cfg: ModelConfig, mean_value: bool = False,
             plans, tree, rep, solved.bound, architecture=architecture, settings=settings,
             fixed_nodes=frozenset({root_node}) if box is not None else frozenset(),
             verbose=False)
+        traces = certificate.traces
         outcomes.append({
             "architecture": architecture,
             # The value reached and the bound that guarantees it, kept apart. They coincide
@@ -161,9 +336,17 @@ def run_case(case: Case, cfg: ModelConfig, mean_value: bool = False,
             "programme": {"expected_usd": float(solved.objective),
                           "bound_usd": float(solved.bound),
                           "root": _root_of(plans, tree),
+                          "unserved": _unserved(tree, _programme_unserved(programme, cfg),
+                                                rep_demand),
+                          "first_extension": _first_extension(plans, tree, cfg),
                           "seconds": round(solved_in, 1)},
             "automaton": {"expected_usd": float(certificate.z_rule),
                           "root": _root_of(certificate.plans, tree),
+                          "unserved": _unserved(
+                              tree, {n: t["unserved_kwh"] for n, t in traces.items()},
+                              {n: t["served_kwh"] + t["unserved_kwh"]
+                               for n, t in traces.items()}),
+                          "first_extension": _first_extension(certificate.plans, tree, cfg),
                           "seconds": round(time.perf_counter() - at, 1),
                           "evaluations": certificate.evaluations},
         })
@@ -232,6 +415,11 @@ def draw_figure(stored: dict, path: Path, oracle: str = "automaton") -> Path:
         ax.set_xticks(range(len(shown)))
         ax.set_xticklabels([n.replace("_", "\n") for n in shown], fontsize=7.5)
         ax.set_title(f"{label} [{unit}]", fontsize=10)
+        # A capacity that never moves is drawn against a scale that says so. Left to fit
+        # itself, the axis spreads one value over a decimal range and a flat line acquires
+        # the look of a measurement.
+        if max(values) - min(values) < 1e-9:
+            ax.set_ylim(0.0, 1.3 * max(values) if max(values) > 0 else 1.0)
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
         ax.grid(axis="y", alpha=0.25, lw=0.6)
@@ -267,6 +455,11 @@ def derive(stored: dict) -> dict:
             continue
         rp = reference[oracle]["expected_usd"]
         here["RP"] = rp
+        # What the stochastic plant does to the village, beside what it costs it. A
+        # comparison of expected costs alone would let a plant buy its saving out of
+        # somebody's evenings.
+        here["RP_unserved"] = reference[oracle].get("unserved")
+        here["RP_first_extension"] = reference[oracle].get("first_extension")
 
         # The value of the stochastic solution, one per plant the root was held at.
         vss = {}
@@ -278,6 +471,8 @@ def derive(stored: dict) -> dict:
                 "EEV": eev, "VSS": eev - rp,
                 "VSS_pct": 100.0 * (eev - rp) / max(rp, 1.0),
                 "ordering_holds": eev >= rp - 1e-6,
+                "unserved": case[oracle].get("unserved"),
+                "first_extension": case[oracle].get("first_extension"),
             }
         if vss:
             here["vss"] = vss
@@ -294,6 +489,17 @@ def derive(stored: dict) -> dict:
             here["EVPI_growth_pct"] = 100.0 * (rp - wait_and_see) / max(rp, 1.0)
             here["ordering_holds"] = wait_and_see <= rp + 1e-6
 
+        # And if everything were known, not only the growth. Carved from the one tree the
+        # stochastic value was computed on, so the difference is a difference between two
+        # readings of the same draw, which the trajectory-wise version above is not.
+        everything = stored.get("wait_and_see_everything")
+        if everything and oracle in everything:
+            total = everything[oracle]["wait_and_see"]
+            here["wait_and_see_everything"] = total
+            here["EVPI_total"] = rp - total
+            here["EVPI_total_pct"] = 100.0 * (rp - total) / max(rp, 1.0)
+            here["ordering_holds_total"] = total <= rp + 1e-6
+
         # What the same question answers when only the seed moves.
         spread = [c[oracle]["expected_usd"] for name, c in cases.items()
                   if name.startswith("noise_seed")]
@@ -304,6 +510,23 @@ def derive(stored: dict) -> dict:
                                  / max(min(spread), 1.0)}
         out[oracle] = here
     return out
+
+
+def _said(unserved: dict | None, extension: dict | None) -> str:
+    """The two indicators in one line, for the sheet a reader reads before the file."""
+    parts = []
+    if unserved:
+        parts.append(f"unserved {unserved['share_pct']:.3f} % "
+                     f"({unserved['unserved_kwh']:,.0f} kWh over the horizon)")
+    if extension:
+        if extension["earliest_year"] is None:
+            parts.append("no path extends")
+        else:
+            dates = ", ".join(f"year {y} with p={p:.2f}"
+                              for y, p in extension["probability_by_year"].items())
+            parts.append(f"first extension {dates}; never on {extension['never_pct']:.0f} %"
+                         " of paths")
+    return "   ".join(parts)
 
 
 def _head() -> str:
@@ -334,8 +557,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--site", default="Samionta")
     parser.add_argument("--question", default="noise",
-                        choices=["noise", "weights", "mean-value", "fixed", "figure",
-                                 "summary"],
+                        choices=["noise", "weights", "mean-value", "fixed",
+                                 "wait-and-see", "figure", "summary"],
                         help="which block of cases to run")
     parser.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2],
                         help="for the noise block")
@@ -373,16 +596,22 @@ def main(argv: list[str] | None = None) -> int:
             if not isinstance(block, dict) or "RP" not in block:
                 continue
             print(f"\n== {oracle} ==")
-            print(f"   RP {block['RP']:,.0f} $")
+            print(f"   RP {block['RP']:,.0f} $   {_said(block.get('RP_unserved'), block.get('RP_first_extension'))}")
             for name, v in (block.get("vss") or {}).items():
-                print(f"   EEV({name:14s}) {v['EEV']:>12,.0f} $   "
-                      f"VSS {v['VSS']:>10,.0f} $ ({v['VSS_pct']:5.2f} %)"
+                print(f"   EEV({name:20s}) {v['EEV']:>12,.0f} $   "
+                      f"VSS {v['VSS']:>10,.0f} $ ({v['VSS_pct']:6.2f} %)"
                       f"{'' if v['ordering_holds'] else '   ORDERING FAILS'}")
+                print(f"        {_said(v.get('unserved'), v.get('first_extension'))}")
             if "EVPI_growth" in block:
                 print(f"   wait and see {block['wait_and_see']:,.0f} $   "
                       f"EVPI(growth) {block['EVPI_growth']:,.0f} $ "
                       f"({block['EVPI_growth_pct']:.2f} %)"
                       f"{'' if block['ordering_holds'] else '   ORDERING FAILS'}")
+            if "EVPI_total" in block:
+                print(f"   everything known {block['wait_and_see_everything']:,.0f} $   "
+                      f"EVPI(total) {block['EVPI_total']:,.0f} $ "
+                      f"({block['EVPI_total_pct']:.2f} %)"
+                      f"{'' if block['ordering_holds_total'] else '   ORDERING FAILS'}")
             if "noise_usd" in block:
                 n = block["noise_usd"]
                 print(f"   seed to seed {n['span']:,.0f} $ ({n['span_pct']:.2f} %)")
@@ -394,6 +623,17 @@ def main(argv: list[str] | None = None) -> int:
         drawn = draw_figure(json.loads(source.read_text()),
                             source.with_name(f"value_of_tree_{args.site.lower()}.png"))
         print(f"written {drawn}")
+        return 0
+
+    if args.question == "wait-and-see":
+        out = args.out or out_default
+        stored = json.loads(out.read_text()) if out.exists() else {}
+        stored.setdefault("site", args.site)
+        stored["wait_and_see_everything"] = wait_and_see(
+            cfg, TRAJECTORY_WEIGHTS["thirds"], args.seed)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(stored, indent=2), encoding="utf-8")
+        print(f"written {out}")
         return 0
 
     mean_value = args.question == "mean-value"

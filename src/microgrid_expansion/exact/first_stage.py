@@ -38,6 +38,7 @@ import math
 import time
 from dataclasses import dataclass, field, replace
 
+from .. import config
 from ..config import ModelConfig
 from ..settings import ProjectSettings, default_settings
 from ..timedomain.rep_days import RepDays
@@ -375,14 +376,44 @@ def _root_of(plans: dict, tree: ScenarioTree) -> dict[str, float]:
 
 
 def _box_of(root: dict[str, float], lattice: Lattice) -> RootBox:
-    """The singleton box holding exactly this plant."""
-    unit = lambda value, size: int(round(value / size))          # noqa: E731
-    return RootBox(
-        n_pv=(unit(root["pv_kw"], lattice.pv_unit_kw),) * 2,
-        n_batt=(unit(root["battery_kwh"], lattice.batt_unit_kwh),) * 2,
-        n_inv=(unit(root["inverter_kw"], lattice.inv_unit_kw),) * 2,
-        n_pv_ac=(unit(root["pv_ac_kw"], lattice.pv_unit_kw),) * 2,
+    """The singleton box holding this plant, rounded onto the lattice of modules.
+
+    A plant handed in from elsewhere does not always stand on that lattice. Where the split
+    of the array between the two buses is derived rather than searched, the part the hybrid
+    inverter admits lands exactly on the converter's ceiling -- so many kilowatts per
+    kilowatt of inverter -- and that ceiling falls between two modules more often than not.
+    Rounded to the nearest module it rounds up, a quarter of a kilowatt above the ceiling it
+    was sitting on, and the programme that is asked to hold the root there has no feasible
+    plan at all. The plant was buildable; only its arithmetic was off the grid.
+
+    So the field is rounded rather than each of its parts: the battery bus takes as many
+    whole modules as fit under the converter, and the rest of the field goes to the load's
+    bus, which is where a module the converter cannot admit would have to stand in any case.
+    The total array is preserved to the module, and a plant already on the lattice does not
+    move, its remainder being nothing.
+    """
+    size = lattice.pv_unit_kw
+    on_battery_bus = int(math.floor(root["pv_kw"] / size + 1e-9))
+    field = int(round((root["pv_kw"] + root["pv_ac_kw"]) / size))
+    box = RootBox(
+        n_pv=(on_battery_bus,) * 2,
+        n_batt=(int(round(root["battery_kwh"] / lattice.batt_unit_kwh)),) * 2,
+        n_inv=(int(round(root["inverter_kw"] / lattice.inv_unit_kw)),) * 2,
+        n_pv_ac=(max(field - on_battery_bus, 0),) * 2,
         generator_ratings=(float(root["generator_kw"]),))
+
+    # Said here rather than discovered as an infeasible programme forty minutes later. A
+    # converter too small for the array it is given is a plant that cannot be built, and the
+    # reader who asked for it is owed the reason.
+    inverter = box.n_inv[0] * lattice.inv_unit_kw
+    for part, admitted in ((box.n_pv[0], config.DC_AC_RATIO_MAX),
+                           (box.n_pv_ac[0], config.AC_RATIO_MAX)):
+        if part * size > admitted * inverter + 1e-9:
+            raise ValueError(
+                f"the plant given has {part * size:.2f} kW of array on a bus that admits "
+                f"{admitted * inverter:.2f} kW with {inverter:.1f} kW of converter; "
+                "no plan can hold a root there")
+    return box
 
 
 def certify_first_stage(

@@ -67,8 +67,12 @@ def test_splitting_terminates_at_a_single_plant(tiny) -> None:
 
 def test_a_box_of_one_names_the_plant_it_holds(tiny) -> None:
     _, _, _, _, lattice = tiny
+    # Converter enough for the array it is given. Ten kilowatts of field behind five of
+    # inverter is not a plant a box can hold, because it is not a plant: the ratio ceiling
+    # refuses it wherever it appears, and a box of one around it would name a design the
+    # programme has to declare infeasible.
     root = {"pv_kw": 10.0, "pv_ac_kw": 0.0, "battery_kwh": 25.0,
-            "inverter_kw": 5.0, "generator_kw": 8.0}
+            "inverter_kw": 10.0, "generator_kw": 8.0}
     box = _box_of(root, lattice)
     assert box.is_singleton
     low = box.corner(low=True)

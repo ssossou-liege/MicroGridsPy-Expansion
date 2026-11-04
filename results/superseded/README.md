@@ -34,3 +34,18 @@ to be restated on the corrected pricing, and is the only way these figures becom
 again.
 
 Until then: the margins above are the finding; the costs beside them are not.
+
+## The nine records of 2026-11-03, set aside before the demand was recalibrated
+
+`2026-11-03_before_recalibration/` holds the six certificates, the two tree summaries and
+the value-of-the-tree study as they stood when the meter archive was extended from 1 June
+to 1 November 2026 and the whole calibration chain was re-run on it. They were in the
+working tree and uncommitted, so they existed nowhere else; the recalibration overwrites
+the files they were written to. The study's figure is beside it, uncommitted as every
+figure in this repository is, so that the record it was drawn from is not alone.
+
+They are kept because they are the last state computed on the shorter record, and a reader
+comparing the certificates before and after wants both halves of that comparison. They are
+not citable on their own: they predate the extended archive, they predate the correction
+that attached each measured hourly shape to the archetype whose appliances it belongs to,
+and the trees among them predate the landed equipment prices.

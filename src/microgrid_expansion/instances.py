@@ -86,6 +86,7 @@ _GENERATION_SOURCES = ("generator.py", "growth.py", "productive.py", "archetypes
 #: year for a change that cannot reach one.
 _OFFLINE_SOURCES = ("__init__.py", "build_archetype_shapes.py",
                     "build_community_profiles.py",
+                    "build_meter_archive.py",
                     "build_mixture_probabilities.py",
                     "build_monthly_household_clusters.py",
                     "build_productive_profiles.py",

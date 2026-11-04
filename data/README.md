@@ -8,8 +8,8 @@ from, and what produces it.
 |---|---|---|---|
 | `demand/household_customers.csv` | Operator customer roster | 141 sampled households: code, socio-economic type (HH1–HH3), site, connection date | ✅ |
 | `demand/customer_info.parquet` | Operator customer database | Customer attributes for the two reference sites | ✅ |
-| `demand/gbo_meter_readings.parquet` | Smart-meter archive, Gbowele | Quarter-hourly per-customer power readings | ✅ |
-| `demand/sam_meter_readings.parquet` | Smart-meter archive, Samionta | Quarter-hourly per-customer power readings | ✅ |
+| `demand/gbo_meter_readings.parquet` | Built by `demand/build_meter_archive.py` from the operator's monthly exports | Quarter-hourly per-customer power readings, Gbowele | ✅ |
+| `demand/sam_meter_readings.parquet` | Built by `demand/build_meter_archive.py` from the operator's monthly exports | Quarter-hourly per-customer power readings, Samionta | ✅ |
 | `ramp_params/reference/*.csv` | Produced by `src/microgrid_expansion/demand/` | Monthly household features, behavioural cluster assignments, per-site monthly cluster summaries, global cluster profiles, and the hierarchical mixture probabilities | ✅ |
 | `ramp_params/reference/cluster_params.csv` | RAMP calibration on the same meter data | Appliance parameters (power, count, functioning time, use windows, duty cycle) for each of the 4 behavioural clusters | ✅ |
 | `irradiance/samionta_weather_hourly_2016_2025.csv` | ERA5-Land via the Copernicus Climate Data Store | Hourly irradiance, 2 m air temperature and 10 m wind, Samionta (7.0955 N, 2.2446 E), 2016–2025 | ✅ |
@@ -26,21 +26,50 @@ from, and what produces it.
 
 ## Reproducibility
 
-The calibration in `ramp_params/reference/` is regenerated from the raw meter readings by
+The meter archive both of them read is itself regenerated from the operator's monthly
+exports, which live outside this repository and are therefore named on the command line:
+
+```bash
+python -m microgrid_expansion.demand.build_meter_archive \
+    --exports <directory of monthly exports> --meters <the operator's register of meters>
+```
+
+It reports, before writing, how much of the archive it replaces comes back unchanged, and
+`--verify` writes nothing at all. The exports timestamp each reading with a UTC offset and
+the archive carries site local time, an hour ahead; nothing in the files tells the two
+apart, so that check is the only thing standing between a calibration and an hour's shift
+in every load it is fitted to.
+
+The calibration in `ramp_params/reference/` is regenerated from the archive by the
+following chain, in this order: each step reads what the ones before it wrote.
 
 ```bash
 python -m microgrid_expansion.demand.build_monthly_household_clusters
+python -m microgrid_expansion.demand.partition
+python -m microgrid_expansion.demand.build_archetype_shapes
+python -m microgrid_expansion.demand.maturity
 python -m microgrid_expansion.demand.build_mixture_probabilities
+python -m microgrid_expansion.demand.build_productive_profiles
+python -m microgrid_expansion.demand.build_community_profiles
+python -m microgrid_expansion.demand.calibration
 ```
 
-Both scripts write to `ramp_params/reference/` by default and are deterministic given
-their default settings. `tests/test_demand_calibration.py` re-runs the segmentation and
-asserts that it reproduces the committed CSVs exactly, so that the calibration and the
-code that produces it cannot drift apart unnoticed.
+Every step writes to `ramp_params/reference/` by default and is deterministic given its
+default settings, except the last: the scaling factors are fitted against RAMP simulations
+and move by the Monte-Carlo noise of sixty households from one run to the next.
+`tests/test_demand_calibration.py` re-runs the segmentation and asserts that it reproduces
+the committed CSVs exactly, so that the calibration and the code that produces it cannot
+drift apart unnoticed.
 
-The robust-outlier threshold must be the same in both scripts (currently 4.5): the
-mixture model assigns observations to the clusters the first script defines, so a
-mismatch would silently segment the same households two different ways.
+Two of these tables are also written on first use when they are absent, which is why a
+rebuild runs the chain rather than relying on a stale file being noticed: an extended
+archive leaves `archetype_profiles.csv` and `mixture_by_maturity.csv` describing the
+shorter record, and nothing asks for them again.
+
+The robust-outlier threshold must be the same in the segmentation and in the mixture
+model (currently 4.5): the mixture model assigns observations to the clusters the
+segmentation defines, so a mismatch would silently segment the same households two
+different ways.
 
 ## Parameters, and how they declare their own standing
 

@@ -35,6 +35,9 @@ SUFFIXES = {".py", ".js", ".md", ".html", ".css", ".toml", ".yml", ".yaml", ".cf
 EXEMPT = {
     "src/microgrid_expansion/ui/i18n.py",           # the catalogue: both languages, by design
     "tests/test_productive_demand.py",              # survey strings, transcribed as written
+    # Three dozen lines of the operator's bill of quantities, quoted with its own
+    # designations because a fragment that does not match them is the defect under test.
+    "tests/test_the_balance_of_plant_is_priced_with_the_capacity.py",
     "tests/test_the_repository_is_in_english.py",   # this file names what it forbids
 }
 
@@ -43,9 +46,11 @@ EXEMPT_DIRS = ("vendor/",)
 
 ACCENTED = re.compile(r"[éèêëàâäçôöûùüîïœÉÈÊËÀÂÄÇÔÖÛÙÜÎÏŒ]")
 
-#: A line may keep its accented characters by saying why, on the line itself or in the
-#: comment above it. Used where the accents are not prose at all -- a character class that
-#: lets a user name a project in their own language.
+#: A line may keep its French by saying why, on the line itself or in the comment above it.
+#: Used where the French is not prose at all: a character class that lets a user name a
+#: project in their own language, or an item of the operator's bill of quantities quoted so
+#: that a line of it can be found again. Both tests below honour it, because a designation
+#: like "Rack de 06 batteries" carries no accent and is no more translatable for it.
 PERMITTED = "accents intentional"
 
 #: Words that are French and are not also English, abbreviations, or identifiers. Kept short
@@ -127,7 +132,10 @@ def test_no_unaccented_french_prose_in_the_source() -> None:
     """The other half: "le plancher de service" carries no accent at all."""
     offenders = []
     for path in _files():
-        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        lines = path.read_text(encoding="utf-8").splitlines()
+        for number, line in enumerate(lines, 1):
+            if PERMITTED in "\n".join(lines[max(0, number - 4):number]):
+                continue
             hits = [w for w in FRENCH_WORDS.findall(line)
                     if not LOOKS_FRENCH_IS_ENGLISH.fullmatch(w)]
             phrase = FRENCH_PHRASES.search(line)

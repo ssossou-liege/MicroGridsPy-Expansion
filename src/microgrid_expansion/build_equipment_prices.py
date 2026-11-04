@@ -18,10 +18,22 @@ script reports as the landed price and what the settings carry. The local column
 beside it because it is what a developer without that capacity would pay, and the gap
 between the two --- a factor of one and a half to three and a half --- is worth seeing.
 
-What this does *not* cover, and the sizing therefore still understates: the mounting
-structure, the direct-current cabling and connectors, and every hour of labour. Those sit in
-the budget too and are reported, so that widening the basis is a decision someone takes
-rather than an omission nobody noticed.
+Beside each family of units the script reports the balance of plant that scales with it:
+what the array needs beyond its modules and what the pack needs beyond its cells. Those are
+reported separately and then added, because the sizing spends one figure per kilowatt and
+one per kilowatt-hour, and a balance of plant left out of them is a discount the sizing
+grants itself. No such basket exists for the inverter: the budget prices nothing per
+kilowatt of conversion that the array's or the pack's basket does not already carry, and
+saying so here is better than leaving the absence to look like an oversight.
+
+What this does *not* cover, and the sizing therefore still understates:
+
+* *every hour of labour.* The operator's turnkey construction contract covers it, which
+  makes it a cost per site and not a cost per kilowatt. It belongs to the project perimeter
+  that the manuscript prices, not to a capacity cost the sizing multiplies.
+* *what is bought once per site*, listed in ``NOT_PROPORTIONAL`` below with the reason. A
+  plant twice the size buys one of each of them, so allocating them over capacity would
+  make the second kilowatt pay for the first one's cabinet.
 
 The script is deterministic given its inputs and writes nothing it is not asked to.
 """
@@ -67,8 +79,80 @@ ITEMS = {
 #: What the array needs beyond its modules. Allocated over the photovoltaic capacity the
 #: same budget buys, and added to the module price, since the sizing spends one figure per
 #: kilowatt of array. The budget's own designations: accents intentional.
+#:
+#: The second group is the direct side's protection and distribution, which the structure
+#: and the cable do not carry: a string needs its fuse, its holder and its surge arrester,
+#: the strings come together in a board sized by their number, and every module frame is
+#: earthed. All of it is bought by the string or by the module, so all of it scales with the
+#: array and none of it with the site. The budget's own designations: accents intentional.
 ARRAY_EXTRAS = ("Structure métallique de fixation", "Câble solaire 1x6",
-                "Connecteur module solaire MC4")
+                "Connecteur module solaire MC4",
+                # Protection of the strings; accents intentional.
+                "Fusible 25A-1000VDC", "Porte fusibles 2P 25 A", "Parafoudre PV_T2",
+                # Where the strings come together; accents intentional.
+                "Coffret électrique de 6 modules", "Coffret électrique de 18 modules",
+                "Coffret électrique de 30 modules",
+                # The comb, and the frames' earth; accents intentional.
+                "Peigne électrique horizontal 8 modules",
+                "Boulon de mise à la terre des modules PV")
+
+#: What the pack needs beyond its cells, allocated over the storage capacity the budget
+#: buys. A pack is racked, its modules are bridged by busbars on their supports, its
+#: direct side is broken by a fused isolator, and it is wired to the converters in cable
+#: sized by current with a lug at each end: one rack, one busbar and one run of cable per
+#: so many kilowatt-hours, which is what makes the basket proportional.
+#:
+#: The lugs are entered by section rather than by what they terminate, because the budget
+#: does not say: the sections from 16 to 95 mm² are the battery cable's and are taken here,
+#: while the 6 and 10 mm² lines are left out of both baskets since nothing in the budget
+#: attaches them to the pack or to the array. One line of 16 mm² is excluded by name below,
+#: being the network's and not the pack's. The budget's own designations, quoted as it
+#: writes them: accents intentional.
+BATTERY_EXTRAS = ("Rack de 06 batteries", "Busbars batterie",
+                  "Support de fixation Busbar batterie", "BATFuse", "H07-VK",
+                  # The lugs, by section; accents intentional.
+                  "Cosse à sertir de 16", "Cosse à sertir de 25", "Cosse à sertir de 35",
+                  "Cosse à sertir de 70", "Cosse à sertir de 95")
+
+#: Balance of plant of the same budget that is deliberately *not* in either basket, with
+#: the reason. These are read by no fragment above, and a test holds that.
+#:
+#: Everything here is bought once per site, whatever the plant's size: the battery
+#: management unit, the cabinet and its copper, the alternating side's protection and
+#: changeover, the supervision, the cameras, the lightning protection, the production
+#: meters and the plant's own service equipment. A village with twice the array buys one of
+#: each, so they are a cost per site and belong to the project perimeter beside the civil
+#: works and the network, where the manuscript prices them.
+#:
+#: The charge controller is left out for a different reason: the budget prices the Victron
+#: 250/100 at 25 000 XOF, a seventh of what the unit sells for anywhere, and a price that
+#: cannot be right should not be carried into a sizing on the grounds that it is written
+#: down. The budget's own designations: accents intentional.
+NOT_PROPORTIONAL = ("Battery Box BMU BYD", "Armoire électrique", "Jeu de barre en cuivre",
+                    # The cabinet's copper and the changeover; accents intentional.
+                    "Support pour jeu de barres", "Barre de terre en cuivre",
+                    "Inverseur de source manuel", "Cerbo GX", "GX Touch", "Caméra",
+                    # Supervision, lightning, metering, service; accents intentional.
+                    "Ensemble paratonnerre", "Compteurs powerhouse", "Nova",
+                    "Controleur de charge 250V/100A Victron")
+
+#: Lines a basket's fragment would otherwise catch and must not, matched the same way.
+#: Only one is needed so far, and it is worth its own constant because it is the kind of
+#: line a fragment catches silently: the budget prices a lug of 16 mm² for an M14 bolt at
+#: twelve thousand pieces and 500 XOF, fourteen times the price of the same section for the
+#: M6 to M10 bolts the pack's cable terminates in, and in a quantity that belongs to the
+#: distribution network's connections rather than to any power plant. Left in, that one
+#: line adds four fifths to the storage basket and is nearly half of what is left.
+#: The budget's own wording: accents intentional.
+EXCLUDED_FROM_EXTRAS = ("pour boulon M14",)
+
+#: Units of the budget's own unit column that already express a price per unit of capacity,
+#: by the capacity unit they match. A line so priced is taken at its own price instead of
+#: having its total allocated over the fleet, and the distinction is not cosmetic: the
+#: budget buys 550.4 kWc of mounting structure for 518.6 kW of modules, one site having
+#: structure standing without modules on it, so allocating the structure's total over the
+#: modules would charge every kilowatt of array six per cent too much for holding itself up.
+PER_CAPACITY_UNITS = {"kW": ("kwp", "kwc"), "kWh": ("kwh",)}
 
 #: Duty and freight as a share of an imported invoice, measured on the payment ledger by
 #: ``allocation.landing_uplift``. Stated here so that the script runs without the ledger and
@@ -173,31 +257,46 @@ def unit_prices(rows: list[dict], xof_per_usd: float,
     return out
 
 
-def array_extras(rows: list[dict], photovoltaic_kw: float, xof_per_usd: float,
-                 uplift: float = LANDING_UPLIFT) -> dict:
-    """What the array costs beyond its modules, per kilowatt of that array.
+def proportional_extras(rows: list[dict], fragments: tuple[str, ...], capacity: float,
+                        unit: str, xof_per_usd: float,
+                        uplift: float = LANDING_UPLIFT) -> dict:
+    """What a capacity costs beyond its own units, per unit of that capacity.
 
-    Reported on the same two bases as the modules. The structure is imported like them ---
-    the budget's supplier is a Chinese manufacturer the ledger also pays --- so the landed
-    figure is the one that belongs beside a landed module price.
+    Reported on the same two bases as the units themselves. These items are imported like
+    them --- the budget's suppliers are manufacturers the ledger also pays --- so the
+    landed figure is the one that belongs beside a landed unit price.
+
+    A line already priced per unit of capacity is taken at its own price; every other line
+    has its total spread over the capacity the budget buys. Both come out as a price per
+    unit of capacity, which is what the sizing multiplies.
     """
+    per_capacity = PER_CAPACITY_UNITS.get(unit, ())
+    barred = tuple(" ".join(x.split()).lower() for x in EXCLUDED_FROM_EXTRAS)
     out = {}
-    for fragment in ARRAY_EXTRAS:
+    for fragment in fragments:
         local = offshore = 0.0
         for row in rows:
-            if " ".join(fragment.split()).lower() not in row["designation"].lower():
+            designation = row["designation"].lower()
+            if " ".join(fragment.split()).lower() not in designation:
+                continue
+            if any(x in designation for x in barred):
                 continue
             if not row["quantity"]:
                 continue
-            local += (row["local_xof"] or 0.0) * row["quantity"]
-            offshore += (row["offshore_xof"] or 0.0) * row["quantity"]
-        if not photovoltaic_kw or not (local or offshore):
+            own = str(row["unit"]).strip().lower() in per_capacity
+            divisor = row["quantity"] if own else capacity
+            if not divisor:
+                continue
+            local += (row["local_xof"] or 0.0) * row["quantity"] / divisor
+            offshore += (row["offshore_xof"] or 0.0) * row["quantity"] / divisor
+        if not (local or offshore):
             continue
-        landed = offshore * (1.0 + uplift) / photovoltaic_kw if offshore else None
+        landed = offshore * (1.0 + uplift) if offshore else None
         out[fragment] = {
-            "local_xof_per_kw": local / photovoltaic_kw if local else None,
-            "landed_xof_per_kw": landed,
-            "landed_usd_per_kw": landed / xof_per_usd if landed else None,
+            f"local_xof_per_{unit.lower()}": local or None,
+            f"offshore_xof_per_{unit.lower()}": offshore or None,
+            f"landed_xof_per_{unit.lower()}": landed,
+            f"landed_usd_per_{unit.lower()}": landed / xof_per_usd if landed else None,
         }
     return out
 
@@ -232,8 +331,15 @@ def main(argv: list[str] | None = None) -> int:
 
     rows = read_rows(args.budget)
     prices = unit_prices(rows, args.xof_per_usd, uplift)
-    extras = array_extras(rows, prices["photovoltaic"]["capacity_bought"],
-                          args.xof_per_usd, uplift)
+    #: One basket per family that has one, by the family it is added to.
+    baskets = {
+        "photovoltaic": proportional_extras(
+            rows, ARRAY_EXTRAS, prices["photovoltaic"]["capacity_bought"], "kW",
+            args.xof_per_usd, uplift),
+        "battery": proportional_extras(
+            rows, BATTERY_EXTRAS, prices["battery"]["capacity_bought"], "kWh",
+            args.xof_per_usd, uplift),
+    }
 
     print(f"{len(rows):,} priced lines read, at {args.xof_per_usd:.2f} XOF to the dollar")
     print(f"landing adds {100 * uplift:.2f} % to an offshore invoice ({source})\n")
@@ -256,26 +362,52 @@ def main(argv: list[str] | None = None) -> int:
                   f"does not pay")
         print()
 
-    if extras:
-        print("beyond the modules, per kW of array:")
-        for name, block in extras.items():
-            landed = block["landed_usd_per_kw"]
-            print(f"   {name[:44]:46s} landed {block['landed_xof_per_kw']:>8,.0f} XOF/kW"
-                  f" = {landed:>6,.2f} USD/kW")
-        total = sum(b["landed_xof_per_kw"] for b in extras.values()
-                    if b["landed_xof_per_kw"])
-        print(f"   {'total':46s} landed {total:>8,.0f} XOF/kW "
-              f"= {total / args.xof_per_usd:>6,.2f} USD/kW")
-        # What the settings carry per kilowatt of array, which is the sum of the two: the
-        # sizing spends one figure per kilowatt and the structure is not optional.
-        module = prices["photovoltaic"]["landed_xof_per_unit"]
-        if module:
-            array = module + total
-            print(f"\n   {'array, modules and the rest of it':46s} "
-                  f"landed {array:>8,.0f} XOF/kW = {array / args.xof_per_usd:>6,.2f} USD/kW")
+    #: What each basket is called where it is printed, and what the sum of it and its
+    #: family's unit price is called: the figure the settings carry.
+    CALLED = {"photovoltaic": ("beyond the modules, per kW of array",
+                               "array, modules and the rest of it"),
+              "battery": ("beyond the cells, per kWh of storage",
+                          "storage, cells and the rest of it")}
+    totals = {}
+    for family, basket in baskets.items():
+        if not basket:
+            continue
+        unit = prices[family]["unit"]
+        key = unit.lower()
+        heading, whole = CALLED[family]
+        print(f"{heading}:")
+        for name, block in basket.items():
+            print(f"   {name[:44]:46s} landed "
+                  f"{block[f'landed_xof_per_{key}']:>8,.0f} XOF/{unit}"
+                  f" = {block[f'landed_usd_per_{key}']:>6,.2f} USD/{unit}")
+        total = sum(b[f"landed_xof_per_{key}"] for b in basket.values()
+                    if b[f"landed_xof_per_{key}"])
+        offshore = sum(b[f"offshore_xof_per_{key}"] for b in basket.values()
+                       if b[f"offshore_xof_per_{key}"])
+        totals[family] = total
+        print(f"   {'total':46s} landed {total:>8,.0f} XOF/{unit} "
+              f"= {total / args.xof_per_usd:>6,.2f} USD/{unit}, "
+              f"{offshore:,.0f} XOF/{unit} offshore")
+        # What the settings carry per unit of capacity, which is the sum of the two: the
+        # sizing spends one figure per unit and this balance of plant is not optional.
+        each = prices[family]["landed_xof_per_unit"]
+        if each:
+            print(f"   {whole:46s} landed {each + total:>8,.0f} XOF/{unit} "
+                  f"= {(each + total) / args.xof_per_usd:>6,.2f} USD/{unit}")
+        print()
+
+    print("bought once per site, and therefore in none of the baskets above:")
+    for fragment in NOT_PROPORTIONAL:
+        row = _match(rows, fragment)
+        if row is None or not row["quantity"] or not row["offshore_xof"]:
+            continue
+        print(f"   {row['designation'][:44]:46s} {row['quantity']:>7,.0f} x "
+              f"{row['offshore_xof']:>9,.0f} = "
+              f"{row['quantity'] * row['offshore_xof']:>11,.0f} XOF offshore")
 
     if args.json:
-        args.json.write_text(json.dumps({"prices": prices, "array_extras": extras,
+        args.json.write_text(json.dumps({"prices": prices, "extras": baskets,
+                                         "extras_landed_xof_per_unit": totals,
                                          "xof_per_usd": args.xof_per_usd,
                                          "landing_uplift": uplift,
                                          "landing_uplift_source": source}, indent=2),

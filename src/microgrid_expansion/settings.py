@@ -96,18 +96,28 @@ class PhotovoltaicSpec:
     #: the other, and the basis changes what the sizing chooses and not only what it costs.
     #:
     #: The array and not the module, which is a widening of the basis and is deliberate.
-    #: The modules land at 55 438 FCFA/kW and the same budget prices what holds them up and
-    #: wires them at a further 32 115 FCFA/kW landed: 22 094 of mounting structure, 9 612 of
-    #: solar cable and 409 of connectors. The sizing spends this figure per kilowatt of
-    #: array, so leaving the structure out was tolerable while the modules were priced at
-    #: retail and absurd once they are priced at the manufacturer's gate, where it is more
-    #: than a third of what an installed kilowatt of array costs.
+    #: The modules land at 55 438 FCFA/kW and the same budget prices everything that scales
+    #: with the array at a further 36 425 FCFA/kW landed: 20 816 of mounting structure,
+    #: 9 612 of solar cable, 409 of connectors, and 5 587 of the direct side's protection
+    #: and distribution --- string fuses and their holders, surge arresters, the string
+    #: boards and their combs, and the earthing bolt of every module frame. The sizing
+    #: spends this figure per kilowatt of array, so leaving it out was tolerable while the
+    #: modules were priced at retail and absurd once they are priced at the manufacturer's
+    #: gate, where it is two fifths of what an installed kilowatt of array costs.
     #:
-    #: Labour is still nowhere, here or anywhere else in these settings. The operator's
-    #: turnkey construction contract runs at about 118 000 dollars a village, which is
-    #: comparable to everything the sizing does price, and it belongs to the project
-    #: perimeter rather than to a capacity cost.
-    cost_usd_kw: float = 144.2
+    #: The structure is taken at its own price per kilowatt-peak and not by spreading its
+    #: total over the modules: the budget buys 550.4 kWc of structure for 518.6 kW of
+    #: modules, one site having structure standing without modules on it, and spreading it
+    #: charged every kilowatt six per cent too much for holding itself up.
+    #:
+    #: Labour is still nowhere, here or anywhere else in these settings, and neither is
+    #: what a plant buys once whatever its size: the cabinet, the alternating side's
+    #: protection and changeover, the supervision, the cameras and the lightning
+    #: protection. The operator's turnkey construction contract runs at about 118 000
+    #: dollars a village, which is comparable to everything the sizing does price, and both
+    #: it and the per-site equipment belong to the project perimeter rather than to a
+    #: capacity cost.
+    cost_usd_kw: float = 151.2
     lifetime_years: int = 25
     om_rate: float = 0.018                     # annual, as a fraction of capital
     noct_c: float = 45.0
@@ -116,16 +126,17 @@ class PhotovoltaicSpec:
     faiman_u0_w_m2_k: float = 25.0
     faiman_u1_w_s_m3_k: float = 6.84
     provenance: Provenance = field(default_factory=lambda: Provenance(
-        source="87 553 FCFA/kW landed, over the array: 55 438 of modules, capacity-weighted "
+        source="91 864 FCFA/kW landed, over the array: 55 438 of modules, capacity-weighted "
                "over those the operator's procurement budget of October 2025 buys, plus "
-               "32 115 of mounting structure, solar cable and connectors from the same "
-               "budget, all at the supplier's price plus the 9.56 % duty and freight "
-               "measured on its payment ledger; crystalline silicon, open rack, generic "
-               "thermal characteristics",
+               "36 425 of mounting structure, solar cable, connectors and the direct "
+               "side's protection and distribution from the same budget, all at the "
+               "supplier's price plus the 9.56 % duty and freight measured on its payment "
+               "ledger; crystalline silicon, open rack, generic thermal characteristics",
         verified=True,
         note="the price is sourced and landed, and it covers the array rather than the "
-             "module alone; no labour is in it, here or anywhere else in these settings. "
-             "The thermal characteristics remain generic"))
+             "module alone, including everything in the budget that scales with it; no "
+             "labour is in it, and nothing bought once per site, here or anywhere else in "
+             "these settings. The thermal characteristics remain generic"))
 
 
 @dataclass
@@ -143,13 +154,20 @@ class BatterySpec:
     #:
     #: Storage is the capacity the basis moves least, a factor of 1.8 against three for the
     #: modules and nearly four for the generator. Against the array it therefore hardly
-    #: moves at all: a kilowatt-hour of storage costs 0.72 kilowatts of array landed and
+    #: moves at all: a kilowatt-hour of storage costs 0.74 kilowatts of array landed and
     #: 0.68 bought in Benin, so the storage-against-array arbitration is very nearly the
     #: one the retail prices gave. What the change of basis moves is the generator, which
     #: halves against everything else, and the conversion, which gains a quarter. The
     #: sizing is pushed towards a standby set and away from a divided array, not away from
     #: storage.
-    cost_usd_kwh: float = 103.4
+    #:
+    #: The pack and not the cells, for the same reason as the array. The same budget prices
+    #: everything that scales with the stored energy at a further 5 101 FCFA/kWh landed, of
+    #: which 4 422 is the battery cable from 16 to 95 mm² and the rest the rack, the
+    #: busbars on their supports, the fused isolator and the crimp lugs. It is a seventh of
+    #: the array's basket per unit of capacity, which is why leaving it out mattered less
+    #: here, and it is still seven and a half per cent of what a stored kilowatt-hour costs.
+    cost_usd_kwh: float = 111.7
     lifetime_years: int = 16
     cycles: int = 6000
     om_rate: float = 0.060
@@ -162,14 +180,18 @@ class BatterySpec:
     #: State of charge the plant starts from, as a fraction of the usable ceiling.
     initial_soc_fraction: float = 0.5
     provenance: Provenance = field(default_factory=lambda: Provenance(
-        source="62 770 FCFA/kWh landed: the supplier's price in the operator's "
-               "procurement budget of October 2025, capacity-weighted over the packs it "
-               "buys, plus the 9.56 % duty and freight measured on its payment ledger; "
-               "DEYE SE-G10.2 and BYD LV Flex, lithium iron phosphate",
+        source="67 872 FCFA/kWh landed, over the pack: 62 770 of cells, capacity-weighted "
+               "over those the operator's procurement budget of October 2025 buys, plus "
+               "5 101 of rack, busbars, fused isolator, battery cable and lugs from the "
+               "same budget, all at the supplier's price plus the 9.56 % duty and freight "
+               "measured on its payment ledger; DEYE SE-G10.2 and BYD LV Flex, lithium "
+               "iron phosphate",
         verified=True,
         note="the price is sourced, landed and weighted: the DEYE pack is nine tenths of "
              "the energy bought and half the price of the BYD the earlier quotation used "
-             "alone. Cycle life and efficiencies remain manufacturer figures"))
+             "alone. It covers the pack rather than the cells alone, and excludes the "
+             "battery management unit, which is bought once per site. Cycle life and "
+             "efficiencies remain manufacturer figures"))
 
     def degradation_usd_kwh(self) -> float:
         """Throughput cost of storage [$ per kWh discharged].

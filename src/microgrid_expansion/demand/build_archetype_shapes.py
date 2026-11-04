@@ -13,6 +13,14 @@ Each household-month of the segmentation carries an archetype label. This script
 the metered power of those household-months by hour of day, giving one measured
 twenty-four-hour shape per archetype, normalised to a unit mean so that shape and level
 stay separate concerns: level is already reconciled by the moment-matching step.
+
+The label is read from the operative partition and not from the exploratory clustering,
+which is what every consumer of the appliance parameters owes them. The two differ on
+which archetype an observation belongs to, and they differ on something worse: the
+exploratory labels are those of a k-means whose numbering has no meaning of its own, so a
+calibration run on a longer record can hand archetype 2 the behaviour archetype 3 had.
+Extending the meter archive by five months did exactly that, which would have attached
+each measured shape to another archetype's appliances without changing a line of code.
 """
 from __future__ import annotations
 
@@ -24,15 +32,15 @@ import pandas as pd
 from ..paths import DEMAND_DIR, REFERENCE_DIR
 from ..sites import SITES
 from .generator import ARCHETYPES
+from .partition import segment_observations
 
-ASSIGNMENTS = "monthly_household_cluster_assignments.csv"
 OUTPUT = "archetype_hourly_shapes.csv"
 
 
 def measured_shapes(assignments: pd.DataFrame | None = None) -> pd.DataFrame:
     """Mean hourly power of each archetype, normalised to a unit daily mean."""
     if assignments is None:
-        assignments = pd.read_csv(REFERENCE_DIR / ASSIGNMENTS)
+        assignments = segment_observations()
     assignments = assignments[assignments["cluster"].astype(str).isin(ARCHETYPES)]
     labels = {(row.site_name, str(row.month), row.customer_code): str(row.cluster)
               for row in assignments.itertuples()}

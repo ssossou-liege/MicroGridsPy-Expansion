@@ -7,12 +7,16 @@ scenario-tree reduction.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from ..config import ModelConfig
 from . import cost_paths, demand_paths, pv_paths, mc_sampler
 from .uncertainty_space import UncertaintySpace
+
+if TYPE_CHECKING:
+    from ..settings import ProjectSettings
 
 
 @dataclass
@@ -44,11 +48,18 @@ class ScenarioPath:
 def sample_scenario_paths(
     cfg: ModelConfig,
     space: UncertaintySpace | None = None,
+    settings: ProjectSettings | None = None,
 ) -> list[ScenarioPath]:
     """Draw and fully resolve ``cfg.n_mc_paths`` scenario paths.
 
-    Skeleton: structures the loop and delegates the heavy realisation to the
-    per-axis modules (currently stubs that raise ``NotImplementedError``).
+    Structures the loop and delegates the realisation of each axis to its own module.
+
+    ``settings`` carries the prices a unit of capacity starts from, which the cost
+    trajectories then move along the horizon. Left out, the defaults are used -- and that
+    was the whole of a defect worth naming here: the prices were read from the defaults
+    whatever settings the caller had built, so a project that priced its own equipment got
+    a tree costed at someone else's prices, in silence and with no figure out of place.
+    Everything else in the resolution already takes its settings from the space.
     """
     space = space or UncertaintySpace()
     rng = np.random.default_rng(cfg.seed)
@@ -61,7 +72,8 @@ def sample_scenario_paths(
         for stage in raw:
             y = stage["stage_year"]
             costs = cost_paths.stage_costs(space.economic, y, rng,
-                                           scenario=stage["cost_scenario"])
+                                           scenario=stage["cost_scenario"],
+                                           settings=settings)
             draws.append(AxisDraw(y, stage["resource"], stage["policy"], costs,
                                   trajectory=stage["trajectory"],
                                   cost_scenario=stage["cost_scenario"],

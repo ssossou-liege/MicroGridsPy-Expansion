@@ -164,7 +164,8 @@ def wait_and_see(cfg: ModelConfig, weights: tuple[float, float, float],
     started = time.perf_counter()
     settings = _settings_with(weights)
     cfg = replace(cfg, seed=seed)
-    tree = build_tree(sample_scenario_paths(cfg, space_from_settings(settings)), cfg)
+    tree = build_tree(
+        sample_scenario_paths(cfg, space_from_settings(settings), settings), cfg)
     tree.check_probabilities()
     rep = {n: reduce_to_rep_days(_NodeInstance(tree.node_data[n], settings), cfg.n_rep_days)
            for n in tree.nodes}
@@ -294,7 +295,7 @@ def run_case(case: Case, cfg: ModelConfig, mean_value: bool = False,
     cfg = replace(cfg, seed=case.seed)
     space = _mean_value_space(settings) if mean_value else space_from_settings(settings)
 
-    tree = build_tree(sample_scenario_paths(cfg, space), cfg)
+    tree = build_tree(sample_scenario_paths(cfg, space, settings), cfg)
     tree.check_probabilities()
     rep = {n: reduce_to_rep_days(_NodeInstance(tree.node_data[n], settings), cfg.n_rep_days)
            for n in tree.nodes}

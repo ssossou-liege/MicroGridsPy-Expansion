@@ -55,7 +55,7 @@ def run(cfg: ModelConfig, out_dir: Path = RESULTS_DIR, verbose: bool = True) -> 
 
     # Over the uncertainty the settings describe, as the interface does. Left to the
     # library's defaults the two paths answered the same project differently.
-    paths = sample_scenario_paths(cfg, space_from_settings(settings))
+    paths = sample_scenario_paths(cfg, space_from_settings(settings), settings)
     tree = build_tree(paths, cfg)
     tree.check_probabilities()
     if verbose:

@@ -165,7 +165,8 @@ def plan_expansion(job: Job, overrides: dict[str, Any],
     # The uncertainty this village faces, not the library's default. Drawn from the
     # defaults, the tree branched on the arrival of a line in a village that already had
     # one, and ignored the hazard a developer had entered for a village that did not.
-    tree = build_tree(sample_scenario_paths(cfg, space_from_settings(settings)), cfg)
+    tree = build_tree(
+        sample_scenario_paths(cfg, space_from_settings(settings), settings), cfg)
     job.done = step + 1
 
     job.announce("job.reduce", n=len(tree.nodes))

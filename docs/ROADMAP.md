@@ -105,8 +105,8 @@ the measured and calibrated inputs, reproducibly and with a seed.
   for the two largest. Everything downstream now resolves the partition through one module.
 - [x] **Archetype moment-matching** (`demand/calibration.py`). Two factors per archetype —
   a power scale and a duration scale — fitted against the operative partition's measured
-  energy and peak. Residuals: **C0 +5.5 %/−3.6 %, C1 −3.4 %/+2.6 %, C2 +1.2 %/−0.5 %**.
-  C3 is left uncorrected: it holds 4 observations out of 1 818, too few to fit against.
+  energy and peak. Residuals: **C0 +1.0 %/−2.0 %, C1 +2.7 %/−2.2 %, C2 +2.4 %/+1.8 %**.
+  C3 is left uncorrected: it holds 3 observations out of 2 549, too few to fit against.
 - [x] **Specific-yield converter** (`resource/yield_model.py`). NOCT cell-temperature
   model, module temperature coefficient and derating; also exposes the battery
   usable-capacity factor `F^e` and self-discharge `A`. Samionta 2024 under a stated
@@ -119,7 +119,7 @@ the measured and calibrated inputs, reproducibly and with a seed.
   temperature and wind through a Faiman cell model: Samionta 1 389–1 453 kWh/kW,
   Gbowele 1 440–1 508 kWh/kW.
 - [ ] **Give archetype C3 empirical support.** It carries calibrated appliance parameters
-  but only 4 of the 1 818 measured household-months fall into it, so nothing validates it
+  but only 3 of the 2 549 measured household-months fall into it, so nothing validates it
   and nothing corrects it. Either it is an archetype these two villages do not exhibit, and
   should be dropped or re-derived, or the reference profile that defines it is misplaced.
 

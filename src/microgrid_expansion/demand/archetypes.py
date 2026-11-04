@@ -1,6 +1,6 @@
 """The behavioural archetypes, what they describe, and how to make them yours.
 
-The four archetypes shipped with the tool were derived from 1 818 household-months of
+The four archetypes shipped with the tool were derived from 2 549 household-months of
 quarter-hourly meter records in two Beninese villages. That provenance is a limit as much as
 a credential: a community whose evenings run later, whose mills run longer, or whose tariff
 buys a different appliance mix will not be described by them, and a sizing built on borrowed
@@ -35,7 +35,7 @@ DESCRIPTIONS: dict[str, str] = {
 
 #: Where the shipped figures come from, shown wherever they are used.
 CALIBRATION_NOTE = (
-    "Calibrated on 1 818 household-months of quarter-hourly records from 141 households in "
+    "Calibrated on 2 549 household-months of quarter-hourly records from 141 households in "
     "two Beninese villages. To be checked before any use on a community whose uses, tariff "
     "or hours differ."
 )

@@ -190,10 +190,10 @@ STRINGS: dict[str, dict[str, str]] = {
               "sont recalculés, et le dimensionnement en tient compte. Le facteur de charge "
               "est rapporté pour information et ne se règle pas séparément."},
     "arch.note": {
-        "en": "Calibrated on 1 818 household-months of quarter-hourly records from 141 "
+        "en": "Calibrated on 2 549 household-months of quarter-hourly records from 141 "
               "households in two Beninese villages. To be checked before use on a community "
               "whose uses, tariff or hours differ.",
-        "fr": "Calibrés sur 1 818 couples ménage-mois relevés au pas quart-horaire chez 141 "
+        "fr": "Calibrés sur 2 549 couples ménage-mois relevés au pas quart-horaire chez 141 "
               "ménages de deux villages béninois. À vérifier avant tout emploi sur une "
               "communauté dont les usages, le tarif ou les horaires diffèrent."},
 

@@ -43,6 +43,8 @@ import argparse
 import json
 from pathlib import Path
 
+from .paths import COSTS_DIR
+
 #: Rows of the bill of quantities, by what they price and the capacity one unit carries.
 #: Named by the designation the budget uses, matched on a distinctive fragment so that a
 #: re-export with a reworded line still finds them. A fourth field set to ``False`` means
@@ -301,6 +303,59 @@ def proportional_extras(rows: list[dict], fragments: tuple[str, ...], capacity: 
     return out
 
 
+#: Where the derived prices are archived, so that the figures copied into the settings can
+#: be checked against their derivation without the workbook.
+ARCHIVE = COSTS_DIR / "equipment_prices.json"
+
+
+def settings_archive(budget: Path, prices: dict, extras: dict, xof_per_usd: float,
+                     uplift: float, source: str) -> dict:
+    """The derived per-unit prices, in the form the settings carry them.
+
+    Four figures live in ``settings.py`` as literals, copied by hand from this script's
+    output: the array, the storage, the inverter and the generating set. They agree with it
+    today, and nothing in the repository would notice if they stopped: the one test that
+    reads the workbook is skipped unless ``MGPY_BUDGET`` points at it, which it does on one
+    machine. Archiving the derivation makes the comparison available to anyone, and a test
+    does it on every run.
+
+    What is archived is the derived figures and nothing else. The line-by-line bill of
+    quantities stays out: it is the operator's own prices, item by item, and publishing it
+    is not what a guard against a typing error requires. The workbook is named and
+    digested instead, so the archive says what it came from.
+    """
+    import hashlib
+
+    families = {}
+    for family, block in prices.items():
+        if not block["landed_usd_per_unit"]:
+            continue
+        unit = block["unit"]
+        basket = extras.get(family) or {}
+        key = unit.lower()
+        total = sum(b[f"landed_xof_per_{key}"] for b in basket.values()
+                    if b[f"landed_xof_per_{key}"])
+        whole = block["landed_xof_per_unit"] + total
+        families[family] = {
+            "unit": unit,
+            "capacity_bought": block["capacity_bought_offshore"],
+            "landed_xof_per_unit": block["landed_xof_per_unit"],
+            "extras_landed_xof_per_unit": total,
+            "whole_landed_xof_per_unit": whole,
+            "settings_usd_per_unit": whole / xof_per_usd,
+        }
+    return {
+        "derived_from": budget.name,
+        "sha1": hashlib.sha1(budget.read_bytes()).hexdigest()[:16],
+        "written_by": "python -m microgrid_expansion.build_equipment_prices "
+                      "--budget <the workbook> --archive",
+        "xof_per_usd": xof_per_usd,
+        "landing_uplift": uplift,
+        "landing_uplift_source": source,
+        "families": families,
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--budget", type=Path, required=True,
@@ -314,7 +369,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--xof-per-usd", type=float, default=607.37,
                         help="the rate the model's currency block states")
     parser.add_argument("--json", type=Path, default=None,
-                        help="write the derived prices here as well as printing them")
+                        help="write the derived prices here as well as printing them, "
+                             "line by line; this is the operator's own bill of "
+                             "quantities and does not belong in the repository")
+    parser.add_argument("--archive", nargs="?", type=Path, const=ARCHIVE, default=None,
+                        help="write the per-unit prices the settings carry to "
+                             "data/costs/equipment_prices.json, which a test compares "
+                             "the settings against")
     args = parser.parse_args(argv)
 
     uplift, source = LANDING_UPLIFT, "recorded in this script"
@@ -413,6 +474,13 @@ def main(argv: list[str] | None = None) -> int:
                                          "landing_uplift_source": source}, indent=2),
                              encoding="utf-8")
         print(f"\nwritten {args.json}")
+    if args.archive:
+        args.archive.parent.mkdir(parents=True, exist_ok=True)
+        args.archive.write_text(
+            json.dumps(settings_archive(args.budget, prices, baskets, args.xof_per_usd,
+                                        uplift, source), indent=2) + "\n",
+            encoding="utf-8")
+        print(f"\nwritten {args.archive}")
     return 0
 
 

@@ -49,3 +49,28 @@ comparing the certificates before and after wants both halves of that comparison
 not citable on their own: they predate the extended archive, they predate the correction
 that attached each measured hourly shape to the archetype whose appliances it belongs to,
 and the trees among them predate the landed equipment prices.
+
+## The two one-off studies of September 2026
+
+`2026-09_one_off_studies/` holds the first-stage certification of 28 September and the
+descent study of 29 September. Both were computed at commit 424a09b by calculations run
+once, by hand, and both were written into `results/` where every other file is produced by
+a command.
+
+They are set aside for two reasons. They predate the recalibration of 3 November 2026 and
+the landed equipment prices of 4 November, so their costs describe a plant priced and a
+demand measured differently: the plan they cost at 167 381 $ is the same object the current
+record costs at 87 556 $, which is not a correction of five per cent but a different study.
+And the figure the first one is cited for -- a bound of 159 009 $ against a descent at
+167 381 $, a gap of five per cent -- can now be produced again:
+`python -m microgrid_expansion.exact.first_stage` runs that search and writes
+`summary_first_stage_<site>_<architecture>.json`, which is where the citable version of it
+belongs.
+
+The descent study has no command, and it does not need one: its two halves are expressible
+with the parameters `certify_tree` already takes. The neighbourhood variants are its
+`scales` and `max_rounds`; the restarts are the `plans` argument itself, called with the
+programme's plan scaled up in storage or in array. What was done once in a script can be
+done again in a script, and the finding it reached -- that enlarging the neighbourhood
+changes nothing and restarting from a larger plant finds 166 165 $ -- is the part worth
+carrying forward. Its figures are not citable on the current prices.

@@ -37,8 +37,8 @@ import heapq
 import math
 import time
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 
-from .. import config
 from ..config import ModelConfig
 from ..settings import ProjectSettings, default_settings
 from ..timedomain.rep_days import RepDays
@@ -406,8 +406,8 @@ def _box_of(root: dict[str, float], lattice: Lattice) -> RootBox:
     # converter too small for the array it is given is a plant that cannot be built, and the
     # reader who asked for it is owed the reason.
     inverter = box.n_inv[0] * lattice.inv_unit_kw
-    for part, admitted in ((box.n_pv[0], config.DC_AC_RATIO_MAX),
-                           (box.n_pv_ac[0], config.AC_RATIO_MAX)):
+    for part, admitted in ((box.n_pv[0], lattice.ratio_dc),
+                           (box.n_pv_ac[0], lattice.ratio_ac)):
         if part * size > admitted * inverter + 1e-9:
             raise ValueError(
                 f"the plant given has {part * size:.2f} kW of array on a bus that admits "
@@ -428,6 +428,9 @@ def certify_first_stage(
     max_seconds: float = 6 * 3600.0,
     epsilon: float = 1e-6,
     verbose: bool = True,
+    solver_options: dict | None = None,
+    target_gap: float = 0.0,
+    incumbent_root: dict[str, float] | None = None,
 ) -> FirstStageCertificate:
     """Prove the year-0 plant optimal, or return the gap that remains.
 
@@ -455,7 +458,10 @@ def certify_first_stage(
                              architecture=architecture)
     free = free_bound_for(tree, rep, lattice, settings, architecture)
 
-    best_root = _root_of(incumbent_plans, tree)
+    # A plant handed in from a stopped run is an incumbent like any other: it prunes boxes
+    # for nothing and it costs nothing to carry, which is what makes a longer search a
+    # continuation rather than a repetition.
+    best_root = _root_of(incumbent_plans, tree) if incumbent_root is None else incumbent_root
     best_value, best_plans = z_rule, incumbent_plans
     started = time.time()
     whole = RootBox.around(lattice)
@@ -477,10 +483,21 @@ def certify_first_stage(
         item = heapq.heappop(queue)
         # Best-first: the head carries the least bound in the queue, so once it is no
         # better than the incumbent, nothing left is either.
-        if item.bound >= best_value - epsilon:
-            pruned_free += 1 + len(queue)
-            queue.clear()
+        #
+        # ``target_gap`` stops earlier, at a stated distance from the incumbent rather than
+        # at optimality. What it buys is the tail of the search, where boxes are both many
+        # and nearly as dear as the plant in hand; what it costs is the proof, so the boxes
+        # it leaves are put back on the queue and reported as open. A run stopped this way
+        # claims a gap, never an optimum.
+        stop_at = (best_value - epsilon if target_gap <= 0.0
+                   else best_value * (1.0 - target_gap))
+        if item.bound >= stop_at:
             frontier = item.bound
+            if target_gap <= 0.0:
+                pruned_free += 1 + len(queue)
+                queue.clear()
+            else:
+                heapq.heappush(queue, item)
             break
         opened += 1
         box = item.box
@@ -494,7 +511,8 @@ def certify_first_stage(
                     "generator_kw": low["generator_kw"]}
             programme = build_model(tree, rep, cfg, architecture=architecture,
                                     settings=settings, root_box=box)
-            solved = solve(programme, settings, solver=cfg.solver)
+            solved = solve(programme, settings, solver=cfg.solver,
+                           **(solver_options or {}))
             programmes += 1
             # The guaranteed bound, not the incumbent the solver happened to reach: a
             # mixed-integer solve stops at a tolerance, and pruning on the value it stopped
@@ -525,7 +543,8 @@ def certify_first_stage(
         # split only what survives.
         programme = build_model(tree, rep, cfg, architecture=architecture,
                                 settings=settings, root_box=box)
-        solved = solve(programme, settings, solver=cfg.solver)
+        solved = solve(programme, settings, solver=cfg.solver,
+                       **(solver_options or {}))
         programmes += 1
         bound = solved.bound
         if bound == float("inf") or bound >= best_value - epsilon:
@@ -553,3 +572,200 @@ def certify_first_stage(
         boxes_pruned_programme=pruned_programme, programmes_solved=programmes,
         descents=descents, unresolved=len(unresolved),
         lattice_size=lattice.size, seconds=time.time() - started)
+
+
+# --------------------------------------------------------------------- the command
+def _incumbent(tree: ScenarioTree, rep: dict[int, RepDays], cfg: ModelConfig,
+               settings: ProjectSettings, architecture: str,
+               solver_options: dict | None = None,
+               verbose: bool = True) -> tuple[dict, float, float]:
+    """A plan to certify against: the programme's, descended to what the rule prefers.
+
+    The same two steps the pipeline takes, and they are the prelude to every search here:
+    the box bound is only worth anything against a plan in hand, and the plan in hand is
+    what the descent returns.
+    """
+    from ..model import build_model
+    from ..post import extract_solution
+    from ..solve import solve
+    from .tree_certify import certify_tree
+
+    programme = build_model(tree, rep, cfg, architecture=architecture, settings=settings)
+    solved = solve(programme, settings, solver=cfg.solver, **(solver_options or {}))
+    if solved.objective == float("inf"):
+        raise RuntimeError(f"no feasible plan under coupling {architecture}")
+    certificate = certify_tree(extract_solution(programme, cfg), tree, rep, solved.bound,
+                               architecture=architecture, settings=settings,
+                               verbose=verbose)
+    return certificate.plans, certificate.z_rule, solved.bound
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Certify the year-0 plant of one site, and record what the proof rests on.
+
+    The figure the manuscript quotes for this search -- a bound of 159 009 $ against a
+    descent at 167 381 $, five per cent apart -- came from a calculation nothing in the
+    repository could repeat: the function below the command was reached only by its test.
+    A result nobody can re-run is not a result, and the prices and the demand have both
+    moved since it was computed.
+    """
+    import argparse
+    import json
+
+    from ..paths import RESULTS_DIR
+    from ..run import _NodeInstance
+    from ..scenarios import sample_scenario_paths, space_from_settings
+    from ..timedomain import reduce_to_rep_days
+    from ..tree import build_tree
+    from .tree_value import _head, solver_options_for
+
+    defaults = ModelConfig()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--site", default="Samionta")
+    parser.add_argument("--architecture", default=None,
+                        choices=["dc", "ac", "mixed"],
+                        help="the coupling to certify under; the project's first by default")
+    parser.add_argument("--max-programmes", type=int, default=40,
+                        help="boxes the search may bound with a programme before it stops "
+                             "and reports the gap it reached")
+    parser.add_argument("--max-seconds", type=float, default=6 * 3600.0,
+                        help="wall-clock budget of the search itself, the tree and the "
+                             "incumbent excluded")
+    parser.add_argument("--target-gap", type=float, default=0.0,
+                        help="stop when no open box is further than this fraction below "
+                             "the plant in hand; 0 searches for a proof")
+    parser.add_argument("--resume", action="store_true",
+                        help="start from the plant a previous run of this command left in "
+                             "the record, so its boxes are excluded again for nothing")
+    parser.add_argument("--rep-days", type=int, default=defaults.n_rep_days)
+    parser.add_argument("--mc-paths", type=int, default=defaults.n_mc_paths)
+    parser.add_argument("--stage-years", type=int, nargs="+",
+                        default=list(defaults.stage_years))
+    parser.add_argument("--branching", type=int, nargs="+",
+                        default=list(defaults.branching))
+    parser.add_argument("--seed", type=int, default=defaults.seed)
+    parser.add_argument("--solver", default=defaults.solver)
+    parser.add_argument("--mip-gap", type=float, default=None,
+                        help="relative gap the solver may stop each programme at, instead "
+                             "of its own tolerance; recorded in the summary")
+    parser.add_argument("--nodefile-gb", type=float, default=None,
+                        help="memory beyond which a search tree goes to disk, so that a "
+                             "programme that balloons does not take the machine")
+    parser.add_argument("--out", type=Path, default=None)
+    args = parser.parse_args(argv)
+
+    settings = default_settings()
+    architecture = args.architecture or settings.coupling.architectures()[0]
+    cfg = ModelConfig(site=args.site, solver=args.solver, n_rep_days=args.rep_days,
+                      n_mc_paths=args.mc_paths, seed=args.seed,
+                      stage_years=tuple(args.stage_years),
+                      branching=tuple(args.branching),
+                      horizon_years=settings.economics.horizon_years,
+                      discount_rate=settings.economics.discount_rate)
+    cfg.validate()
+    options = solver_options_for(cfg.solver, args.mip_gap, args.nodefile_gb)
+
+    out = args.out or (RESULTS_DIR
+                       / f"summary_first_stage_{args.site.lower()}_{architecture}.json")
+    started = time.time()
+    print(f"{args.site} -- coupling {architecture}, {len(args.stage_years)} stages, "
+          f"{args.rep_days} representative days", flush=True)
+
+    tree = build_tree(sample_scenario_paths(cfg, space_from_settings(settings), settings),
+                      cfg)
+    tree.check_probabilities()
+    rep = {n: reduce_to_rep_days(_NodeInstance(tree.node_data[n], settings), cfg.n_rep_days)
+           for n in tree.nodes}
+    built = time.time() - started
+    print(f"  tree: {len(tree.nodes)} nodes, {len(tree.leaves)} leaves ({built:.0f} s)",
+          flush=True)
+
+    at = time.time()
+    plans, z_rule, programme_bound = _incumbent(tree, rep, cfg, settings, architecture,
+                                                solver_options=options)
+    prelude = time.time() - at
+    print(f"  incumbent {z_rule:,.0f} $ from a programme at {programme_bound:,.0f} $ "
+          f"({prelude:.0f} s)", flush=True)
+    # One programme over a box costs about what the free one just cost, and the search
+    # solves at most ``max_programmes`` of them. Said before the search rather than after,
+    # because the budget is the figure the caller chooses and this is what it buys.
+    print(f"  a programme over a box costs about {prelude:.0f} s, so {args.max_programmes}"
+          f" of them is up to {args.max_programmes * prelude / 3600.0:.1f} h", flush=True)
+
+    resumed = None
+    if args.resume and out.exists():
+        stored = json.loads(out.read_text())
+        previous = stored.get("certificate", {})
+        if previous.get("z_rule") is not None and previous["z_rule"] < z_rule:
+            resumed = previous
+            print(f"  resuming from the recorded plant at {previous['z_rule']:,.0f} $",
+                  flush=True)
+
+    certificate = certify_first_stage(
+        tree, rep, cfg, plans,
+        z_rule if resumed is None else float(resumed["z_rule"]),
+        architecture=architecture, settings=settings,
+        max_programmes=args.max_programmes, max_seconds=args.max_seconds,
+        solver_options=options, target_gap=args.target_gap,
+        incumbent_root=None if resumed is None else resumed.get("root"))
+
+    print("\n  " + certificate.summary(), flush=True)
+    record = {
+        "site": args.site,
+        "architecture": architecture,
+        "commit": _head(),
+        "seed": args.seed,
+        "settings": {
+            "stage_years": list(args.stage_years),
+            "branching": list(args.branching),
+            "n_mc_paths": args.mc_paths,
+            "n_rep_days": args.rep_days,
+            "solver": cfg.solver,
+            "solver_options": dict(options),
+            "horizon_years": settings.economics.horizon_years,
+            "discount_rate": settings.economics.discount_rate,
+            "max_programmes": args.max_programmes,
+            "max_seconds": args.max_seconds,
+            "target_gap": args.target_gap,
+            "resumed_from_record": resumed is not None,
+        },
+        "tree": {
+            "nodes": len(tree.nodes), "leaves": len(tree.leaves),
+            "reduction_error": {str(k): round(float(v), 4)
+                                for k, v in tree.reduction_error.items()},
+        },
+        "incumbent": {
+            "z_rule_usd": z_rule,
+            "programme_bound_usd": programme_bound,
+            "root": _root_of(plans, tree),
+        },
+        "certificate": {
+            "root": certificate.root,
+            "z_rule": certificate.z_rule,
+            "lower_bound": certificate.lower_bound,
+            "proven": certificate.proven,
+            "gap_abs_usd": certificate.gap_abs,
+            "gap_rel_pct": certificate.gap_rel,
+            "boxes_opened": certificate.boxes_opened,
+            "boxes_pruned_free": certificate.boxes_pruned_free,
+            "boxes_pruned_programme": certificate.boxes_pruned_programme,
+            "programmes_solved": certificate.programmes_solved,
+            "descents": certificate.descents,
+            "unresolved": certificate.unresolved,
+            "lattice_size": certificate.lattice_size,
+        },
+        "seconds": {
+            "building_the_tree": round(built, 1),
+            "the_incumbent": round(prelude, 1),
+            "the_search": round(certificate.seconds, 1),
+            "total": round(time.time() - started, 1),
+        },
+    }
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(record, indent=2), encoding="utf-8")
+    print(f"written {out}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -501,7 +501,7 @@ certification.
   *Done when* a run returns `proven=True`, or the gap it stops at is tabulated with the
   budget that produced it.
 - [x] **What tightens the descent is restarting it, not enlarging it** (2026-09-29,
-  `results/summary_descent_study_samionta_mixed_2026-09-29.json`). Three restrictions were
+  `results/superseded/2026-09_one_off_studies/summary_descent_study_samionta_mixed_2026-09-29.json`). Three restrictions were
   found and all three lifted: the descent moved one module at a time with a hard stop at six
   rounds, so it could not cross the seven to fifteen per cent of extra storage the
   rule-based optimum is known to carry; the generating set was frozen at whatever the

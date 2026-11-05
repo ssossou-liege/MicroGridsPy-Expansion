@@ -143,7 +143,32 @@ headers follow the language you were reading.
 ```bash
 python -m microgrid_expansion.exact.certify --site Gbowele    # certified sizing, one year
 python -m microgrid_expansion.run --site Samionta             # multi-stage expansion plan
+python -m microgrid_expansion.exact.first_stage --site Samionta   # prove the year-0 plant
+python -m microgrid_expansion.exact.tree_value --question weights # what the tree is worth
 ```
+
+Each of these writes a `summary_*.json` into `results/`, carrying the commit, the settings
+and the time it took, so a figure can be traced back to the run that produced it.
+
+### The procurement workbook
+
+The equipment prices in `settings.py` are derived from an operator's procurement budget,
+which is not in this repository: it is a third party's price list. What is in the repository
+is the derivation's result, `data/costs/equipment_prices.json`, which a test compares the
+settings against on every run.
+
+To derive them again from the workbook, point `MGPY_BUDGET` at it. The variable is read by
+the price tests, which skip without it and otherwise check the baskets against the
+workbook's own lines:
+
+```bash
+export MGPY_BUDGET="/path/to/BUDGET_GENERAL_..._27-10-25.xlsx"
+python -m microgrid_expansion.build_equipment_prices --budget "$MGPY_BUDGET" --archive
+pytest tests/test_the_balance_of_plant_is_priced_with_the_capacity.py
+```
+
+`--archive` rewrites that JSON; `--ledger` measures the duty and freight from the payment
+records instead of using the figure recorded in the script.
 
 ## Modelling choices
 

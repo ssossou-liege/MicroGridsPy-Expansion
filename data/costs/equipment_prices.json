@@ -1,0 +1,42 @@
+{
+  "derived_from": "BUDGET_GENERAL_KOT_AGL_VERSION ACTUALISE_27-10-25.xlsx",
+  "sha1": "33d69d599b1c4891",
+  "written_by": "python -m microgrid_expansion.build_equipment_prices --budget <the workbook> --archive",
+  "xof_per_usd": 607.37,
+  "landing_uplift": 0.0956,
+  "landing_uplift_source": "recorded in this script",
+  "families": {
+    "photovoltaic": {
+      "unit": "kW",
+      "capacity_bought": 518.6,
+      "landed_xof_per_unit": 55439.53176397993,
+      "extras_landed_xof_per_unit": 36424.65082895824,
+      "whole_landed_xof_per_unit": 91864.18259293817,
+      "settings_usd_per_unit": 151.24912753830148
+    },
+    "battery": {
+      "unit": "kWh",
+      "capacity_bought": 1610.04,
+      "landed_xof_per_unit": 62771.61686218975,
+      "extras_landed_xof_per_unit": 5100.507809495416,
+      "whole_landed_xof_per_unit": 67872.12467168517,
+      "settings_usd_per_unit": 111.74757507233676
+    },
+    "inverter": {
+      "unit": "kW",
+      "capacity_bought": 416.0,
+      "landed_xof_per_unit": 70884.38768653845,
+      "extras_landed_xof_per_unit": 0,
+      "whole_landed_xof_per_unit": 70884.38768653845,
+      "settings_usd_per_unit": 116.70709400618807
+    },
+    "generator": {
+      "unit": "kVA",
+      "capacity_bought": 20.0,
+      "landed_xof_per_unit": 87893.30483999998,
+      "extras_landed_xof_per_unit": 0,
+      "whole_landed_xof_per_unit": 87893.30483999998,
+      "settings_usd_per_unit": 144.71130421324725
+    }
+  }
+}

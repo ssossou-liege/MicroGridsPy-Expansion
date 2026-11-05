@@ -153,7 +153,8 @@ def _chain_of(tree: ScenarioTree, leaf: int) -> tuple[ScenarioTree, dict[int, in
 
 
 def wait_and_see(cfg: ModelConfig, weights: tuple[float, float, float],
-                 seed: int, verbose: bool = True) -> dict:
+                 seed: int, verbose: bool = True,
+                 solver_options: dict | None = None) -> dict:
     """What the plant would cost if the whole future were known before it was built.
 
     One deterministic problem per leaf, weighted by that leaf's probability. The gap to the
@@ -178,7 +179,8 @@ def wait_and_see(cfg: ModelConfig, weights: tuple[float, float, float],
         chain_rep = {renumbered[n]: rep[n] for n in tree.ancestors(leaf)}
         programme = build_model(chain, chain_rep, cfg, architecture=architecture,
                                 settings=settings)
-        solved = solve(programme, settings, solver=cfg.solver)
+        solved = solve(programme, settings, solver=cfg.solver,
+                       **(solver_options or {}))
         if solved.objective == float("inf"):
             raise RuntimeError(f"leaf {leaf}: no plan for a future that is known")
         plans = extract_solution(programme, cfg)
@@ -199,6 +201,7 @@ def wait_and_see(cfg: ModelConfig, weights: tuple[float, float, float],
                   f"automaton {certificate.z_rule:>11,.0f} $", flush=True)
 
     out = {"weights": list(weights), "seed": seed, "leaves": len(by_leaf),
+           "solver_options": dict(solver_options or {}),
            "seconds_building": round(built, 1),
            "seconds_total": round(time.perf_counter() - started, 1),
            "by_leaf": by_leaf}
@@ -288,7 +291,7 @@ def _programme_unserved(programme, cfg: ModelConfig) -> dict[int, float]:
 
 
 def run_case(case: Case, cfg: ModelConfig, mean_value: bool = False,
-             verbose: bool = True) -> dict:
+             verbose: bool = True, solver_options: dict | None = None) -> dict:
     """Draw the tree this case asks for, and cost it under both oracles."""
     started = time.perf_counter()
     settings = _settings_with(case.weights)
@@ -317,7 +320,8 @@ def run_case(case: Case, cfg: ModelConfig, mean_value: bool = False,
         at = time.perf_counter()
         programme = build_model(tree, rep, cfg, architecture=architecture,
                                 settings=settings, root_box=box)
-        solved = solve(programme, settings, solver=cfg.solver)
+        solved = solve(programme, settings, solver=cfg.solver,
+                       **(solver_options or {}))
         if solved.objective == float("inf"):
             continue
         plans = extract_solution(programme, cfg)
@@ -367,6 +371,7 @@ def run_case(case: Case, cfg: ModelConfig, mean_value: bool = False,
         "nodes": len(tree.nodes), "leaves": len(tree.leaves),
         "reduction_error": {str(k): round(float(v), 4)
                             for k, v in tree.reduction_error.items()},
+        "solver_options": dict(solver_options or {}),
         "seconds_building": round(built, 1),
         "seconds_total": round(time.perf_counter() - started, 1),
         **best,
@@ -553,6 +558,31 @@ def weight_cases(seed: int) -> list[Case]:
             for name, w in TRAJECTORY_WEIGHTS.items() if name != "thirds"]
 
 
+#: The gap and the memory cap, under the name each solver answers to.
+SOLVER_OPTION_NAMES = {"gurobi": {"gap": "MIPGap", "nodefile_gb": "NodefileStart"},
+                       "highs": {"gap": "mip_rel_gap"}}
+
+
+def solver_options_for(solver: str, gap: float | None,
+                       nodefile_gb: float | None) -> dict:
+    """What to hand the solver, under the names it knows.
+
+    A case is normally solved to the solver's own tolerance, which on this tree closes to
+    about a hundredth of a per cent. One of them does not: with the central trajectory held
+    certain, the search ran for five hours and thirty gigabytes without closing, on a case
+    that costs five minutes at every other weighting. A gap is therefore askable, and what
+    was asked is written into the record beside the value, because a figure stopped at a
+    tolerance and a figure solved to optimality are not the same figure.
+    """
+    names = SOLVER_OPTION_NAMES.get(solver, {"gap": "mip_rel_gap"})
+    options: dict[str, float] = {}
+    if gap is not None and "gap" in names:
+        options[names["gap"]] = float(gap)
+    if nodefile_gb is not None and "nodefile_gb" in names:
+        options[names["nodefile_gb"]] = float(nodefile_gb)
+    return options
+
+
 def main(argv: list[str] | None = None) -> int:
     defaults = ModelConfig()
     parser = argparse.ArgumentParser(description=__doc__)
@@ -577,6 +607,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--branching", type=int, nargs="+",
                         default=list(defaults.branching))
     parser.add_argument("--solver", default=defaults.solver)
+    parser.add_argument("--mip-gap", type=float, default=None,
+                        help="relative gap the solver may stop at, instead of its "
+                             "own tolerance; recorded with every case it is used on")
+    parser.add_argument("--nodefile-gb", type=float, default=None,
+                        help="memory beyond which the search tree goes to disk, so "
+                             "that a case that balloons does not take the machine")
+    parser.add_argument("--only", nargs="+", default=None,
+                        help="run only these cases of the question, by name: what "
+                             "a chain stopped part of the way through needs to "
+                             "resume instead of starting again")
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args(argv)
 
@@ -631,7 +671,9 @@ def main(argv: list[str] | None = None) -> int:
         stored = json.loads(out.read_text()) if out.exists() else {}
         stored.setdefault("site", args.site)
         stored["wait_and_see_everything"] = wait_and_see(
-            cfg, TRAJECTORY_WEIGHTS["thirds"], args.seed)
+            cfg, TRAJECTORY_WEIGHTS["thirds"], args.seed,
+            solver_options=solver_options_for(cfg.solver, args.mip_gap,
+                                              args.nodefile_gb))
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(stored, indent=2), encoding="utf-8")
         print(f"written {out}")
@@ -658,6 +700,12 @@ def main(argv: list[str] | None = None) -> int:
                              "inverter_kw": inv, "generator_kw": gen})
             for name, (pv, pv_ac, batt, inv, gen) in zip(names, args.fix)]
 
+    if args.only:
+        wanted = set(args.only)
+        cases = [case for case in cases if case.name in wanted]
+        if not cases:
+            parser.error(f"this question has no case named in {sorted(wanted)}")
+
     out = args.out or out_default
     stored = json.loads(out.read_text()) if out.exists() else {}
     stored.setdefault("site", args.site)
@@ -669,7 +717,10 @@ def main(argv: list[str] | None = None) -> int:
 
     for case in cases:
         print(f"  {case.name} weights={case.weights} seed={case.seed}", flush=True)
-        stored["cases"][case.name] = run_case(case, cfg, mean_value=mean_value)
+        stored["cases"][case.name] = run_case(
+            case, cfg, mean_value=mean_value,
+            solver_options=solver_options_for(cfg.solver, args.mip_gap,
+                                              args.nodefile_gb))
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(stored, indent=2), encoding="utf-8")
         print(f"  written {out}", flush=True)

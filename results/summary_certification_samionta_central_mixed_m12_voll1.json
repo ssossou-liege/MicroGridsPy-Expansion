@@ -11,8 +11,8 @@
     "inverter_kw": 32.5,
     "generator_kw": 8.0
   },
-  "z_rule_usd_yr": 6057.466309196861,
-  "z_opt_usd_yr": 5768.987854649711,
+  "z_rule_usd_yr": 6372.570736316138,
+  "z_opt_usd_yr": 6066.999071307194,
   "design_opt": {
     "pv_kw": 39.0,
     "pv_ac_kw": 30.0,
@@ -20,15 +20,15 @@
     "inverter_kw": 30.0,
     "generator_kw": 8.0
   },
-  "price_abs_usd_yr": 288.47845454715025,
-  "price_rel_pct": 5.000503759331739,
+  "price_abs_usd_yr": 305.57166500894436,
+  "price_rel_pct": 5.036619610741196,
   "proven": true,
   "lattice_size": 1068522,
-  "pruned_points": 590441,
-  "enumerated_points": 478081,
-  "simulations": 482509,
+  "pruned_points": 595663,
+  "enumerated_points": 472859,
+  "simulations": 477287,
   "relaxations": 2,
-  "seconds": 67.44693803787231,
+  "seconds": 51.79592299461365,
   "discount_rate": 0.08,
   "generator_hours": 127,
   "generator_mean_load_fraction": 0.7027550838266611,
@@ -43,8 +43,8 @@
   "inverter_peak_fraction_daylight": 0.5937761965413239,
   "energy_served_kwh": 73813.95550550184,
   "billable_energy_kwh": 59279.39051625073,
-  "npc_usd": 65163.547170854465,
-  "lcoe_usd_kwh": 0.08270037143864988,
+  "npc_usd": 68560.09159431973,
+  "lcoe_usd_kwh": 0.08701099444221294,
   "tariff_target_usd_kwh": 0.263,
   "subsidy_fraction": 0.0,
   "subsidy_usd": 0.0,
@@ -55,7 +55,7 @@
   "binding_ceilings": [
     "dc_ratio"
   ],
-  "irr": 0.3679910429750318,
-  "irr_without_salvage": 0.36793889980656547,
+  "irr": 0.34574265513886215,
+  "irr_without_salvage": 0.3456686937563124,
   "architecture": "mixed"
 }

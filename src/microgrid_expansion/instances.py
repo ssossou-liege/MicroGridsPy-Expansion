@@ -14,8 +14,8 @@ from pathlib import Path
 
 import numpy as np
 
-from .paths import REFERENCE_DIR, RESULTS_DIR
-from .sites import Site, get_site
+from .paths import DEMAND_DIR, REFERENCE_DIR, RESULTS_DIR
+from .sites import SITES, Site, get_site
 
 CACHE_DIR = RESULTS_DIR / "cache"
 
@@ -78,8 +78,19 @@ class SiteYear:
 #: the package is either here or in ``_OFFLINE_SOURCES``; a test refuses a third category,
 #: so a module added to the package forces someone to say which it is rather than being
 #: silently left out of the key.
+#:
+#: It is the *transitive* reach of the generator, which a test computes rather than trusts.
+#: Four of these were on the offline side, and they are not offline at all: every simulated
+#: month asks ``growth.trajectory_law`` for the mixture, which asks ``maturity`` for the
+#: maturity of each observation, which asks ``partition`` to segment the whole meter
+#: archive, which reads it and clusters it through two of the build modules. The
+#: segmentation is run at generation, not merely recorded by it, so changing the prior
+#: strength, the maturity bands or the winsorising quantiles changed what a year contains
+#: and invalidated nothing.
 _GENERATION_SOURCES = ("generator.py", "growth.py", "productive.py", "archetypes.py",
-                       "uses.py")
+                       "uses.py", "maturity.py", "partition.py",
+                       "build_mixture_probabilities.py",
+                       "build_monthly_household_clusters.py")
 
 #: Modules that build the calibration tables rather than read them. Their output is the
 #: CSVs, which the digest already covers, so hashing them too would rebuild every cached
@@ -87,10 +98,20 @@ _GENERATION_SOURCES = ("generator.py", "growth.py", "productive.py", "archetypes
 _OFFLINE_SOURCES = ("__init__.py", "build_archetype_shapes.py",
                     "build_community_profiles.py",
                     "build_meter_archive.py",
-                    "build_mixture_probabilities.py",
-                    "build_monthly_household_clusters.py",
                     "build_productive_profiles.py",
-                    "calibration.py", "maturity.py", "partition.py", "validate.py")
+                    "calibration.py", "validate.py")
+
+#: Calibration tables the generation does not read. Hashed, they invalidated every cached
+#: year whenever they were rebuilt, for a change that cannot reach one: the type-by-month
+#: mixture was superseded by the maturity-conditioned law and is now read only by
+#: ``validate.py`` and the tests.
+_NOT_READ_AT_GENERATION = ("mixture_probabilities_type_month.csv",)
+
+#: Measured inputs the segmentation reads at generation: the household register and each
+#: reference site's meter archive. They were missing from the key altogether, so five more
+#: months of readings -- which move the segmentation, the mixture law and therefore every
+#: simulated year -- left the cache serving years built on the shorter record.
+_MEASURED_CENSUS = "household_customers.csv"
 
 
 def _code_digest(path: Path) -> bytes:
@@ -115,26 +136,51 @@ def _code_digest(path: Path) -> bytes:
     return ast.dump(tree).encode()
 
 
+def _measured_inputs() -> list[Path]:
+    """The measured files the generation reads, in a fixed order.
+
+    The household register, and one meter archive per reference site as the site registry
+    declares it. Taken from the registry rather than listed here, so that the key covers
+    whatever the segmentation will actually open.
+    """
+    names = [_MEASURED_CENSUS]
+    names += sorted({site.meter_file for site in SITES.values()
+                     if site.meter_file is not None})
+    return [DEMAND_DIR / name for name in names]
+
+
 def _demand_fingerprint() -> str:
     """Digest of everything that decides the demand a cached year carries.
 
-    Three things decide it, and the key has to carry all three. The calibration tables,
+    Four things decide it, and the key has to carry all four. The calibration tables,
     because a recalibration makes a cached year describe a model that no longer exists --
     which is not hypothetical: the appliance windows were corrected under a cache that would
     have gone on serving the uncorrected year. The code that reads those tables, for exactly
     the same reason, and this half was missing: the seeding fix that made the generator
     reproducible never invalidated anything, so the cache went on serving pools drawn before
-    it, unseeded, and a rename of a table column was what finally dislodged them. And the
-    appliance library, because it is what actually draws the usage windows.
+    it, unseeded, and a rename of a table column was what finally dislodged them. The
+    appliance library, because it is what actually draws the usage windows. And the measured
+    record itself, which was missing too and is the plainest of the four: every simulated
+    month is composed from a mixture law estimated on the meter archive, at generation and
+    not in advance, so extending that archive by five months changes every year the model
+    produces. The pools drawn before the extension stayed valid-looking.
 
     What it does not cover is worth stating: the versions of numpy and pandas, whose random
     streams and numerics are stable across the range this project pins, and the resource
-    series, which the site fingerprint carries instead.
+    series, which the site fingerprint carries instead. Nor the tables listed in
+    ``_NOT_READ_AT_GENERATION``, which the generation does not open.
     """
     digest = hashlib.sha1()
     for path in sorted(REFERENCE_DIR.glob("*.csv")):
+        if path.name in _NOT_READ_AT_GENERATION:
+            continue
         digest.update(path.name.encode())
         digest.update(path.read_bytes())
+
+    for path in _measured_inputs():
+        digest.update(path.name.encode())
+        if path.exists():
+            digest.update(path.read_bytes())
 
     demand_dir = Path(__file__).parent / "demand"
     for name in sorted(_GENERATION_SOURCES):
@@ -190,9 +236,26 @@ def _site_fingerprint(site: Site) -> str:
     return "|".join(str(x) for x in parts)
 
 
+def _module_fingerprint(module) -> str:
+    """What a module adds to a key, and nothing when it is the standard one.
+
+    Appended only when the project describes a module other than the package's, for the
+    reason the roster and the community uses are: written into every key, the five figures
+    would have invalidated every cached year on every machine to record that nobody had
+    changed them.
+    """
+    from .resource.yield_model import ModuleSpec
+
+    if module is None or module == ModuleSpec():
+        return ""
+    return (f"m:{module.noct_c}|{module.gamma_per_k}|{module.derate}"
+            f"|{module.u0_w_m2_k}|{module.u1_w_s_m3_k}")
+
+
 def _cache_key(site: str, year: int, trajectory: str, maturity_months: int,
                seed: int, chemistry: str, archetypes: str = "std",
-               description: str = "", network_loss: float = 0.0) -> str:
+               description: str = "", network_loss: float = 0.0,
+               module: str = "") -> str:
     # The chemistry belongs in the key: it changes the storage ceiling and the
     # self-discharge the instance carries, so a cached instance from another chemistry
     # would silently describe a different battery. So does the demand fingerprint, for the
@@ -204,7 +267,7 @@ def _cache_key(site: str, year: int, trajectory: str, maturity_months: int,
     # smaller plant, and serving it under a fifteen per cent loss is a different study.
     raw = (f"{site}|{year}|{trajectory}|{maturity_months}|{seed}|{chemistry}"
            f"|{_demand_fingerprint()}|{archetypes}|{description}"
-           f"|{network_loss:.6f}")
+           f"|{network_loss:.6f}{module}")
     return hashlib.sha1(raw.encode()).hexdigest()[:16]
 
 
@@ -265,6 +328,7 @@ def build_site_year(
     chemistry: str | None = None,
     use_cache: bool = True,
     network_loss_fraction: float = 0.0,
+    module=None,
 ) -> SiteYear:
     """Resolve a site and year into aligned hourly series.
 
@@ -286,13 +350,18 @@ def build_site_year(
 
     site = get_site(site) if isinstance(site, str) else site
     chemistry = _config.BATTERY_CHEMISTRY if chemistry is None else chemistry
+    if module is None:
+        from .resource.yield_model import module_from
+        from .settings import default_settings
+
+        module = module_from(default_settings().photovoltaic)
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     # The archetypes a site runs on are part of what a cached year is: adjusted locally and
     # not counted here, a stale file would answer with the behaviour of another community.
     loss = check_network_loss(network_loss_fraction)
     key = _cache_key(site.name, year, trajectory, maturity_months, seed, chemistry,
                      _archetypes.fingerprint(site.name), _site_fingerprint(site),
-                     network_loss=loss)
+                     network_loss=loss, module=_module_fingerprint(module))
     path = CACHE_DIR / f"siteyear_{site.name.lower()}_{key}.npz"
 
     if use_cache and path.exists():
@@ -316,7 +385,7 @@ def build_site_year(
                                   maturity_months=maturity_months,
                                   trajectory=trajectory,
                                   scaling=_archetypes.scaling_for(site.name))
-    resource = simulate_resource_year(site, year, chemistry=chemistry)
+    resource = simulate_resource_year(site, year, module=module, chemistry=chemistry)
     if demand.hourly_kw.size != resource.specific_yield.size:
         raise ValueError(
             f"demand has {demand.hourly_kw.size} hours and the resource "

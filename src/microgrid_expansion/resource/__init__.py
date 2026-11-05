@@ -7,6 +7,7 @@ usable-capacity factor and the self-discharge rate.
 """
 from .yield_model import (
     ModuleSpec,
+    module_from,
     ResourceYear,
     battery_self_discharge,
     battery_usable_fraction,
@@ -18,6 +19,7 @@ from .yield_model import (
 
 __all__ = [
     "ModuleSpec",
+    "module_from",
     "ResourceYear",
     "battery_self_discharge",
     "battery_usable_fraction",

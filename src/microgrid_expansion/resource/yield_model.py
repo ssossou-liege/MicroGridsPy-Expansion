@@ -45,6 +45,21 @@ class ModuleSpec:
     u1_w_s_m3_k: float = 6.84        # Faiman wind-driven heat-transfer coefficient
 
 
+def module_from(spec) -> ModuleSpec:
+    """The yield model's module, built from what a project declared.
+
+    ``PhotovoltaicSpec`` carries all five of these figures and the interface offers them,
+    and until now nothing read them: every yield in this repository was computed from the
+    defaults below, which happen to be the same numbers. A project that declared a dirtier
+    site or a hotter mounting was answered about a module it had not described.
+    """
+    return ModuleSpec(noct_c=spec.noct_c,
+                      gamma_per_k=spec.temperature_coefficient_per_k,
+                      derate=spec.derate,
+                      u0_w_m2_k=spec.faiman_u0_w_m2_k,
+                      u1_w_s_m3_k=spec.faiman_u1_w_s_m3_k)
+
+
 def cell_temperature(
     ghi_w_m2: np.ndarray,
     t_amb_c: np.ndarray,

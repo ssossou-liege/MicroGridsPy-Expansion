@@ -12,14 +12,14 @@ from __future__ import annotations
 import linopy
 import numpy as np
 
-from .. import config
 from ..config import ModelConfig
 from .coords import Coords
 
 
 def add_investment_constraints(m: linopy.Model, v: dict, c: Coords,
                                cfg: ModelConfig, architecture: str = "dc",
-                               root_box: "RootBox | None" = None) -> None:
+                               root_box: "RootBox | None" = None,
+                               settings=None) -> None:
     """Capacity recursions, the generator state, and the array-to-converter ceiling.
 
     ``root_box`` confines the year-0 plant to a box of module counts. It is what turns this
@@ -28,10 +28,18 @@ def add_investment_constraints(m: linopy.Model, v: dict, c: Coords,
     rule-based cost of every plan whose root lies in that box, so a box whose value already
     exceeds a known plan can be discarded whole. Only the root is confined; every descendant
     stays free, because what the plan does later is not what is being certified.
+
+    The two admission ratios come from ``settings``. They are fields the interface offers,
+    and read from ``config`` instead they were the defaults whatever a developer entered --
+    a ceiling the certified optimum sits exactly on, decided by a figure the project had no
+    way of changing.
     """
+    from ..settings import default_settings
+
+    coupling = (default_settings() if settings is None else settings).coupling
     divided = architecture == "mixed"
-    ratio = (config.DC_AC_RATIO_MAX if architecture in ("dc", "mixed")
-             else config.AC_RATIO_MAX)
+    ratio = (coupling.dc_ac_ratio_max if architecture in ("dc", "mixed")
+             else coupling.ac_ratio_max)
     ratings = np.asarray(cfg.gen_catalog_kw, dtype=float)
 
     m.add_constraints(v["z_ge"].sum("gsize") == 1, name="one_generator")
@@ -62,7 +70,7 @@ def add_investment_constraints(m: linopy.Model, v: dict, c: Coords,
         if divided:
             # Each part of the array is admitted by its own converter, so the field as a
             # whole may reach the sum of the two ceilings.
-            m.add_constraints(cap_pv_ac - config.AC_RATIO_MAX * cap_inv <= 0,
+            m.add_constraints(cap_pv_ac - coupling.ac_ratio_max * cap_inv <= 0,
                               name=f"array_ratio_ac_{int(n)}")
         else:
             m.add_constraints(v["b_pv_ac"].sel(node=int(n)) == 0,

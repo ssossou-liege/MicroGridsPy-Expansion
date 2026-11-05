@@ -21,7 +21,7 @@ import pandas as pd
 
 from ..paths import IRRADIANCE_DIR
 from ..resource.yield_model import (
-    load_irradiance, simulate_resource_year)
+    ModuleSpec, load_irradiance, simulate_resource_year)
 from ..sites import Site, get_site
 
 #: Annual drift used only when no downscaled projection is on disk for a pathway and year.
@@ -39,7 +39,8 @@ BASE_YEAR = 2025
 
 
 @lru_cache(maxsize=8)
-def _historical(site_name: str) -> tuple[np.ndarray, np.ndarray, tuple[int, ...]]:
+def _historical(site_name: str, module=None
+                ) -> tuple[np.ndarray, np.ndarray, tuple[int, ...]]:
     """Hourly yield and temperature of every complete historical year at a site.
 
     Resolved through the resource layer rather than by reading the file again: the
@@ -52,7 +53,8 @@ def _historical(site_name: str) -> tuple[np.ndarray, np.ndarray, tuple[int, ...]
     rows_yield, rows_temp, years = [], [], []
     for year in available:
         try:
-            resolved = simulate_resource_year(site, int(year))
+            resolved = simulate_resource_year(site, int(year), module=module
+                                              or ModuleSpec())
         except ValueError:
             continue
         if resolved.specific_yield.size < 8760:
@@ -66,7 +68,7 @@ def _historical(site_name: str) -> tuple[np.ndarray, np.ndarray, tuple[int, ...]
 
 
 @lru_cache(maxsize=64)
-def _projected(site_name: str, pathway: str, calendar_year: int):
+def _projected(site_name: str, pathway: str, calendar_year: int, module=None):
     """Downscaled projection for a pathway and milestone, or ``None`` if not produced."""
     from ..resource.cmip6 import read_projection_series
 
@@ -74,7 +76,8 @@ def _projected(site_name: str, pathway: str, calendar_year: int):
     frame = read_projection_series(site, pathway, calendar_year)
     if frame is None:
         return None
-    resolved = simulate_resource_year(site, calendar_year, frame=frame.iloc[:8760])
+    resolved = simulate_resource_year(site, calendar_year, frame=frame.iloc[:8760],
+                                      module=module or ModuleSpec())
     return resolved.specific_yield[:8760], resolved.t_amb_c[:8760]
 
 
@@ -86,7 +89,8 @@ def historical_years(site: Site | str = "Samionta") -> tuple[int, ...]:
 
 def simulate_stage_pv(pathway: str, stage_year: int,
                       site: Site | str = "Samionta",
-                      rng: np.random.Generator | None = None
+                      rng: np.random.Generator | None = None,
+                      module: ModuleSpec | None = None
                       ) -> tuple[np.ndarray, np.ndarray]:
     """Specific yield [kW/kW] and ambient temperature [degC] for a pathway and stage.
 
@@ -103,13 +107,15 @@ def simulate_stage_pv(pathway: str, stage_year: int,
     reported as such rather than passed off as the projection.
     """
     name = site if isinstance(site, str) else site.name
-    yields, temperatures, years = _historical(name)
+    # The project's module, which a frozen spec lets the memoised readers key on: a tree
+    # drawn for one module must not be served the yield computed for another.
+    yields, temperatures, years = _historical(name, module)
     rng = np.random.default_rng() if rng is None else rng
 
     annual = yields.sum(axis=1)
     variability = float(annual[int(rng.integers(0, len(years)))] / annual.mean())
 
-    projected = _projected(name, pathway, BASE_YEAR + int(stage_year))
+    projected = _projected(name, pathway, BASE_YEAR + int(stage_year), module)
     if projected is not None:
         yield_, temperature = projected
         return yield_ * variability, temperature

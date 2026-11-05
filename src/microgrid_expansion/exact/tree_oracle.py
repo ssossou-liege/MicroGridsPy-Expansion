@@ -14,7 +14,6 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .. import config
 from ..settings import ProjectSettings, default_settings
 from ..timedomain.rep_days import RepDays
 from ..tree.tree_model import ScenarioTree
@@ -48,10 +47,13 @@ def simulate_node(plan, year: dict, costs: dict, settings: ProjectSettings,
                             pv_ac_kw=getattr(plan, "pv_ac_kw", 0.0),
                             architecture=architecture)
 
+    coupling = settings.coupling
     if architecture == "mixed":
-        admissible = capacities.admissible(config.DC_AC_RATIO_MAX, config.AC_RATIO_MAX)
+        admissible = capacities.admissible(coupling.dc_ac_ratio_max,
+                                           coupling.ac_ratio_max)
     else:
-        ratio = config.DC_AC_RATIO_MAX if architecture == "dc" else config.AC_RATIO_MAX
+        ratio = (coupling.dc_ac_ratio_max if architecture == "dc"
+                 else coupling.ac_ratio_max)
         admissible = capacities.admissible(ratio)
     if not admissible:
         return NodeTrace(float("inf"), 0.0, 0.0, 0.0, 0.0, False)
@@ -75,7 +77,8 @@ def simulate_node(plan, year: dict, costs: dict, settings: ProjectSettings,
     # this is compared against drops the same term, so the ordering between them holds.
     voll = settings.economics.value_of_lost_load_usd_kwh
     trace = _simulate_year(year["demand"], year["yield"], year["t_amb"],
-                           capacities, battery, generator, controller, grid=link)
+                           capacities, battery, generator, controller, grid=link,
+                           coupling=coupling)
     operating = (trace["fuel"] * costs["fuel_price"]
                  + trace["unserved"] * voll
                  + trace.get("grid_import", 0.0) * settings.grid.import_usd_kwh
@@ -114,10 +117,10 @@ def simulate_node(plan, year: dict, costs: dict, settings: ProjectSettings,
 
 
 def _simulate_year(demand, yield_, temperature, capacities, battery, generator,
-                   controller, grid=None) -> dict:
+                   controller, grid=None, coupling=None) -> dict:
     """Run the controller over a node's whole operating year."""
     dispatch = simulate(demand, yield_, temperature, capacities, battery, generator,
-                        controller, grid=grid)
+                        controller, grid=grid, coupling=coupling)
     return {
         "grid_import": (0.0 if dispatch.grid_import_kw is None
                         else float(dispatch.grid_import_kw.sum())),

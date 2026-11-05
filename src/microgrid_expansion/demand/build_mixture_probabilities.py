@@ -51,7 +51,10 @@ def parse_args() -> argparse.Namespace:
         default=REFERENCE_DIR,
         help="Directory where output CSV files are written.",
     )
-    parser.add_argument("--n-clusters", type=int, default=4)
+    # No --n-clusters. The operative partition assigns each household-month to the nearest
+    # of the four *reference profiles* fixed by the appliance calibration, so the number of
+    # archetypes is a property of that table and not a choice at this command line. The
+    # option existed, was never read, and promised an adjustment the code cannot make.
     parser.add_argument("--winsor-lower-quantile", type=float, default=0.01)
     parser.add_argument("--winsor-upper-quantile", type=float, default=0.99)
     parser.add_argument("--outlier-mad-threshold", type=float, default=4.5)

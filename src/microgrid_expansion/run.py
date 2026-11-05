@@ -29,7 +29,7 @@ from .paths import RESULTS_DIR
 from .post import extract_solution, expected_npc_lcoe, node_kpis
 from .post.report import write_report
 from .scenarios import sample_scenario_paths, space_from_settings
-from .settings import default_settings
+from .settings import ProjectSettings, default_settings
 from .solve import solve
 from .timedomain import reduce_to_rep_days
 from .tree import build_tree
@@ -48,10 +48,23 @@ class _NodeInstance:
         self.self_discharge = battery_self_discharge(data.t_amb, chemistry)
 
 
-def run(cfg: ModelConfig, out_dir: Path = RESULTS_DIR, verbose: bool = True) -> dict:
-    """Execute the pipeline and return the certified plan with its indicators."""
+def run(cfg: ModelConfig, out_dir: Path = RESULTS_DIR, verbose: bool = True,
+        settings: "ProjectSettings | None" = None) -> dict:
+    """Execute the pipeline and return the certified plan with its indicators.
+
+    The village is named twice -- the configuration carries it because the tree is drawn
+    before a settings object exists, and the project declares it because it *is* the
+    project -- and the two may not disagree. Nothing on this path reads ``settings.site``
+    today, which is why the disagreement was harmless and why it would not have stayed so:
+    the customers to connect, and therefore the balance of plant, are read from the
+    project's site.
+    """
     cfg.validate()
-    settings = default_settings()
+    settings = default_settings() if settings is None else settings
+    if settings.site != cfg.site:
+        raise ValueError(
+            f"the configuration is for {cfg.site!r} and the project describes "
+            f"{settings.site!r}; one village per run, named once")
 
     # Over the uncertainty the settings describe, as the interface does. Left to the
     # library's defaults the two paths answered the same project differently.
@@ -122,6 +135,27 @@ def run(cfg: ModelConfig, out_dir: Path = RESULTS_DIR, verbose: bool = True) -> 
     return {"expected": expected, "plans": plans, "tree": tree, "report": written}
 
 
+def _configuration(args) -> tuple[ModelConfig, "ProjectSettings"]:
+    """The project and the tree configuration for one command line, agreeing on everything.
+
+    Assembled in one place so that it can be tested without running the pipeline. Three
+    figures were carried twice and reconciled nowhere: the village, the horizon and the
+    discount rate. The project is the source of all three, and the configuration holds the
+    copies the tree needs before a settings object exists.
+    """
+    settings = default_settings()
+    settings.site = args.site
+    cfg = ModelConfig(site=settings.site, solver=args.solver, n_rep_days=args.rep_days,
+                      n_mc_paths=args.mc_paths, seed=args.seed,
+                      stage_years=tuple(args.stage_years),
+                      branching=tuple(args.branching),
+                      horizon_years=settings.economics.horizon_years,
+                      discount_rate=settings.economics.discount_rate,
+                      network_loss_fraction=args.network_loss)
+    cfg.validate()
+    return cfg, settings
+
+
 def main(argv: list[str] | None = None) -> int:
     # Taken from the configuration rather than repeated here. Repeated, they drifted: the
     # command line kept three stages branching two ways, seven nodes, while the
@@ -148,13 +182,8 @@ def main(argv: list[str] | None = None) -> int:
                              "consumes; it decides the demand every node is sized for")
     args = parser.parse_args(argv)
 
-    cfg = ModelConfig(solver=args.solver, n_rep_days=args.rep_days,
-                      n_mc_paths=args.mc_paths, seed=args.seed,
-                      stage_years=tuple(args.stage_years),
-                      branching=tuple(args.branching),
-                      network_loss_fraction=args.network_loss)
-    cfg.site = args.site
-    run(cfg)
+    cfg, settings = _configuration(args)
+    run(cfg, settings=settings)
     return 0
 
 

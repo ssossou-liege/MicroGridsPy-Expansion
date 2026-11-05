@@ -564,8 +564,15 @@ def simulate(
     controller: Controller = Controller(),
     timestep_h: float = 1.0,
     grid: "GridLink | None" = None,
+    coupling=None,
 ) -> Dispatch:
-    """Run the controller over a series and return its trajectory."""
+    """Run the controller over a series and return its trajectory.
+
+    ``coupling`` is the project's junction between the array and the plant, and what it
+    carries here is the penalty on array energy that reaches storage across the load's bus.
+    Omitted, the project defaults apply; a caller that holds a settings object passes its
+    own, or the simulation charges a round trip the project did not declare.
+    """
     demand = np.asarray(demand_kw, dtype=float)
     # The whole field produces, whichever bus each part of it is on; the split governs the
     # path to the load, not the output.
@@ -604,7 +611,11 @@ def simulate(
     # Array energy reaching storage across the load's bus is converted twice, up by the
     # string inverter and down again by the hybrid inverter. That second conversion is what
     # a field placed on the load's bus pays for the one it saves on the way to the load.
-    eta_ac = battery.charge_efficiency * config.AC_DOUBLE_CONVERSION_EFF
+    if coupling is None:
+        from ..settings import default_settings
+
+        coupling = default_settings().coupling
+    eta_ac = battery.charge_efficiency * coupling.ac_double_conversion_efficiency
     grid = GridLink() if grid is None else grid
     if grid.available is None:
         grid_available = np.zeros(n, dtype=np.bool_)

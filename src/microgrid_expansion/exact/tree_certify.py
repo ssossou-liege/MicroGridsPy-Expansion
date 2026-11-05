@@ -22,7 +22,6 @@ from dataclasses import dataclass, replace
 
 import numpy as np
 
-from .. import config
 from ..settings import ProjectSettings, default_settings
 from ..timedomain.rep_days import RepDays
 from ..tree.tree_model import ScenarioTree
@@ -131,9 +130,10 @@ def _admit(plans: dict, architecture: str, settings: ProjectSettings) -> dict:
     """
     import math
 
-    ratio_dc = (config.DC_AC_RATIO_MAX if architecture in ("dc", "mixed")
-                else config.AC_RATIO_MAX)
-    ratio_ac = config.AC_RATIO_MAX
+    coupling = settings.coupling
+    ratio_dc = (coupling.dc_ac_ratio_max if architecture in ("dc", "mixed")
+                else coupling.ac_ratio_max)
+    ratio_ac = coupling.ac_ratio_max
     unit = settings.inverter.unit_kw
     out = dict(plans)
     for node, plan in out.items():

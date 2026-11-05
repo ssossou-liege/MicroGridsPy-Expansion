@@ -19,7 +19,7 @@ from ..timedomain.rep_days import RepDays
 from ..tree.tree_model import ScenarioTree
 from .coords import build_coords
 from .dispatch_constraints import add_dispatch_constraints
-from .economics import add_objective
+from .economics import add_objective, check_one_discount_rate, check_tree_discount_rate
 from .investment_constraints import add_investment_constraints
 from .variables import add_variables
 
@@ -90,6 +90,9 @@ def build_model(tree: ScenarioTree, rep: dict[int, RepDays], cfg: ModelConfig,
     import linopy
 
     settings = default_settings() if settings is None else settings
+    check_one_discount_rate(cfg, settings)
+    if tree.discount_rate is not None:
+        check_tree_discount_rate(tree, settings)
     coords = build_coords(tree, rep, cfg)
     battery = BatteryModel.from_spec(settings.battery)
     biggest = max(settings.generators, key=lambda g: g.rating_kw)
@@ -98,7 +101,7 @@ def build_model(tree: ScenarioTree, rep: dict[int, RepDays], cfg: ModelConfig,
     model = linopy.Model()
     variables = add_variables(model, coords, relax_commitment=relax_commitment)
     add_investment_constraints(model, variables, coords, cfg, architecture=architecture,
-                               root_box=root_box)
+                               root_box=root_box, settings=settings)
     data = node_data(tree, rep, settings)
     add_dispatch_constraints(model, variables, coords, cfg, data, battery, generator,
                              architecture=architecture,

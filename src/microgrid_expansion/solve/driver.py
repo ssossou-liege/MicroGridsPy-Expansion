@@ -41,6 +41,36 @@ class Solution:
         return abs(self.objective - self.dual_bound) / abs(self.objective)
 
 
+#: What the project's solver settings are called by each solver. A limit declared and never
+#: passed is worse than no limit: the figure sits in the settings, the interface offers it,
+#: and the solve runs until it finishes whatever the project asked for.
+SOLVER_NAMES = {
+    "gurobi": {"time_limit_s": "TimeLimit", "threads": "Threads"},
+    "highs": {"time_limit_s": "time_limit", "threads": "threads"},
+}
+
+
+def solver_limits(settings: ProjectSettings, name: str) -> dict:
+    """The project's solver limits, under the names ``name`` answers to.
+
+    The time limit is always passed. Threads are passed only when the project names a
+    number: zero means *every core*, which is already what both solvers do, and sending it
+    explicitly would differ from the default on a solver this project has not met.
+
+    The tolerance is deliberately not here. ``settings.solver.mip_gap`` declares one per
+    cent, while the solvers' own default is a hundredth of that, and every bound in this
+    repository was computed at the solver's. Passing the declared figure would loosen all
+    of them at once, which is a change to every stored result and not a wiring fix.
+    """
+    names = SOLVER_NAMES.get(name, {})
+    limits = {}
+    if "time_limit_s" in names and settings.solver.time_limit_s:
+        limits[names["time_limit_s"]] = int(settings.solver.time_limit_s)
+    if "threads" in names and settings.solver.threads:
+        limits[names["threads"]] = int(settings.solver.threads)
+    return limits
+
+
 def _dual_bound(model) -> float:
     """The solver's own guaranteed lower bound, by whichever name it gives it.
 
@@ -79,6 +109,9 @@ def solve(programme, settings: ProjectSettings | None = None, **overrides) -> So
         gurobipy.setParam("OutputFlag", 0)
 
     options = dict(quiet.get(name, {}))
+    options.update(solver_limits(settings, name))
+    # What the caller asks for wins over what the project declares: a study that states a
+    # tolerance or a memory cap for one solve is saying something the settings cannot.
     options.update(overrides)
     started = time.time()
     programme.model.solve(solver_name=name, progress=False, **options)

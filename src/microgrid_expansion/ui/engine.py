@@ -37,6 +37,7 @@ def size_site(job: Job, overrides: dict[str, Any],
     """
     from ..exact.certify import Lattice, certify_exhaustive
     from ..instances import build_site_year
+    from ..resource.yield_model import module_from
 
     settings = settings_from(overrides)
     job.total = total_steps
@@ -46,7 +47,9 @@ def size_site(job: Job, overrides: dict[str, Any],
     instance = build_site_year(
         settings.site, settings.year, trajectory=certified_on,
         maturity_months=settings.maturity_months,
-        network_loss_fraction=settings.infrastructure.network_loss_fraction)
+        network_loss_fraction=settings.infrastructure.network_loss_fraction,
+        module=module_from(settings.photovoltaic),
+        chemistry=settings.battery.chemistry)
     job.done = step + 1
 
     job.announce("job.lattice")
@@ -157,7 +160,6 @@ def plan_expansion(job: Job, overrides: dict[str, Any],
         maturity_months=settings.maturity_months,
         horizon_years=settings.economics.horizon_years,
         discount_rate=settings.economics.discount_rate,
-        battery_chemistry=settings.battery.chemistry,
         network_loss_fraction=settings.infrastructure.network_loss_fraction)
     job.total = total_steps
 

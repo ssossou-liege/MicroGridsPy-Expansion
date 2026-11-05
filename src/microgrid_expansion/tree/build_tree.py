@@ -38,14 +38,17 @@ def build_tree(paths: list[ScenarioPath], cfg: ModelConfig) -> ScenarioTree:
     reductions = [_reduce.reduce_stage(paths, year, branching[k], seed=cfg.seed)
                   for k, year in enumerate(stage_years)]
 
-    tree = ScenarioTree()
-    discount = 1.0 + getattr(cfg, "discount_rate", 0.08)
+    # The rate is the configuration's, which the project sets; a literal fallback here was
+    # a second source for a figure that must have one, and it would have answered for a
+    # project that declared another rate.
+    tree = ScenarioTree(discount_rate=float(cfg.discount_rate))
+    discount = 1.0 + float(cfg.discount_rate)
 
     def add(node: int, stage: int, parent: int | None, probability: float,
             path: ScenarioPath) -> None:
         year = stage_years[stage]
         span = (stage_years[stage + 1] - year if stage + 1 < len(stage_years)
-                else getattr(cfg, "horizon_years", 25) - year)
+                else int(cfg.horizon_years) - year)
         tree.nodes.append(node)
         tree.stage[node] = stage
         tree.parent[node] = parent

@@ -75,10 +75,25 @@ def test_only_lithium_forbids_charging_below_freezing():
 
 
 def test_an_unknown_chemistry_is_rejected_everywhere():
+    """Once, and in the place the chemistry is declared.
+
+    The tree configuration carried a copy of it and validated that copy, which is two
+    declarations of one pack: the interface set both and nothing read the second. The
+    project's own settings are what refuse an unknown chemistry now.
+    """
+    from dataclasses import replace
+
+    from microgrid_expansion.settings import default_settings
+
     with pytest.raises(KeyError, match="unknown battery chemistry"):
         get_chemistry("nickel-cadmium")
-    with pytest.raises(ValueError, match="battery_chemistry"):
-        config.ModelConfig(battery_chemistry="nickel-cadmium").validate()
+
+    settings = default_settings()
+    settings.battery = replace(settings.battery, chemistry="nickel-cadmium")
+    with pytest.raises(ValueError, match="unknown battery chemistry"):
+        settings.validate()
+    assert not hasattr(config.ModelConfig(), "battery_chemistry"), (
+        "the configuration carries a second declaration of the chemistry")
 
 
 def test_a_chemistry_object_passes_through_unchanged():

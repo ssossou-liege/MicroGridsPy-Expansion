@@ -67,6 +67,11 @@ class ScenarioTree:
     #: Mean distortion of each stage's reduction, in the scaled feature space, so
     #: that a compression which has lost something says so rather than passing.
     reduction_error: dict[int, float] = field(default_factory=dict)
+    #: The rate ``disc`` was computed at. A tree is evidence, and what it was discounted at
+    #: has to travel with it: the capital charged against its nodes must be recovered at the
+    #: same rate, and a consumer handed a tree and a settings object cannot otherwise tell
+    #: whether the two agree. ``None`` on a tree assembled by hand, which claims nothing.
+    discount_rate: float | None = None
 
     def ancestors(self, node: int) -> list[int]:
         """Return the chain from the root to ``node`` inclusive."""

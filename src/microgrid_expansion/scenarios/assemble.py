@@ -64,6 +64,12 @@ def sample_scenario_paths(
     space = space or UncertaintySpace()
     rng = np.random.default_rng(cfg.seed)
     raw_paths = mc_sampler.sample_paths(cfg, space)
+    # The module the project describes, for the same reason as the prices: the yield of a
+    # dirtier site or a hotter mounting is not the yield of the package's own module.
+    from ..resource.yield_model import module_from
+    from ..settings import default_settings
+
+    module = module_from((settings or default_settings()).photovoltaic)
 
     site = getattr(cfg, "site", "Samionta")
     resolved: list[ScenarioPath] = []
@@ -83,6 +89,6 @@ def sample_scenario_paths(
                 base_maturity_months=getattr(cfg, "maturity_months", 12),
                 network_loss_fraction=getattr(cfg, "network_loss_fraction", 0.0))
             pv_unit[y], t_amb[y] = pv_paths.simulate_stage_pv(
-                stage["resource"], y, site=site, rng=rng)
+                stage["resource"], y, site=site, rng=rng, module=module)
         resolved.append(ScenarioPath(pid, draws, demand, pv_unit, t_amb))
     return resolved

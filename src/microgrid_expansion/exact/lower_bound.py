@@ -104,9 +104,15 @@ class Economics:
     #: It moves the tariff and the subsidy, which is what the project is judged on.
     infrastructure_usd_yr: float = 0.0
 
+    #: The rate every annuity here is computed at. It belongs to the project, and the field
+    #: exists because this object is what the certification carries its prices in: read from
+    #: ``config`` instead, as the methods below did, a project at twelve per cent recovered
+    #: its plant at eight and nothing said so.
+    discount_rate: float = config.DISCOUNT_RATE
+
     def __post_init__(self) -> None:
         if self.crf is None:
-            object.__setattr__(self, "crf", config.crf())
+            object.__setattr__(self, "crf", config.crf(self.discount_rate))
         if self.degradation_usd_kwh is None:
             object.__setattr__(self, "degradation_usd_kwh",
                                config.battery_degradation_cost())
@@ -114,6 +120,52 @@ class Economics:
     #: The storage pack, needed to work out which of its two lives ends it. Left unset the
     #: calendar life is used, which is the relaxation the lower bound wants.
     battery_spec: object | None = None
+
+    @classmethod
+    def from_settings(cls, settings, architecture: str = "mixed", **overrides
+                      ) -> "Economics":
+        """Every price, life and rate of one project, in the form the oracles read.
+
+        The defaults of this dataclass are the defaults of the package, which is only
+        acceptable where a production caller replaces them. The certification did not: it
+        passed the fuel price, the value of lost load and the balance of plant, and left the
+        prices of the equipment, the service lives, the maintenance rates and the discount
+        rate to whatever ``config`` had read at import. A project that declared a dearer
+        array was certified at the default array.
+        """
+        generator = max(settings.generators, key=lambda g: g.rating_kw)
+        coupling = settings.coupling
+        return cls(
+            discount_rate=settings.economics.discount_rate,
+            pv_usd_kw=settings.photovoltaic.cost_usd_kw,
+            battery_usd_kwh=settings.battery.cost_usd_kwh,
+            inverter_usd_kw=settings.inverter.cost_usd_kw,
+            generator_usd_kw=generator.cost_usd_kw,
+            om_rates=(settings.photovoltaic.om_rate, settings.battery.om_rate,
+                      settings.inverter.om_rate, generator.om_rate),
+            lifetimes=(settings.photovoltaic.lifetime_years,
+                       settings.battery.lifetime_years,
+                       settings.inverter.lifetime_years,
+                       generator.lifetime_years),
+            conversion_usd_kw=coupling.cost_usd_kw(architecture),
+            string_inverter_usd_kw=coupling.string_inverter_cost_usd_kw,
+            conversion_om_rate=coupling.om_rate,
+            conversion_lifetime_y=coupling.lifetime_years,
+            fuel_usd_l=settings.economics.diesel_price_usd_l,
+            voll_usd_kwh=settings.economics.value_of_lost_load_usd_kwh,
+            **overrides)
+
+    def string_inverter_annualised(self) -> float:
+        """Annual cost of one kilowatt of string inverter, capital and maintenance.
+
+        Computed here rather than memoised at module level, as it was. Keyed on nothing, the
+        cache held the first project a process certified and served it to every project
+        after -- two villages sized one after another, the second priced with the first
+        one's converters.
+        """
+        return self.string_inverter_usd_kw * (
+            config.crf(self.discount_rate, self.conversion_lifetime_y)
+            + self.conversion_om_rate)
 
     def battery_annualised(self, capacity_kwh: float = 0.0,
                            annual_discharge_kwh: float = 0.0) -> float:
@@ -129,7 +181,7 @@ class Economics:
         if self.battery_spec is not None and capacity_kwh > 0 and annual_discharge_kwh > 0:
             life = self.battery_spec.effective_lifetime_years(capacity_kwh,
                                                               annual_discharge_kwh)
-        return self.battery_usd_kwh * (config.crf(n=life) + om_batt)
+        return self.battery_usd_kwh * (config.crf(self.discount_rate, life) + om_batt)
 
     def annualised(self) -> tuple[float, float, float, float]:
         """Annualised cost of one unit of each capacity, capital plus maintenance.
@@ -140,12 +192,13 @@ class Economics:
         """
         om_pv, om_batt, om_inv, om_gen = self.om_rates
         life_pv, life_batt, life_inv, life_gen = self.lifetimes
-        return (self.pv_usd_kw * (config.crf(n=life_pv) + om_pv)
-                + self.conversion_usd_kw * (config.crf(n=self.conversion_lifetime_y)
+        rate = self.discount_rate
+        return (self.pv_usd_kw * (config.crf(rate, life_pv) + om_pv)
+                + self.conversion_usd_kw * (config.crf(rate, self.conversion_lifetime_y)
                                             + self.conversion_om_rate),
-                self.battery_usd_kwh * (config.crf(n=life_batt) + om_batt),
-                self.inverter_usd_kw * (config.crf(n=life_inv) + om_inv),
-                self.generator_usd_kw * (config.crf(n=life_gen) + om_gen))
+                self.battery_usd_kwh * (config.crf(rate, life_batt) + om_batt),
+                self.inverter_usd_kw * (config.crf(rate, life_inv) + om_inv),
+                self.generator_usd_kw * (config.crf(rate, life_gen) + om_gen))
 
 
 def catalogue_fuel_minorant(generator: GeneratorModel,
@@ -225,6 +278,7 @@ def cost_optimal_dispatch(
     generator_ratings: tuple[float, ...] | None = None,
     threads: int | None = None,
     grid=None,
+    coupling=None,
 ) -> LowerBound:
     """Minimise annualised total cost over the box and return the bound.
 
@@ -241,6 +295,10 @@ def cost_optimal_dispatch(
     import linopy
     import xarray as xr
 
+    if coupling is None:
+        from ..settings import default_settings
+
+        coupling = default_settings().coupling
     demand = instance.demand_kw
     n = demand.size
     weights = np.ones(n) if weights is None else np.asarray(weights, dtype=float)
@@ -254,8 +312,7 @@ def cost_optimal_dispatch(
     # the ends of this catalogue — and the bound then stops bounding.
     fuel_0, fuel_1 = catalogue_fuel_minorant(generator, box.generator_kw)
     a_pv, a_batt, a_inv, a_gen = economics.annualised()
-    a_pv_ac = a_pv + economics.string_inverter_usd_kw * (
-        config.crf(n=economics.conversion_lifetime_y) + economics.conversion_om_rate)
+    a_pv_ac = a_pv + economics.string_inverter_annualised()
 
     m = linopy.Model()
     if integer_units is None:
@@ -385,7 +442,7 @@ def cost_optimal_dispatch(
     # is rectified once whichever bus it crosses. The two charging streams therefore do not
     # share an efficiency, and the relaxation must apply the same penalty as the controller
     # or it would minorise a plant with better storage than the one being certified.
-    eta_ac = battery.charge_efficiency * config.AC_DOUBLE_CONVERSION_EFF
+    eta_ac = battery.charge_efficiency * coupling.ac_double_conversion_efficiency
     m.add_constraints(
         soc_next - retention * soc_prev
         - battery.charge_efficiency * (pv_batt + gen_batt) - eta_ac * ac_batt
@@ -414,9 +471,9 @@ def cost_optimal_dispatch(
     # trackers integrated in the hybrid inverter accept a bounded field per unit of rating,
     # and a field on the load's bus must be absorbable by the battery inverter the instant
     # the load falls away. Neither part is enlarged without buying the conversion it needs.
-    m.add_constraints(cap_pv - config.DC_AC_RATIO_MAX * cap_inv <= 0,
+    m.add_constraints(cap_pv - coupling.dc_ac_ratio_max * cap_inv <= 0,
                       name="array_ratio_dc")
-    m.add_constraints(cap_pv_ac - config.AC_RATIO_MAX * cap_inv <= 0,
+    m.add_constraints(cap_pv_ac - coupling.ac_ratio_max * cap_inv <= 0,
                       name="array_ratio_ac")
     if box.pv_total_kw is not None:
         low, high = box.pv_total_kw

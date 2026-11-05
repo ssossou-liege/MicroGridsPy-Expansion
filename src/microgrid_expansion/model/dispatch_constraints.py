@@ -20,7 +20,6 @@ import linopy
 import numpy as np
 import xarray as xr
 
-from .. import config
 from ..config import ModelConfig
 from .coords import Coords
 from .investment_constraints import capacity
@@ -43,11 +42,17 @@ def add_dispatch_constraints(m: linopy.Model, v: dict, c: Coords, cfg: ModelConf
         grid_room = (float(grid_spec.capacity_kw) if grid_spec.capacity_kw > 0
                      else float(max(np.asarray(block["demand"]).max()
                                     for block in data.values())) * 2.0)
-    eta_pv = (battery.charge_efficiency * config.AC_DOUBLE_CONVERSION_EFF
+    # The round-trip penalty is the project's, not the module's: a project that declares a
+    # different pair of converters is charged for the pair it declared.
+    from ..settings import default_settings
+
+    coupling = (default_settings() if settings is None else settings).coupling
+    double = coupling.ac_double_conversion_efficiency
+    eta_pv = (battery.charge_efficiency * double
               if ac_coupled else battery.charge_efficiency)
     # Array energy crossing the load's bus on its way to storage is converted twice, up by
     # the string inverter and down by the one on the battery's bus.
-    eta_ac = battery.charge_efficiency * config.AC_DOUBLE_CONVERSION_EFF
+    eta_ac = battery.charge_efficiency * double
     ratings = np.asarray(cfg.gen_catalog_kw, dtype=float)
     big_m = float(ratings.max())
 

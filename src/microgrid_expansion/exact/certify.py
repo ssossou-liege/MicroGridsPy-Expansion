@@ -38,6 +38,7 @@ import numpy as np
 
 from .. import config
 from ..instances import SiteYear, build_site_year
+from ..resource.yield_model import module_from
 from ..settings import ProjectSettings, default_settings
 from .lower_bound import CapacityBox, Economics, cost_optimal_dispatch
 
@@ -90,11 +91,30 @@ class Lattice:
     #: differ in what the hybrid inverter carries and in what conversion costs, so a design
     #: means something different under each and they cannot share a bound.
     architecture: str = "dc"
+    #: The junction between the array and the plant, as the project declares it. It belongs
+    #: on the lattice because its two ratios decide which points of the lattice exist at
+    #: all: a certificate is a proof over a set, and those figures are the set's boundary.
+    #: Resolved once here rather than read per box, the boxes being counted in thousands.
+    coupling: object | None = None
+
+    def __post_init__(self) -> None:
+        if self.coupling is None:
+            object.__setattr__(self, "coupling", default_settings().coupling)
+
+    @property
+    def ratio_dc(self) -> float:
+        """Field admitted per kilowatt of hybrid inverter by its integrated trackers."""
+        return self.coupling.dc_ac_ratio_max
+
+    @property
+    def ratio_ac(self) -> float:
+        """Field admitted on the load's bus per kilowatt of battery inverter."""
+        return self.coupling.ac_ratio_max
 
     @property
     def ratio_max(self) -> float:
         """Field admitted per kilowatt of hybrid inverter by its integrated trackers."""
-        return config.DC_AC_RATIO_MAX
+        return self.ratio_dc
 
     def admits(self, n_pv: int, n_inv: int, n_pv_ac: int = 0) -> bool:
         """Whether a field can be wired to ``n_inv`` of inverter.
@@ -107,10 +127,10 @@ class Lattice:
         """
         capacity = n_inv * self.inv_unit_kw
         if self.derive_split:
-            ceiling = (config.DC_AC_RATIO_MAX + config.AC_RATIO_MAX) * capacity
+            ceiling = (self.ratio_dc + self.ratio_ac) * capacity
             return n_pv * self.pv_unit_kw <= ceiling + 1e-9
-        return (n_pv * self.pv_unit_kw <= config.DC_AC_RATIO_MAX * capacity + 1e-9
-                and n_pv_ac * self.pv_unit_kw <= config.AC_RATIO_MAX * capacity + 1e-9)
+        return (n_pv * self.pv_unit_kw <= self.ratio_dc * capacity + 1e-9
+                and n_pv_ac * self.pv_unit_kw <= self.ratio_ac * capacity + 1e-9)
 
     @property
     def size(self) -> int:
@@ -133,7 +153,7 @@ class Lattice:
         inverter = n_inv * self.inv_unit_kw
         if self.derive_split:
             field = n_pv * self.pv_unit_kw
-            on_battery_bus = min(field, config.DC_AC_RATIO_MAX * inverter)
+            on_battery_bus = min(field, self.ratio_dc * inverter)
             on_load_bus = field - on_battery_bus
         else:
             on_battery_bus = n_pv * self.pv_unit_kw
@@ -176,7 +196,8 @@ class Lattice:
                    inv_unit_kw=settings.inverter.unit_kw,
                    generator_ratings=tuple(sorted(g.rating_kw for g in settings.generators)),
                    n_pv=(0, pv_max), n_batt=(0, batt_max), n_inv=(1, inv_max),
-                   n_pv_ac=(0, 0), architecture=architecture)
+                   n_pv_ac=(0, 0), architecture=architecture,
+                   coupling=settings.coupling)
 
 
 @dataclass(order=True)
@@ -265,13 +286,6 @@ class Certificate:
                 f"(tends to the price of the heuristic, not to zero)")
 
 
-@lru_cache(maxsize=1)
-def _string_inverter_cost() -> float:
-    """Annual cost of one kilowatt of string inverter, capital and maintenance."""
-    return config.CONV_STRING_USD_KW * (config.crf(n=config.CONV_LIFETIME_Y)
-                                        + config.CONV_OM_RATE)
-
-
 @lru_cache(maxsize=None)
 def _generator_models(diesel_price: float) -> dict:
     """One fuel model per catalogue rating, built once."""
@@ -316,8 +330,9 @@ def _grid_capital_usd_yr(settings) -> float:
     spec = getattr(settings, "grid", None)
     if spec is None or not spec.connected or not spec.connection_usd:
         return 0.0
-    return spec.connection_usd * (config.crf(n=settings.economics.horizon_years)
-                                  + config.INV_OM_RATE)
+    return spec.connection_usd * (
+        config.crf(settings.economics.discount_rate, settings.economics.horizon_years)
+        + settings.inverter.om_rate)
 
 
 def customers_to_connect(settings) -> tuple[int, int]:
@@ -385,7 +400,7 @@ def _price_relative(z_rule: float, z_opt: float, economics) -> float:
 
 
 def _evaluate_rule(instance, capacities, economics, battery, generator, controller,
-                   annualised, grid=None) -> float:
+                   annualised, grid=None, coupling=None) -> float:
     """Annualised total cost of one design under the deployed controller.
 
     A design whose array exceeds what its converter admits costs infinity, because it does
@@ -396,8 +411,13 @@ def _evaluate_rule(instance, capacities, economics, battery, generator, controll
     direct-current coupling nothing else bounds the array, its conversion being bought with
     the inverter, so the ceiling is the only thing standing between the search and free
     photovoltaic capacity.
+
+    ``coupling`` carries the two ceilings and the round-trip penalty, from the project the
+    certification was asked about rather than from the package defaults.
     """
-    if not capacities.admissible(config.DC_AC_RATIO_MAX, config.AC_RATIO_MAX):
+    if coupling is None:
+        coupling = default_settings().coupling
+    if not capacities.admissible(coupling.dc_ac_ratio_max, coupling.ac_ratio_max):
         return float("inf")
     # The design says which generating set is installed, and the fuel curve belongs to that
     # set. Evaluating every design with the largest unit's curve charged the small ones an
@@ -405,7 +425,8 @@ def _evaluate_rule(instance, capacities, economics, battery, generator, controll
     # of this catalogue — and so favoured them in the search that chose between them.
     generator = _generator_for(capacities.generator_kw, generator)
     dispatch = simulate(instance.demand_kw, instance.specific_yield, instance.t_amb_c,
-                        capacities, battery, generator, controller, grid=grid)
+                        capacities, battery, generator, controller, grid=grid,
+                        coupling=coupling)
     # Both parts of the field buy their modules; only the part on the load's bus buys the
     # string inverters that put it there. Charging the first coefficient to ``pv_kw`` alone
     # left the second part free, which understated every design that used it and let the
@@ -419,7 +440,7 @@ def _evaluate_rule(instance, capacities, economics, battery, generator, controll
         capacities.battery_kwh,
         float(dispatch.discharge_kw.sum()) * (8760.0 / instance.demand_kw.size))
     capital = (annualised[0] * capacities.pv_kw
-               + _string_inverter_cost() * capacities.pv_ac_kw
+               + economics.string_inverter_annualised() * capacities.pv_ac_kw
                + annualised[0] * capacities.pv_ac_kw
                + battery_annualised * capacities.battery_kwh
                + annualised[2] * capacities.inverter_kw
@@ -444,17 +465,17 @@ _WORKER: dict = {}
 
 
 def _init_worker(instance, economics, battery, generator, controller, annualised,
-                 grid=None) -> None:
+                 grid=None, coupling=None) -> None:
     _WORKER.update(instance=instance, economics=economics, battery=battery,
                    generator=generator, controller=controller, annualised=annualised,
-                   grid=grid)
+                   grid=grid, coupling=coupling)
 
 
 def _evaluate_in_worker(capacities: Capacities) -> float:
     return _evaluate_rule(_WORKER["instance"], capacities, _WORKER["economics"],
                           _WORKER["battery"], _WORKER["generator"],
                           _WORKER["controller"], _WORKER["annualised"],
-                          _WORKER.get("grid"))
+                          _WORKER.get("grid"), _WORKER.get("coupling"))
 
 
 class _Evaluator:
@@ -533,7 +554,7 @@ def coarse_incumbent(instance, lattice, economics, battery, generator, controlle
     """
     if evaluator is None:      # called outside a certification: evaluate in series
         evaluator = _Evaluator((instance, economics, battery, generator, controller,
-                                annualised), workers=1)
+                                annualised, None, lattice.coupling), workers=1)
     best, best_design, calls = float("inf"), None, 0
     centre = None
     spacing = max(step, 1)
@@ -585,7 +606,7 @@ def _refine(instance, lattice, centre, economics, battery, generator, controller
     """Local search around a design, again with the cheap oracle only."""
     if evaluator is None:      # called outside a certification: evaluate in series
         evaluator = _Evaluator((instance, economics, battery, generator, controller,
-                                annualised), workers=1)
+                                annualised, None, lattice.coupling), workers=1)
     best, best_design, calls = float("inf"), centre, 0
     n_pv0 = int(round(centre.pv_kw / lattice.pv_unit_kw))
     n_bt0 = int(round(centre.battery_kwh / lattice.batt_unit_kwh))
@@ -775,8 +796,8 @@ def _field_bounds(lattice, box) -> dict:
                 "pv_ac_kw": (box.pv_ac[0] * lattice.pv_unit_kw,
                              box.pv_ac[1] * lattice.pv_unit_kw)}
     total = (box.pv[0] * lattice.pv_unit_kw, box.pv[1] * lattice.pv_unit_kw)
-    return {"pv_kw": (0.0, min(total[1], config.DC_AC_RATIO_MAX * inverter_high)),
-            "pv_ac_kw": (0.0, min(total[1], config.AC_RATIO_MAX * inverter_high)),
+    return {"pv_kw": (0.0, min(total[1], lattice.ratio_dc * inverter_high)),
+            "pv_ac_kw": (0.0, min(total[1], lattice.ratio_ac * inverter_high)),
             "pv_total_kw": total}
 
 
@@ -802,7 +823,7 @@ def _bound(instance, lattice, box, economics, battery, generator,
                                    relax_commitment=relax_commitment, weights=weights,
                                    terminal="free", solver=solver, threads=threads,
                                    initial_soc_fraction=battery.initial_soc_fraction,
-                                   grid=grid)
+                                   grid=grid, coupling=lattice.coupling)
     return result.value
 
 
@@ -846,16 +867,15 @@ def certify(
     settings = default_settings() if settings is None else settings
     lattice = Lattice.around(instance, settings) if lattice is None else lattice
 
-    economics = Economics(
-        fuel_usd_l=settings.economics.diesel_price_usd_l,
-        voll_usd_kwh=settings.economics.value_of_lost_load_usd_kwh,
+    # Every price, life and rate from the project, not only the handful this passed before.
+    economics = Economics.from_settings(
+        settings, architecture=lattice.architecture,
         min_service_fraction=settings.economics.min_service_fraction,
         grid_connection_usd_yr=_grid_capital_usd_yr(settings),
         grid_import_usd_kwh=settings.grid.import_usd_kwh if settings.grid.connected else 0.0,
         grid_export_usd_kwh=settings.grid.export_usd_kwh if settings.grid.connected else 0.0,
         infrastructure_usd_yr=_infrastructure_usd_yr(settings),
-        battery_spec=settings.battery,
-        conversion_usd_kw=settings.coupling.cost_usd_kw(lattice.architecture))
+        battery_spec=settings.battery)
     battery = BatteryModel.from_spec(settings.battery)
     biggest = max(settings.generators, key=lambda g: g.rating_kw)
     generator = GeneratorModel.from_spec(biggest, settings.economics.diesel_price_usd_l)
@@ -867,7 +887,7 @@ def certify(
     started = time.time()
     grid = _grid_link(instance, settings)
     evaluator = _Evaluator((instance, economics, battery, generator, controller,
-                            annualised, grid), workers=workers)
+                            annualised, grid, settings.coupling), workers=workers)
     with evaluator:
         return _certify(instance, lattice, settings, tolerance, max_relaxations,
                         relaxation_cost_ratio, coarse_step, verbose, evaluator,
@@ -940,7 +960,8 @@ def _certify(instance, lattice, settings, tolerance, max_relaxations,
 
         n_pv, n_bt, n_iv, gen, n_ac = _centre(box)
         value = _evaluate_rule(instance, lattice.capacities(n_pv, n_bt, n_iv, gen, n_ac),
-                               economics, battery, generator, controller, annualised)
+                               economics, battery, generator, controller, annualised,
+                               grid, lattice.coupling)
         sims += 1
         if value < incumbent:
             incumbent = value
@@ -1035,7 +1056,8 @@ def _best_cost_optimal(instance, lattice, near, economics, battery, generator,
         relax_commitment=True, weights=weights, terminal="free", solver=solver,
         initial_soc_fraction=battery.initial_soc_fraction,
         integer_units=(lattice.pv_unit_kw, lattice.batt_unit_kwh, lattice.inv_unit_kw),
-        generator_ratings=lattice.generator_ratings, grid=grid)
+        generator_ratings=lattice.generator_ratings, grid=grid,
+        coupling=lattice.coupling)
     return solved.capacities, solved.value
 
 
@@ -1089,7 +1111,9 @@ def main(argv: list[str] | None = None) -> int:
     instance = build_site_year(
         args.site, args.year, trajectory=args.trajectory,
         maturity_months=args.maturity_months,
-        network_loss_fraction=settings.infrastructure.network_loss_fraction)
+        network_loss_fraction=settings.infrastructure.network_loss_fraction,
+        module=module_from(settings.photovoltaic),
+        chemistry=settings.battery.chemistry)
     print(f"{args.site} {args.year} -- trajectory {args.trajectory}, "
           f"connection age {args.maturity_months} months")
     print(f"solver   : {settings.solver.name}")
@@ -1304,16 +1328,15 @@ def certify_exhaustive(
     settings = default_settings() if settings is None else settings
     lattice = Lattice.around(instance, settings) if lattice is None else lattice
 
-    economics = Economics(
-        fuel_usd_l=settings.economics.diesel_price_usd_l,
-        voll_usd_kwh=settings.economics.value_of_lost_load_usd_kwh,
+    # Every price, life and rate from the project, not only the handful this passed before.
+    economics = Economics.from_settings(
+        settings, architecture=lattice.architecture,
         min_service_fraction=settings.economics.min_service_fraction,
         grid_connection_usd_yr=_grid_capital_usd_yr(settings),
         grid_import_usd_kwh=settings.grid.import_usd_kwh if settings.grid.connected else 0.0,
         grid_export_usd_kwh=settings.grid.export_usd_kwh if settings.grid.connected else 0.0,
         infrastructure_usd_yr=_infrastructure_usd_yr(settings),
-        battery_spec=settings.battery,
-        conversion_usd_kw=settings.coupling.cost_usd_kw(lattice.architecture))
+        battery_spec=settings.battery)
     battery = BatteryModel.from_spec(settings.battery)
     biggest = max(settings.generators, key=lambda g: g.rating_kw)
     generator = GeneratorModel.from_spec(biggest, settings.economics.diesel_price_usd_l)
@@ -1324,8 +1347,8 @@ def certify_exhaustive(
 
     started = time.time()
     grid = _grid_link(instance, settings)
-    with _Evaluator((instance, economics, battery, generator, controller, annualised, grid),
-                    workers=workers) as evaluator:
+    with _Evaluator((instance, economics, battery, generator, controller, annualised, grid,
+                     settings.coupling), workers=workers) as evaluator:
         return _certify_exhaustive(instance, lattice, settings, coarse_step, verbose,
                                    evaluator, economics, battery, generator, controller,
                                    annualised, started, grid)

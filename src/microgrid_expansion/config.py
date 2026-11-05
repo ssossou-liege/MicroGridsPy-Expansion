@@ -100,6 +100,10 @@ class ModelConfig:
     n_rep_days: int = 64                 # 365 or more is the whole year
 
     # --- Horizon and discounting, shared with the project settings ---
+    # Copies, not second sources: the tree is drawn before a settings object exists, so the
+    # calendar and the rate have to be here too. The project's figures govern, and
+    # ``model.economics.check_one_discount_rate`` refuses a copy that disagrees rather than
+    # letting a twelve-per-cent future be met with an eight-per-cent plant.
     horizon_years: int = PROJECT_YEARS
     discount_rate: float = DISCOUNT_RATE
 
@@ -111,10 +115,11 @@ class ModelConfig:
     # is causal. The controller is simulated instead, which is the premise of the method.
 
     # --- Solver ---
+    # The name only. The time limit, the tolerance and the thread count live in
+    # ``settings.solver``, which the interface edits and ``solve.driver`` reads; they were
+    # here as well, read by nobody, which is how a limit comes to be declared twice and
+    # applied never.
     solver: str = field(default_factory=best_available_solver)
-    time_limit_s: int = 3600
-    mip_gap: float = 0.01
-    threads: int = 0                     # 0 = solver default
 
     # --- Modular unit sizes (PV, battery, inverter) ---
     pv_unit_kw: float = PV_UNIT_KW
@@ -130,12 +135,6 @@ class ModelConfig:
     initial_batt_kwh: float = INITIAL_BATT_KWH
     initial_inv_kw: float = INITIAL_INV_KW
     gen_initial_kw: float = GEN_INITIAL_KW
-
-    # --- Storage chemistry ---
-    battery_chemistry: str = BATTERY_CHEMISTRY
-
-    # --- Economics ---
-    discount_rate: float = DISCOUNT_RATE
 
     # --- Age of the connection the tree starts from ---
     # The plan ages the community from this, milestone by milestone. Held here for the same
@@ -165,11 +164,6 @@ class ModelConfig:
             raise ValueError("a node needs at least one representative day")
         if self.gen_initial_kw not in (0.0, *self.gen_catalog_kw):
             raise ValueError("gen_initial_kw must be 0 or a catalogue size")
-        from .battery import CHEMISTRIES
-        if self.battery_chemistry not in CHEMISTRIES:
-            raise ValueError(
-                f"battery_chemistry must be one of {sorted(CHEMISTRIES)}, "
-                f"not {self.battery_chemistry!r}")
 
 
 def crf(r: float = DISCOUNT_RATE, n: int = PROJECT_YEARS) -> float:

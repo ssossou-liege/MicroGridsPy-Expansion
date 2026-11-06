@@ -42,7 +42,9 @@ def draw_path(space: UncertaintySpace, stage_years, rng: np.random.Generator) ->
     from .demand_paths import draw_trajectory
 
     trajectory = draw_trajectory(rng, space.demand.trajectory_probabilities)
-    cost_scenario = draw_cost_scenario(rng, space.economic.scenario_probabilities)
+    cost_scenario = draw_cost_scenario(
+        rng, space.economic.scenario_probabilities,
+        names=getattr(space.economic, "scenario_names", ()))
 
     # The line arrives once and stays. Drawn per stage and forgotten between them, a village
     # would be connected at year five, off again at ten and back at fifteen, which is not

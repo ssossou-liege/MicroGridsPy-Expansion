@@ -75,11 +75,14 @@ class EconomicAxis:
 
     fuel_price_growth_dist: dict = field(default_factory=dict)
     capex_learning_dist: dict = field(default_factory=dict)  # per technology
-    #: How the cost future is drawn, in the order ``cost_paths.COST_SCENARIOS`` lists
-    #: them. Like the growth trajectory it is drawn once per path and held, and like it
-    #: ``None`` leaves the sampler's own equal thirds. It exists so that every axis can be
-    #: made degenerate, which is what the mean-value problem is.
+    #: How the cost future is drawn, in the order ``scenario_names`` lists them. Like the
+    #: growth trajectory it is drawn once per path and held, and like it ``None`` leaves the
+    #: sampler's own equal thirds. It exists so that every axis can be made degenerate,
+    #: which is what the mean-value problem is.
     scenario_probabilities: tuple[float, ...] | None = None
+    #: The futures those weights index, as the project's trajectories name them. Empty
+    #: leaves the shipped three, which is what a space built by hand in a test gets.
+    scenario_names: tuple[str, ...] = ()
 
 
 @dataclass
@@ -158,9 +161,15 @@ def space_from_settings(settings) -> "UncertaintySpace":
     demand = DemandAxis(trajectory_probabilities=weights.as_probabilities()) if weights \
         else DemandAxis()
 
+    # The futures the prices move in belong to the project too, and the sampler reads them
+    # from the space rather than from the settings it is not given.
+    from .cost_paths import cost_scenarios
+
+    economic = EconomicAxis(scenario_names=cost_scenarios(settings))
+
     grid = getattr(settings, "grid", None)
     if grid is None:
-        return UncertaintySpace(demand=demand)
+        return UncertaintySpace(demand=demand, economic=economic)
     stages = len(getattr(grid, "arrival_hazard_by_stage", ()) or ()) or 5
     if grid.connected:
         # Already connected: certain from the start. A hazard of one at the first milestone
@@ -170,7 +179,7 @@ def space_from_settings(settings) -> "UncertaintySpace":
         hazard = tuple(float(h) for h in grid.arrival_hazard_by_stage)
     else:
         hazard = (0.0,) * stages
-    return UncertaintySpace(demand=demand, grid=GridArrivalAxis(
+    return UncertaintySpace(demand=demand, economic=economic, grid=GridArrivalAxis(
         hazard_by_stage=hazard,
         availability=float(grid.availability),
         mean_outage_hours=float(grid.mean_outage_hours)))

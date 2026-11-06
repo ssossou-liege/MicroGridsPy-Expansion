@@ -30,7 +30,6 @@ from __future__ import annotations
 import heapq
 import itertools
 import os
-from functools import lru_cache
 import time
 from dataclasses import dataclass, field
 
@@ -96,10 +95,16 @@ class Lattice:
     #: all: a certificate is a proof over a set, and those figures are the set's boundary.
     #: Resolved once here rather than read per box, the boxes being counted in thousands.
     coupling: object | None = None
+    #: The generating sets the project catalogues, for the same reason: a design installs
+    #: one of them and is costed with its own fuel curve, and the curves have to come from
+    #: the project rather than from whichever one was certified first.
+    generators: tuple | None = None
 
     def __post_init__(self) -> None:
         if self.coupling is None:
             object.__setattr__(self, "coupling", default_settings().coupling)
+        if self.generators is None:
+            object.__setattr__(self, "generators", tuple(default_settings().generators))
 
     @property
     def ratio_dc(self) -> float:
@@ -197,7 +202,8 @@ class Lattice:
                    generator_ratings=tuple(sorted(g.rating_kw for g in settings.generators)),
                    n_pv=(0, pv_max), n_batt=(0, batt_max), n_inv=(1, inv_max),
                    n_pv_ac=(0, 0), architecture=architecture,
-                   coupling=settings.coupling)
+                   coupling=settings.coupling,
+                   generators=tuple(settings.generators))
 
 
 @dataclass(order=True)
@@ -286,21 +292,47 @@ class Certificate:
                 f"(tends to the price of the heuristic, not to zero)")
 
 
-@lru_cache(maxsize=None)
-def _generator_models(diesel_price: float) -> dict:
-    """One fuel model per catalogue rating, built once."""
-    settings = default_settings()
-    return {spec.rating_kw: GeneratorModel.from_spec(spec, diesel_price)
-            for spec in settings.generators}
+#: Fuel models already built, by the catalogue and the price that decide them. A design is
+#: evaluated millions of times and each evaluation needs the curve of the unit it installs,
+#: so the models cannot be rebuilt per call. They also cannot be memoised on the fuel price
+#: alone, which is what they were: the catalogue behind them was read from
+#: ``default_settings()`` and then frozen by the cache, so the first project certified in a
+#: session set the generating sets every later one was costed with. It tells in exactly the
+#: dimension the search arbitrates over, a quarter more fuel per kilowatt-hour separating
+#: the ends of this catalogue.
+_GENERATOR_MODELS: dict = {}
 
 
-def _generator_for(rating_kw: float, fallback: GeneratorModel) -> GeneratorModel:
-    """The fuel model of the unit a design installs."""
-    models = _generator_models(fallback.fuel_price_usd_l)
-    if not models:
+def _generator_catalogue(generators, diesel_price: float) -> dict:
+    """A fuel model per rating of *this* project's catalogue, built once per catalogue."""
+    key = (round(float(diesel_price), 12),
+           tuple((spec.rating_kw, spec.min_load_fraction,
+                  tuple(sorted(spec.fuel_l_per_h.items())))
+                 for spec in generators))
+    models = _GENERATOR_MODELS.get(key)
+    if models is None:
+        models = {spec.rating_kw: GeneratorModel.from_spec(spec, diesel_price)
+                  for spec in generators}
+        _GENERATOR_MODELS[key] = models
+    return models
+
+
+def _generator_for(rating_kw: float, fallback: GeneratorModel,
+                   catalogue: dict | None = None) -> GeneratorModel:
+    """The fuel model of the unit a design installs.
+
+    The catalogue travels in the evaluator's payload, so that a worker process costs the
+    project's own generating sets. Absent, the package defaults are read, which is right
+    for a caller outside a certification and wrong inside one; every call site of the
+    search passes it.
+    """
+    if catalogue is None:
+        catalogue = _generator_catalogue(default_settings().generators,
+                                         fallback.fuel_price_usd_l)
+    if not catalogue:
         return fallback
-    nearest = min(models, key=lambda r: abs(r - rating_kw))
-    return models[nearest]
+    nearest = min(catalogue, key=lambda r: abs(r - rating_kw))
+    return catalogue[nearest]
 
 
 
@@ -400,7 +432,7 @@ def _price_relative(z_rule: float, z_opt: float, economics) -> float:
 
 
 def _evaluate_rule(instance, capacities, economics, battery, generator, controller,
-                   annualised, grid=None, coupling=None) -> float:
+                   annualised, grid=None, coupling=None, generators=None) -> float:
     """Annualised total cost of one design under the deployed controller.
 
     A design whose array exceeds what its converter admits costs infinity, because it does
@@ -423,7 +455,7 @@ def _evaluate_rule(instance, capacities, economics, battery, generator, controll
     # set. Evaluating every design with the largest unit's curve charged the small ones an
     # efficiency they do not have — a quarter more fuel per kilowatt-hour separates the ends
     # of this catalogue — and so favoured them in the search that chose between them.
-    generator = _generator_for(capacities.generator_kw, generator)
+    generator = _generator_for(capacities.generator_kw, generator, generators)
     dispatch = simulate(instance.demand_kw, instance.specific_yield, instance.t_amb_c,
                         capacities, battery, generator, controller, grid=grid,
                         coupling=coupling)
@@ -465,17 +497,18 @@ _WORKER: dict = {}
 
 
 def _init_worker(instance, economics, battery, generator, controller, annualised,
-                 grid=None, coupling=None) -> None:
+                 grid=None, coupling=None, generators=None) -> None:
     _WORKER.update(instance=instance, economics=economics, battery=battery,
                    generator=generator, controller=controller, annualised=annualised,
-                   grid=grid, coupling=coupling)
+                   grid=grid, coupling=coupling, generators=generators)
 
 
 def _evaluate_in_worker(capacities: Capacities) -> float:
     return _evaluate_rule(_WORKER["instance"], capacities, _WORKER["economics"],
                           _WORKER["battery"], _WORKER["generator"],
                           _WORKER["controller"], _WORKER["annualised"],
-                          _WORKER.get("grid"), _WORKER.get("coupling"))
+                          _WORKER.get("grid"), _WORKER.get("coupling"),
+                          _WORKER.get("generators"))
 
 
 class _Evaluator:
@@ -554,7 +587,10 @@ def coarse_incumbent(instance, lattice, economics, battery, generator, controlle
     """
     if evaluator is None:      # called outside a certification: evaluate in series
         evaluator = _Evaluator((instance, economics, battery, generator, controller,
-                                annualised, None, lattice.coupling), workers=1)
+                                annualised, None, lattice.coupling,
+                                _generator_catalogue(lattice.generators,
+                                                     generator.fuel_price_usd_l)),
+                               workers=1)
     best, best_design, calls = float("inf"), None, 0
     centre = None
     spacing = max(step, 1)
@@ -606,7 +642,10 @@ def _refine(instance, lattice, centre, economics, battery, generator, controller
     """Local search around a design, again with the cheap oracle only."""
     if evaluator is None:      # called outside a certification: evaluate in series
         evaluator = _Evaluator((instance, economics, battery, generator, controller,
-                                annualised, None, lattice.coupling), workers=1)
+                                annualised, None, lattice.coupling,
+                                _generator_catalogue(lattice.generators,
+                                                     generator.fuel_price_usd_l)),
+                               workers=1)
     best, best_design, calls = float("inf"), centre, 0
     n_pv0 = int(round(centre.pv_kw / lattice.pv_unit_kw))
     n_bt0 = int(round(centre.battery_kwh / lattice.batt_unit_kwh))
@@ -887,7 +926,11 @@ def certify(
     started = time.time()
     grid = _grid_link(instance, settings)
     evaluator = _Evaluator((instance, economics, battery, generator, controller,
-                            annualised, grid, settings.coupling), workers=workers)
+                            annualised, grid, settings.coupling,
+                            _generator_catalogue(
+                                settings.generators,
+                                settings.economics.diesel_price_usd_l)),
+                           workers=workers)
     with evaluator:
         return _certify(instance, lattice, settings, tolerance, max_relaxations,
                         relaxation_cost_ratio, coarse_step, verbose, evaluator,
@@ -961,7 +1004,9 @@ def _certify(instance, lattice, settings, tolerance, max_relaxations,
         n_pv, n_bt, n_iv, gen, n_ac = _centre(box)
         value = _evaluate_rule(instance, lattice.capacities(n_pv, n_bt, n_iv, gen, n_ac),
                                economics, battery, generator, controller, annualised,
-                               grid, lattice.coupling)
+                               grid, lattice.coupling,
+                               _generator_catalogue(lattice.generators,
+                                                    generator.fuel_price_usd_l))
         sims += 1
         if value < incumbent:
             incumbent = value
@@ -1348,7 +1393,11 @@ def certify_exhaustive(
     started = time.time()
     grid = _grid_link(instance, settings)
     with _Evaluator((instance, economics, battery, generator, controller, annualised, grid,
-                     settings.coupling), workers=workers) as evaluator:
+                     settings.coupling,
+                     _generator_catalogue(
+                         settings.generators,
+                         settings.economics.diesel_price_usd_l)),
+                    workers=workers) as evaluator:
         return _certify_exhaustive(instance, lattice, settings, coarse_step, verbose,
                                    evaluator, economics, battery, generator, controller,
                                    annualised, started, grid)

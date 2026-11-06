@@ -131,3 +131,54 @@ def test_the_prices_reach_the_sampler_too() -> None:
     # And what the caller did not change is unchanged.
     assert moved[0].draws[0].costs["fuel_price"] == pytest.approx(
         base[0].draws[0].costs["fuel_price"])
+
+
+def test_the_cost_futures_are_named_by_the_project_not_by_the_sampler() -> None:
+    """A project that names its own price futures is sampled under its own names.
+
+    Three of them are hard-coded in the sampler, and ``CostTrajectory.scenarios`` -- the
+    method that reports what a project declares -- is called by nobody. So the sampler drew
+    a name the project had never heard of and handed it to ``factor``, which refuses it:
+    the only projects that work are the ones whose futures happen to be called low, central
+    and high. The names belong to the trajectories, and the sampler should ask them.
+
+    The default order is asserted first, because the draw depends on it: the weights are
+    positional, so a different order would re-deal every path in every stored tree.
+    """
+    import numpy as np
+
+    from microgrid_expansion.scenarios.cost_paths import (COST_SCENARIOS, cost_scenarios,
+                                                          draw_cost_scenario)
+
+    settings = default_settings()
+    assert cost_scenarios(settings) == COST_SCENARIOS, (
+        "the declared futures no longer come in the order the weights are given in")
+
+    renamed = default_settings()
+    for trajectory in renamed.cost_trajectories.values():
+        trajectory.early = {f"{k}_case": v for k, v in trajectory.early.items()}
+        trajectory.late = {f"{k}_case": v for k, v in trajectory.late.items()}
+    assert cost_scenarios(renamed) == ("low_case", "central_case", "high_case")
+    assert draw_cost_scenario(np.random.default_rng(0),
+                              settings=renamed) in cost_scenarios(renamed)
+
+    # End to end: the sampler must cost a tree under the project it was given.
+    cfg = ModelConfig(seed=0, **SMALL)
+    paths = sample_scenario_paths(cfg, space_from_settings(renamed), renamed)
+    assert {path.draws[0].costs["scenario"] for path in paths} <= set(
+        cost_scenarios(renamed))
+
+
+def test_renaming_the_futures_does_not_change_what_the_default_project_draws() -> None:
+    """Non-regression on the draw itself, which is what every stored tree rests on."""
+    import numpy as np
+
+    from microgrid_expansion.scenarios.cost_paths import COST_SCENARIOS, draw_cost_scenario
+
+    settings = default_settings()
+    asked = [draw_cost_scenario(np.random.default_rng(7), settings=settings)
+             for _ in range(5)]
+    untold = [str(np.random.default_rng(7).choice(COST_SCENARIOS,
+                                                  p=(1.0 / 3, 1.0 / 3, 1.0 / 3)))
+              for _ in range(5)]
+    assert asked == untold

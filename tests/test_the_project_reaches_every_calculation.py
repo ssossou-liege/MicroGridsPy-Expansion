@@ -239,3 +239,51 @@ def test_the_double_conversion_penalty_reaches_the_simulation() -> None:
     harsh = simulate(demand, sun, temperature, design, empty,
                      coupling=lossy.coupling)
     assert float(harsh.unserved_kw.sum()) > float(kind.unserved_kw.sum()) + 1.0
+
+
+# ------------------------------------------------------- the generating sets
+def test_the_generating_sets_a_project_catalogues_are_the_ones_it_is_costed_with() -> None:
+    """The last cache that answered about the default village.
+
+    ``_generator_models`` was memoised on the fuel price alone and built its models from
+    ``default_settings()``, so the first catalogue certified in a session was the catalogue
+    every later project got. It matters in exactly the dimension the search arbitrates
+    over: a quarter more fuel per kilowatt-hour separates the ends of this catalogue, and
+    the generating set is chosen from a discrete list where that quarter decides.
+    """
+    from microgrid_expansion.exact.certify import _generator_catalogue
+
+    settings = default_settings()
+    thirsty = default_settings()
+    thirsty.generators = tuple(
+        replace(spec, fuel_l_per_h={load: 1.6 * litres
+                                    for load, litres in spec.fuel_l_per_h.items()})
+        for spec in thirsty.generators)
+
+    base = _generator_catalogue(settings.generators, 1.2)
+    moved = _generator_catalogue(thirsty.generators, 1.2)
+    assert set(base) == set(moved), "the two catalogues no longer offer the same ratings"
+    for rating in sorted(base):
+        assert base[rating] != moved[rating], (
+            f"the {rating:.0f} kW set is costed with the same fuel curve under both "
+            "projects, so the catalogue did not reach the evaluation")
+        assert (moved[rating].efficiency(0.75)
+                < base[rating].efficiency(0.75)), rating
+
+
+def test_two_projects_in_one_session_keep_their_own_generating_sets() -> None:
+    """The defect was the cache, so the order of the two calls is the test."""
+    from microgrid_expansion.exact.certify import _generator_catalogue
+
+    settings = default_settings()
+    thirsty = default_settings()
+    thirsty.generators = tuple(
+        replace(spec, fuel_l_per_h={load: 1.6 * litres
+                                    for load, litres in spec.fuel_l_per_h.items()})
+        for spec in thirsty.generators)
+
+    first = dict(_generator_catalogue(thirsty.generators, 1.2))
+    second = _generator_catalogue(settings.generators, 1.2)
+    again = _generator_catalogue(thirsty.generators, 1.2)
+    assert first != second
+    assert again == first, "the catalogue asked for second was served to the first"

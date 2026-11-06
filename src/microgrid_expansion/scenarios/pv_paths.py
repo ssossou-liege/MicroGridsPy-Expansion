@@ -17,9 +17,7 @@ from __future__ import annotations
 from functools import lru_cache
 
 import numpy as np
-import pandas as pd
 
-from ..paths import IRRADIANCE_DIR
 from ..resource.yield_model import (
     ModuleSpec, load_irradiance, simulate_resource_year)
 from ..sites import Site, get_site
@@ -79,12 +77,6 @@ def _projected(site_name: str, pathway: str, calendar_year: int, module=None):
     resolved = simulate_resource_year(site, calendar_year, frame=frame.iloc[:8760],
                                       module=module or ModuleSpec())
     return resolved.specific_yield[:8760], resolved.t_amb_c[:8760]
-
-
-def historical_years(site: Site | str = "Samionta") -> tuple[int, ...]:
-    """The years available to sample."""
-    name = site if isinstance(site, str) else site.name
-    return _historical(name)[2]
 
 
 def simulate_stage_pv(pathway: str, stage_year: int,

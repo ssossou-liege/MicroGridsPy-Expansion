@@ -664,26 +664,30 @@ class ControllerSettings:
 class CalibrationSettings:
     """Choices made when turning measurements into archetypes and mixture laws.
 
-    They are method parameters rather than physical ones, but they determine the partition
-    everything downstream rests on, so they are recorded with the project rather than left
-    in the source.
+    These four are what the two segmentation scripts read on their command lines, and they
+    have to agree between the scripts: the outlier threshold's own help text asks the
+    reader, in words, to keep it equal to the other script's. Reading both from here is that
+    sentence made structural.
+
+    Five more were declared here and were constants of the generation code with the same
+    values: the minimum support (``partition.MIN_SUPPORT``), the prior strength and the
+    maturity bands (``maturity.PRIOR_STRENGTH``, ``maturity.MATURITY_EDGES``) and the two
+    spreads applied to an appliance's window (``generator.TIME_VARIABILITY``,
+    ``generator.WINDOW_VARIABILITY``). They stay in the code, and the reason is the cache
+    rather than style. A figure read at generation must be part of the demand key, or a
+    project that changes it is served the cached years of the project that did not; and
+    making the key carry this block would rebuild every stored year, three hours and a half,
+    each time one of the parameters that cannot reach a cached year was touched. The code of
+    those modules is already digested into the key, which covers them exactly.
     """
 
+    #: Global clusters the segmentation fits, shared across months and sites.
     n_archetypes: int = 4
+    #: Quantiles the monthly features are capped at before clustering.
     winsor_lower_quantile: float = 0.01
     winsor_upper_quantile: float = 0.99
+    #: Robust z-score beyond which a household-month is labelled an outlier.
     outlier_mad_threshold: float = 4.5
-    min_support: int = 30
-    mixture_prior_strength: float = 20.0
-    maturity_edges_months: tuple[int, ...] = (-1, 3, 6, 12, 24, 1200)
-    ramp_time_variability: float = 0.2
-    ramp_window_variability: float = 0.15
-    meter_interval_minutes: int = 15
-
-    def __post_init__(self) -> None:
-        # YAML has no tuple, so a reloaded document brings the edges back as a list;
-        # normalising here keeps a saved and reloaded project exactly equal to itself.
-        self.maturity_edges_months = tuple(self.maturity_edges_months)
 
 
 @lru_cache(maxsize=1)
@@ -853,9 +857,6 @@ class GridSpec:
     export_usd_kwh: float = 0.0
     #: Capital of the connection itself: line, metering, protection.
     connection_usd: float = 0.0
-    #: Year of the horizon at which the grid arrives; zero when it is already there. Used by
-    #: the expansion plan, where the arrival is an uncertainty rather than a date.
-    arrival_year: int = 0
     #: Whether the arrival of the line is treated as an uncertainty over the horizon rather
     #: than as a fact known today. Off by default: a village where the grid is already there,
     #: or plainly is not coming, is not helped by branching a tree over a question that has
@@ -883,8 +884,16 @@ class SolverSettings:
     """How the mathematical programmes are solved."""
 
     name: str = field(default_factory=best_available_solver)
-    mip_gap: float = 0.01
+    #: Relative gap at which a mixed-integer solve may stop. One per cent was declared here
+    #: and passed to nobody, while every bound in this repository was computed at the
+    #: solvers' own tolerance, which is this figure. Declaring the looser one and wiring it
+    #: would have loosened all of them at once, and it would have loosened the quantity the
+    #: method measures: the price of the heuristic is of the order of five per cent, so a
+    #: one-per-cent gap consumes a fifth of it. A study that wants a looser gap passes it on
+    #: its own command line, which the driver lets win over the project.
+    mip_gap: float = 1e-4
     time_limit_s: int = 3600
+    #: Zero means every core, which is what both solvers do unasked.
     threads: int = 0
 
 

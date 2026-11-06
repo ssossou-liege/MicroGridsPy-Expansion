@@ -31,17 +31,19 @@ import pandas as pd
 from ..paths import REFERENCE_DIR
 from .generator import (
     ARCHETYPES,
-    MINUTES_PER_DAY,
     ArchetypeScaling,
     _build_households,
     load_archetype_appliances,
 )
 from .partition import archetype_profiles
+from .build_monthly_household_clusters import INTERVAL_HOURS as _INTERVAL_HOURS
 
 #: Metering interval of the reference readings [minutes]. The measured peak is a mean over
 #: this interval, so the simulated peak must be taken at the same resolution to be
 #: comparable: a peak read at one-minute resolution is systematically higher.
-METER_INTERVAL_MIN = 15
+#: Taken from the module that reads the meter archive rather than restated here. The two
+#: copies agreed, in two different units, which is how they would have stopped agreeing.
+METER_INTERVAL_MIN = int(round(_INTERVAL_HOURS * 60))
 
 SCALING_PATH = REFERENCE_DIR / "archetype_scaling.csv"
 

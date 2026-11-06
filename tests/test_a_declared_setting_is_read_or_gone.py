@@ -15,6 +15,7 @@ the reference's yield.
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -91,11 +92,13 @@ def test_the_limits_a_project_states_reach_the_solver() -> None:
 
     settings = default_settings()
     settings.solver.time_limit_s = 120
-    assert solver_limits(settings, "gurobi") == {"TimeLimit": 120}
-    assert solver_limits(settings, "highs") == {"time_limit": 120}
+    gap = settings.solver.mip_gap
+    assert solver_limits(settings, "gurobi") == {"TimeLimit": 120, "MIPGap": gap}
+    assert solver_limits(settings, "highs") == {"time_limit": 120, "mip_rel_gap": gap}
 
     settings.solver.threads = 4
-    assert solver_limits(settings, "gurobi") == {"TimeLimit": 120, "Threads": 4}
+    assert solver_limits(settings, "gurobi") == {"TimeLimit": 120, "MIPGap": gap,
+                                                "Threads": 4}
     # Zero means every core, which is what both solvers do unasked.
     settings.solver.threads = 0
     assert "Threads" not in solver_limits(settings, "gurobi")
@@ -103,18 +106,53 @@ def test_the_limits_a_project_states_reach_the_solver() -> None:
     assert solver_limits(settings, "cbc") == {}
 
 
-def test_the_tolerance_is_left_to_the_solver_and_said_so() -> None:
-    """One per cent is declared and a hundredth of that is what every bound used.
+def test_the_tolerance_a_project_states_is_the_one_its_results_were_computed_at() -> None:
+    """The declared figure was the defect, not the wiring.
 
-    Passing the declared figure would loosen every stored result at once, so it is not
-    passed, and the reason is written where the wiring is rather than left to be rediscovered.
+    One per cent was declared and never passed, while every bound in this repository was
+    computed at the solvers' own tolerance, a hundredth of that. Passing the declared
+    figure would have loosened all of them at once, and it would have loosened the
+    quantity the method exists to measure: the price of the heuristic is of the order of
+    five per cent, so a one-per-cent tolerance consumes a fifth of it and the gap reported
+    would be partly the solver's slack.
+
+    So the declaration is corrected to the figure the results came from, and then it is
+    passed. A study that wants a looser gap says so on its own command line, which the
+    driver lets win over the project.
     """
-    import inspect
+    from microgrid_expansion.solve.driver import solver_limits
 
-    from microgrid_expansion.solve import driver
+    settings = default_settings()
+    assert settings.solver.mip_gap == pytest.approx(1e-4), (
+        "the declared tolerance is no longer the one every stored bound was computed at")
+    assert solver_limits(settings, "gurobi")["MIPGap"] == pytest.approx(1e-4)
+    assert solver_limits(settings, "highs")["mip_rel_gap"] == pytest.approx(1e-4)
 
-    assert "mip_gap" not in driver.SOLVER_NAMES.get("gurobi", {})
-    assert "tolerance" in inspect.getdoc(driver.solver_limits)
+    settings.solver.mip_gap = 0.02
+    assert solver_limits(settings, "gurobi")["MIPGap"] == pytest.approx(0.02)
+    assert solver_limits(settings, "highs")["mip_rel_gap"] == pytest.approx(0.02)
+    # A solver this project has not met is still handed nothing rather than a guess.
+    assert solver_limits(settings, "cbc") == {}
+
+
+# --------------------------------------------------------------------- the grid
+def test_the_grid_declares_no_date_the_plan_cannot_use() -> None:
+    """The arrival of the line is a hazard per milestone, not a year.
+
+    ``arrival_year`` was declared, documented as being used by the expansion plan, and read
+    by nothing. What the plan actually reads is ``arrival_uncertain`` and the hazard by
+    stage, which is the modelling the field's docstring described; the date was the earlier
+    design and survived it.
+    """
+    from microgrid_expansion.settings import GridSpec
+
+    grid = GridSpec()
+    assert not hasattr(grid, "arrival_year"), (
+        "a date the plan cannot read is declared on the grid specification")
+    # What replaced it is read, and the test says where.
+    source = (Path(__import__("microgrid_expansion").__file__).parent
+              / "scenarios" / "uncertainty_space.py").read_text(encoding="utf-8")
+    assert "arrival_uncertain" in source and "arrival_hazard_by_stage" in source
 
 
 def test_the_configuration_declares_nothing_the_project_already_declares() -> None:
@@ -168,3 +206,78 @@ def test_no_command_offers_an_option_it_does_not_read() -> None:
     assert "No --n-clusters" in source, "the removal is not explained where it was"
     assert "n_clusters" not in inspect.signature(
         build_mixture_probabilities.assign_clusters_from_reference_profiles).parameters
+
+
+# -------------------------------------------------------------- the calibration
+def _script(name: str) -> str:
+    package = Path(__import__("microgrid_expansion").__file__).parent
+    return (package / "demand" / name).read_text(encoding="utf-8")
+
+
+def test_the_calibration_block_holds_only_what_the_offline_scripts_read() -> None:
+    """Nine method parameters were declared and read by nobody. Four of them belong here.
+
+    Those four are what the two segmentation scripts take on their command lines, and they
+    have to agree with each other: the help text of the outlier threshold asks the reader,
+    in words, to keep the value the same as the other script's. Reading both from one place
+    is that sentence made structural.
+
+    The other five were constants of the generation code with the same values, and they
+    stay there. A figure that reaches the generation has to be in the demand cache key, or
+    a project that changes it is served the cached years of the project that did not; and
+    putting the block in the key would rebuild every stored year, three hours and a half,
+    whenever one of the parameters that cannot reach a cached year was touched. That is the
+    defect this cache key was just repaired of, from the other end.
+    """
+    from dataclasses import fields
+
+    from microgrid_expansion.settings import CalibrationSettings
+
+    assert {f.name for f in fields(CalibrationSettings)} == {
+        "n_archetypes", "winsor_lower_quantile", "winsor_upper_quantile",
+        "outlier_mad_threshold"}
+
+    clusters = _script("build_monthly_household_clusters.py")
+    mixture = _script("build_mixture_probabilities.py")
+    for name in ("winsor_lower_quantile", "winsor_upper_quantile",
+                 "outlier_mad_threshold"):
+        assert f"calibration.{name}" in clusters, name
+        assert f"calibration.{name}" in mixture, name
+    assert "calibration.n_archetypes" in clusters
+
+
+def test_a_constant_of_the_generation_is_not_declared_in_the_settings_as_well() -> None:
+    """The five that moved out, and where each of them lives now."""
+    from microgrid_expansion.demand import generator, maturity, partition
+    from microgrid_expansion.settings import CalibrationSettings
+
+    block = CalibrationSettings()
+    for gone in ("min_support", "mixture_prior_strength", "maturity_edges_months",
+                 "ramp_time_variability", "ramp_window_variability"):
+        assert not hasattr(block, gone), f"{gone} is declared in two places"
+
+    assert partition.MIN_SUPPORT == 30
+    assert maturity.PRIOR_STRENGTH == 20.0
+    assert maturity.MATURITY_EDGES == (-1, 3, 6, 12, 24, 1200)
+    assert generator.TIME_VARIABILITY == 0.2
+    assert generator.WINDOW_VARIABILITY == 0.15
+
+
+def test_the_metering_interval_is_stated_once() -> None:
+    """A tenth field was declared, read by nobody, and said in the code twice over.
+
+    The interval at which the reference meters report decided two calculations and lived in
+    two units: a quarter of an hour where the readings are turned into energy, fifteen
+    minutes where a profile is averaged down. Two copies that agreed, which is how a pair of
+    copies spends its life until it stops.
+    """
+    from microgrid_expansion.demand import calibration
+    from microgrid_expansion.demand.build_monthly_household_clusters import INTERVAL_HOURS
+    from microgrid_expansion.settings import CalibrationSettings
+
+    assert not hasattr(CalibrationSettings(), "meter_interval_minutes")
+    assert INTERVAL_HOURS == 0.25
+    assert calibration.METER_INTERVAL_MIN == 15
+    source = _script("calibration.py")
+    assert "INTERVAL_HOURS" in source, (
+        "the calibration states the interval itself again instead of reading it")

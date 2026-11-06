@@ -10,6 +10,7 @@ import pandas as pd
 
 from . import build_monthly_household_clusters as clustering
 from ..paths import DEMAND_DIR, REFERENCE_DIR
+from ..settings import default_settings
 
 def load_reference_cluster_features(path=None) -> dict[str, dict[str, float]]:
     """Reference profiles defining the operative partition of behaviours.
@@ -55,9 +56,18 @@ def parse_args() -> argparse.Namespace:
     # of the four *reference profiles* fixed by the appliance calibration, so the number of
     # archetypes is a property of that table and not a choice at this command line. The
     # option existed, was never read, and promised an adjustment the code cannot make.
-    parser.add_argument("--winsor-lower-quantile", type=float, default=0.01)
-    parser.add_argument("--winsor-upper-quantile", type=float, default=0.99)
-    parser.add_argument("--outlier-mad-threshold", type=float, default=4.5)
+    # The project's, and the same three the clustering script reads: the two segmentations
+    # have to describe one partition, and they did so by two copies agreeing.
+    calibration = default_settings().calibration
+    parser.add_argument("--winsor-lower-quantile", type=float,
+                        default=calibration.winsor_lower_quantile)
+    parser.add_argument("--winsor-upper-quantile", type=float,
+                        default=calibration.winsor_upper_quantile)
+    parser.add_argument("--outlier-mad-threshold", type=float,
+                        default=calibration.outlier_mad_threshold)
+    # Not the project's ``mixture_prior_strength``, and not a figure to unify with it: this
+    # one smooths the type-by-month table, which the maturity-conditioned law superseded,
+    # and the two have never had the same value.
     parser.add_argument(
         "--prior-strength",
         type=float,

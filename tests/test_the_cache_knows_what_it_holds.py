@@ -105,16 +105,33 @@ def test_a_change_to_the_generating_code_changes_the_fingerprint(tmp_path) -> No
 
 
 def test_a_change_to_a_calibration_table_changes_the_fingerprint(monkeypatch, tmp_path) -> None:
-    real = instances.REFERENCE_DIR
+    """Every table the generation reads, and not whichever one happens to sort first.
+
+    The test used to touch ``sorted(glob)[0]`` and trust that it was read at generation. It
+    was, until the tables of the segmentation were left out of the key and the first name
+    alphabetically became one of them. The property the test is named for still held for the
+    nine tables it is about, and the test had stopped asking about any of them.
+    """
     copy = tmp_path / "reference"
     copy.mkdir()
-    for csv in real.glob("*.csv"):
+    for csv in instances.REFERENCE_DIR.glob("*.csv"):
         (copy / csv.name).write_bytes(csv.read_bytes())
     monkeypatch.setattr(instances, "REFERENCE_DIR", copy)
     before = instances._demand_fingerprint()
-    target = sorted(copy.glob("*.csv"))[0]
-    target.write_text(target.read_text() + "\n", encoding="utf-8")
-    assert instances._demand_fingerprint() != before
+
+    read_at_generation = sorted(path for path in copy.glob("*.csv")
+                                if path.name not in instances._NOT_READ_AT_GENERATION)
+    assert read_at_generation, "every table is declared unread; the key would hash none"
+    for table in read_at_generation:
+        original = table.read_bytes()
+        table.write_bytes(original + b"\n")
+        try:
+            assert instances._demand_fingerprint() != before, (
+                f"{table.name} is read at generation and a change to it left the key where "
+                "it was; a stored year would survive the recalibration that moved it")
+        finally:
+            table.write_bytes(original)
+    assert instances._demand_fingerprint() == before, "a table was not restored"
 
 
 def test_prose_alone_does_not_invalidate_an_hour_of_cache(tmp_path) -> None:
@@ -251,30 +268,109 @@ def test_rebuilding_a_table_nobody_reads_keeps_the_cache(monkeypatch, tmp_path) 
 _SUPERSEDED_READER = "load_monthly_mixture"
 _ALLOWED_CALLERS = {"validate.py", "__init__.py", "generator.py"}
 
+#: Where a table left out of the key may be named on the generation path, and why each
+#: place is safe. ``load_monthly_mixture`` reads the superseded mixture, and no simulated
+#: year calls it. The two build scripts name the tables they *write*, which they must, and
+#: nothing runs another module's ``main``. Naming a table, reading one and writing one are
+#: three different things, and the exclusion turns on the second alone.
+_ALLOWED_MENTIONS = {
+    ("generator.py", _SUPERSEDED_READER),
+    ("build_mixture_probabilities.py", "main"),
+    ("build_monthly_household_clusters.py", "main"),
+}
 
-def test_the_superseded_table_is_read_by_one_function_and_no_simulated_year() -> None:
-    """Leaving a table out of the key is only safe while nothing on the path opens it."""
-    reading = set()
-    for path in sorted(DEMAND_DIR.glob("*.py")):
-        source = path.read_text(encoding="utf-8")
-        for table in instances._NOT_READ_AT_GENERATION:
-            if table in source and path.name != "build_mixture_probabilities.py":
-                reading.add(path.name)
-    assert reading == {"generator.py"}, (
-        f"{sorted(reading)} open a table declared unread at generation")
 
+def _function_scopes(path: Path) -> dict[ast.AST, str]:
+    """Every node of a module, mapped to the name of the innermost function holding it."""
+    scopes: dict[ast.AST, str] = {}
+
+    def descend(node: ast.AST, scope: str) -> None:
+        for child in ast.iter_child_nodes(node):
+            inner = child.name if isinstance(
+                child, (ast.FunctionDef, ast.AsyncFunctionDef)) else scope
+            scopes[child] = inner
+            descend(child, inner)
+
+    descend(ast.parse(path.read_text(encoding="utf-8")), "<module>")
+    return scopes
+
+
+def _names_a_table_left_out(node: ast.AST) -> bool:
+    return (isinstance(node, ast.Constant)
+            and node.value in instances._NOT_READ_AT_GENERATION)
+
+
+def _is_a_read(node: ast.AST) -> bool:
+    """A call that opens a file in order to read it, by this package's conventions."""
+    if not isinstance(node, ast.Call):
+        return False
+    if isinstance(node.func, ast.Attribute):
+        name = node.func.attr
+    elif isinstance(node.func, ast.Name):
+        name = node.func.id
+    else:
+        return False
+    return name.startswith(("read_", "load_", "open"))
+
+
+def _callers_of(function: str, modules=None) -> set[str]:
+    """Modules that call a function of that name, the script guard excluded.
+
+    What a module does when it is run from the shell is not on the generation path, so the
+    ``__main__`` block is dropped before the scan; counting it would attribute every
+    script's own entry point to the generation that never runs it.
+    """
+    names = sorted(modules) if modules is not None else sorted(
+        path.name for path in DEMAND_DIR.glob("*.py"))
     callers = set()
-    for path in sorted(DEMAND_DIR.glob("*.py")):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
+    for name in names:
+        tree = ast.parse((DEMAND_DIR / name).read_text(encoding="utf-8"))
+        tree.body = [node for node in tree.body
+                     if not (isinstance(node, ast.If)
+                             and "__name__" in ast.unparse(node.test))]
         for node in ast.walk(tree):
-            called = (isinstance(node, ast.Call)
-                      and isinstance(node.func, ast.Name)
-                      and node.func.id == _SUPERSEDED_READER)
-            attribute = (isinstance(node, ast.Call)
-                         and isinstance(node.func, ast.Attribute)
-                         and node.func.attr == _SUPERSEDED_READER)
-            if called or attribute:
-                callers.add(path.name)
+            if not isinstance(node, ast.Call):
+                continue
+            if isinstance(node.func, ast.Name) and node.func.id == function:
+                callers.add(name)
+            elif isinstance(node.func, ast.Attribute) and node.func.attr == function:
+                callers.add(name)
+    return callers
+
+
+def test_a_table_left_out_of_the_key_is_named_only_where_no_simulated_year_reads_it() -> None:
+    """Leaving a table out of the key is only safe while nothing on the path reads it.
+
+    The test this replaces asserted that one module mentioned the one excluded table. That
+    stopped being the fact when the six tables recording the segmentation were excluded as
+    well: the script that writes them names them, as it must, and the test read a writer as
+    a reader. So the scan separates the three uses, and it is the reads that have to stay
+    where they are: one function, which no simulated year calls.
+    """
+    naming: set[tuple[str, str]] = set()
+    reading: set[tuple[str, str]] = set()
+    for module in instances._GENERATION_SOURCES:
+        for node, scope in _function_scopes(DEMAND_DIR / module).items():
+            if _names_a_table_left_out(node):
+                naming.add((module, scope))
+            if _is_a_read(node) and any(_names_a_table_left_out(inner)
+                                        for inner in ast.walk(node)):
+                reading.add((module, scope))
+
+    assert naming == _ALLOWED_MENTIONS, (
+        f"{sorted(naming ^ _ALLOWED_MENTIONS)} differ from the places a table left out of "
+        "the cache key may be named; either the table belongs in the key, or the mention "
+        "does not belong on the generation path")
+    assert reading == {("generator.py", _SUPERSEDED_READER)}, (
+        f"{sorted(reading)} read a table left out of the cache key: a simulated year would "
+        "then rest on a table that rebuilding cannot invalidate")
+
+    runners = _callers_of("main", instances._GENERATION_SOURCES)
+    assert not runners, (
+        f"{sorted(runners)} run another module's main; the build scripts name the tables "
+        "they write, and that is safe only while the generation does not run them")
+
+    callers = _callers_of(_SUPERSEDED_READER)
     assert callers <= _ALLOWED_CALLERS, (
         f"{sorted(callers - _ALLOWED_CALLERS)} call {_SUPERSEDED_READER}; the table it "
         "reads is left out of the cache key, so a simulated year must not depend on it")

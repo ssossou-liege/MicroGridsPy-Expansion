@@ -45,8 +45,9 @@ class Solution:
 #: passed is worse than no limit: the figure sits in the settings, the interface offers it,
 #: and the solve runs until it finishes whatever the project asked for.
 SOLVER_NAMES = {
-    "gurobi": {"time_limit_s": "TimeLimit", "threads": "Threads"},
-    "highs": {"time_limit_s": "time_limit", "threads": "threads"},
+    "gurobi": {"time_limit_s": "TimeLimit", "threads": "Threads", "mip_gap": "MIPGap"},
+    "highs": {"time_limit_s": "time_limit", "threads": "threads",
+              "mip_rel_gap": "mip_rel_gap"},
 }
 
 
@@ -57,15 +58,20 @@ def solver_limits(settings: ProjectSettings, name: str) -> dict:
     number: zero means *every core*, which is already what both solvers do, and sending it
     explicitly would differ from the default on a solver this project has not met.
 
-    The tolerance is deliberately not here. ``settings.solver.mip_gap`` declares one per
-    cent, while the solvers' own default is a hundredth of that, and every bound in this
-    repository was computed at the solver's. Passing the declared figure would loosen all
-    of them at once, which is a change to every stored result and not a wiring fix.
+    The tolerance is passed as well, and the figure it passes was the defect rather than
+    the wiring: one per cent was declared and never sent, while every bound here was
+    computed at the solvers' own tolerance, a hundredth of that. Sending the declared
+    figure would have loosened every stored result at once, and the gap a certificate
+    reports would have been partly the solver's slack rather than the price of myopia. The
+    declaration is now the figure the results came from, so it can be sent.
     """
     names = SOLVER_NAMES.get(name, {})
     limits = {}
     if "time_limit_s" in names and settings.solver.time_limit_s:
         limits[names["time_limit_s"]] = int(settings.solver.time_limit_s)
+    gap = next((names[key] for key in ("mip_gap", "mip_rel_gap") if key in names), None)
+    if gap is not None and settings.solver.mip_gap:
+        limits[gap] = float(settings.solver.mip_gap)
     if "threads" in names and settings.solver.threads:
         limits[names["threads"]] = int(settings.solver.threads)
     return limits

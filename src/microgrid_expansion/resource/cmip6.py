@@ -20,8 +20,7 @@ single-scenario layers, which use the measured history directly.
 """
 from __future__ import annotations
 
-import zipfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -150,22 +149,6 @@ def perturb_clearness(deterministic_w_m2: np.ndarray, envelope_w_m2: np.ndarray,
     kt[lit] = deterministic[lit] / envelope[lit]
     out[lit] = np.clip(kt[lit] + noise[lit], 0.0, 1.0) * envelope[lit]
     return out
-
-
-def extract_netcdf(archive: Path, destination: Path) -> Path:
-    """Extract the single NetCDF member of a Climate Data Store ZIP.
-
-    Replaces the shell ``unzip``/``mv`` pair the original script used, whose wildcard could
-    move an unrelated file left over from an earlier download into place.
-    """
-    with zipfile.ZipFile(archive) as zf:
-        members = [n for n in zf.namelist() if n.endswith(".nc")]
-        if len(members) != 1:
-            raise ValueError(f"{archive.name} holds {len(members)} NetCDF members, expected 1")
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        with zf.open(members[0]) as src, open(destination, "wb") as dst:
-            dst.write(src.read())
-    return destination
 
 
 def _archive_url(model: str, scenario: str, variable: str, year: int) -> str:

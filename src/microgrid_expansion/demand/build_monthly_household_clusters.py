@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from ..paths import DEMAND_DIR, REFERENCE_DIR
+from ..settings import default_settings
 
 
 # The reference sites, their meter files and their census come from the site registry.
@@ -45,31 +46,35 @@ def parse_args() -> argparse.Namespace:
         default=REFERENCE_DIR,
         help="Directory where CSV outputs will be written.",
     )
+    # The four figures below are the project's, not this script's: the other segmentation
+    # script reads the same ones from the same place, which is what keeps the two of them
+    # describing one partition.
+    calibration = default_settings().calibration
     parser.add_argument(
         "--n-clusters",
         type=int,
-        default=4,
+        default=calibration.n_archetypes,
         help="Fixed number of global clusters shared across all months and both sites.",
     )
     parser.add_argument(
         "--winsor-lower-quantile",
         type=float,
-        default=0.01,
+        default=calibration.winsor_lower_quantile,
         help="Lower quantile used to cap extreme feature values before clustering.",
     )
     parser.add_argument(
         "--winsor-upper-quantile",
         type=float,
-        default=0.99,
+        default=calibration.winsor_upper_quantile,
         help="Upper quantile used to cap extreme feature values before clustering.",
     )
     parser.add_argument(
         "--outlier-mad-threshold",
         type=float,
-        default=4.5,
+        default=calibration.outlier_mad_threshold,
         help=(
             "Threshold on the maximum absolute robust z-score used to label a monthly "
-            "observation as an outlier before K-means. Must match the value used by "
+            "observation as an outlier before K-means. The same project figure feeds "
             "build_mixture_probabilities.py, since the two segmentations have to agree."
         ),
     )
@@ -164,13 +169,6 @@ def compute_monthly_features(readings: pd.DataFrame, customers: pd.DataFrame) ->
             "connection_date",
         ]
     ].sort_values(["site_name", "month", "customer_code"])
-
-
-def zscore_features(values: np.ndarray) -> np.ndarray:
-    mean = values.mean(axis=0)
-    std = values.std(axis=0)
-    std[std == 0] = 1.0
-    return (values - mean) / std
 
 
 def winsorize_values(
@@ -318,13 +316,6 @@ def assign_clusters(
         centroid_profiles = pd.concat([centroid_profiles, outlier_profile], ignore_index=True)
 
     return clustered.sort_values(["site_name", "month", "cluster"]), centroid_profiles.sort_values("cluster")
-
-
-def share_of_census(count: int, site_name: str, customer_type: str) -> float:
-    total = CENSUS_TOTALS[site_name][customer_type]
-    if total == 0:
-        return 0.0
-    return 100.0 * count / total
 
 
 def monthly_connected_totals(customers: pd.DataFrame, site_name: str, months: pd.Index) -> pd.DataFrame:

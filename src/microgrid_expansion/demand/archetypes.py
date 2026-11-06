@@ -118,40 +118,6 @@ def reset(site: str) -> bool:
     return True
 
 
-def rebuild_from_meters(readings: Path, customers: Path) -> list[Archetype]:
-    """Derive archetypes from the user's own records, the way the shipped ones were derived.
-
-    Runs the same segmentation the reference villages went through: monthly features per
-    household, winsorising, outlier rejection by median absolute deviation, then clustering
-    in the three descriptors. Returns what it found without writing anything, so that a
-    developer can compare it against the shipped set before adopting it.
-    """
-    from . import partition as P
-
-    customers_frame = pd.read_parquet(customers) if customers.suffix == ".parquet" \
-        else pd.read_csv(customers)
-    readings_frame = pd.read_parquet(readings) if readings.suffix == ".parquet" \
-        else pd.read_csv(readings)
-    features = P.compute_monthly_features(readings_frame, customers_frame)
-    segmented = P.assign_clusters_from_reference_profiles(features)
-
-    active = segmented[~segmented.is_inactive & ~segmented.is_outlier]
-    total = float(len(active)) or 1.0
-    out = []
-    for cluster, block in active.groupby("cluster"):
-        out.append(Archetype(
-            cluster=str(cluster),
-            label=DESCRIPTIONS.get(str(cluster), f"Archetype {cluster}"),
-            share_pct=round(100.0 * len(block) / total, 1),
-            mean_daily_kwh=round(float(block.mean_daily_kWh.mean()), 4),
-            mean_peak_w=round(float(block.peak_power.mean()), 1),
-            mean_load_factor=round(float(block.load_factor.mean()), 4),
-            n_observations=int(len(block)),
-            well_supported=len(block) >= P.MIN_SUPPORT,
-        ))
-    return sorted(out, key=lambda a: a.cluster)
-
-
 def scaling_for(site: str):
     """The moment-matching factors a site's adjusted archetypes imply.
 

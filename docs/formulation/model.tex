@@ -28,6 +28,8 @@
 \newcommand{\E}{\mathbb{E}}
 \newcommand{\pa}{\mathrm{pa}}
 \newcommand{\diff}{\mathrm{d}}
+\newcommand{\CRF}{\mathrm{CRF}}
+\newcommand{\band}{\mathrm{band}}
 
 \title{A Multi-Stage Stochastic Capacity-Expansion Model for the Sizing of
 Off-Grid Solar Microgrids under Demand, Climate and Economic Uncertainty}
@@ -40,23 +42,26 @@ Off-Grid Solar Microgrids under Demand, Climate and Economic Uncertainty}
 \begin{abstract}
 This document develops the mathematical formulation of a capacity-expansion model
 for the optimal sizing of off-grid solar microgrids serving rural communities. The
-system couples a photovoltaic array, a diesel generator, a
-battery and a hybrid inverter to a community load. Investment and operation are
-exposed to four families of uncertainty---future demand, the renewable resource,
-economic conditions and policy---which are represented by a discrete scenario tree.
-The model is posed as an adaptive multi-stage stochastic program in which capacity is
-expanded incrementally at successive milestone years and operation is dispatched by a
-rule-based generation-balance controller rather than by cost minimisation. We give a
+system couples a photovoltaic array, which may be divided between the battery's bus and
+the load's bus, a diesel generator, a battery and a hybrid inverter to a community load,
+and it may draw on an intermittent national grid. Investment and operation are exposed to
+five families of uncertainty---future demand, the renewable resource, economic
+conditions, policy and the arrival of the national grid---which are represented by a
+discrete scenario tree along whose paths the persistent draws, the community's connection
+and growth trajectories and the cost future, are held. The model is posed as an adaptive
+multi-stage stochastic program in which capacity is expanded incrementally at successive
+milestone years and operation is governed by a rule-based generation-balance controller
+rather than by cost minimisation. The controller is simulated hour by hour as the
+algorithm it is and is never encoded as constraints; its cost-optimal relaxation, a
+mixed-integer linear program of moderate size, serves as the lower bound. We give a
 self-contained statement of the sets, parameters, decision variables, constraints and
-objective, we show how the rule-based controller is reproduced exactly through a small
-number of mixed-integer constraints, and we describe the construction and reduction of
-the scenario tree. The resulting deterministic-equivalent problem is a mixed-integer
-linear program of moderate size. Beyond the formulation, we establish that the
-cost-optimal dispatch problem is a valid lower bound on the operating cost of the fixed
-rule-based controller, which lets us certify the global optimality of the sizing for the
-controller that is actually deployed and quantify the ``price of the heuristic
-dispatch''---a certified gap that, to our knowledge, no existing off-grid sizing method
-provides.
+objective, of the demand model, in which households connect progressively and each cohort
+ages on its own clock, and of the construction and reduction of the scenario tree. Beyond
+the formulation, we establish that the cost-optimal dispatch problem is a valid lower
+bound on the operating cost of the fixed rule-based controller, which lets us certify the
+global optimality of the sizing for the controller that is actually deployed and quantify
+the ``price of the heuristic dispatch''---a certified gap that, to our knowledge, no
+existing off-grid sizing method provides.
 \end{abstract}
 
 \tableofcontents
@@ -172,16 +177,18 @@ for the generation-balance controller in Section~\ref{sec:certify}.
 To fill the gap the document develops, in order:
 \begin{enumerate}[leftmargin=1.8em,itemsep=1pt]
   \item an \emph{adaptive multi-stage stochastic capacity-expansion} model on a scenario
-  tree (Sections~\ref{sec:framework}--\ref{sec:objective}) that represents the four
-  families of uncertainty---demand, renewable resource, economics and policy---and expands
-  capacity incrementally at milestone years under non-anticipativity;
+  tree (Sections~\ref{sec:framework}--\ref{sec:objective}) that represents the five
+  families of uncertainty---demand, renewable resource, economics, policy and the arrival
+  of the national grid---and expands capacity incrementally at milestone years under
+  non-anticipativity;
   \item two operating models sharing one feasible set: the rule-based generation-balance
-  controller, reproduced exactly as a binary-light mixed-integer encoding
-  (Section~\ref{sec:dispatch}), and its cost-optimal relaxation, which serves as the
+  controller, simulated hour by hour as the algorithm it is (Section~\ref{sec:dispatch}),
+  which is the upper-bounding oracle, and its cost-optimal relaxation, which serves as the
   lower-bounding oracle;
-  \item the construction and reduction of the scenario tree and the time domain
-  (Section~\ref{sec:scenarios}), yielding a tractable deterministic-equivalent mixed-integer
-  linear program (Section~\ref{sec:solution});
+  \item the demand model, in which households connect progressively and each cohort ages on
+  its own clock, and the construction and reduction of the scenario tree and of the time
+  domain (Section~\ref{sec:scenarios}), yielding a tractable deterministic-equivalent
+  mixed-integer linear program (Section~\ref{sec:solution});
   \item the central methodological contribution (Section~\ref{sec:certify}): the
   dispatch-relaxation bound of~H1 (Proposition~\ref{prop:bound}), the
   \emph{branch-and-simulate} algorithm that certifies the rule-based sizing optimum
@@ -202,8 +209,12 @@ least cost while maintaining an acceptable quality of service. Four technologies
 available. A photovoltaic array provides non-dispatchable renewable generation; a
 diesel generator provides dispatchable back-up generation; a
 battery provides storage; and a hybrid inverter performs the alternating- and
-direct-current conversions that couple these assets to the load. The community load is
-the only demand, and there is no connection to a larger grid.
+direct-current conversions that couple these assets to the load. The array may be divided
+between the two buses: the part on the battery's bus is admitted by the trackers
+integrated in the hybrid inverter, the part on the load's bus by string inverters of its
+own (Section~\ref{sec:coupling}). The community load is the only demand. A connection to
+an intermittent national grid may already exist or may arrive during the horizon
+(Section~\ref{sec:families}); otherwise the plant stands alone.
 
 \begin{figure}[h]
     \centering
@@ -213,17 +224,21 @@ the only demand, and there is no connection to a larger grid.
 \end{figure}
 
 The planner faces uncertainty that resolves only gradually over the lifetime of the
-project. The community's demand grows as households connect, acquire appliances and
-change their usage habits as well as productive usages ; the solar resource evolves with the climate; fuel prices
-and equipment costs follow uncertain trajectories; and policy may impose a minimum
-renewable penetration. Because the planner can observe how these conditions unfold and
-react by expanding capacity at later milestone years, the appropriate decision-making
-paradigm is \emph{adaptive multi-stage stochastic programming}. The uncertain future
-is discretised into a scenario tree (Section~\ref{sec:scenarios}); investment decisions
-are attached to the nodes of this tree and are therefore allowed to depend on, but only
-on, the information revealed up to the stage at which they are taken. This information
-restriction---non-anticipativity---is enforced structurally by the tree indexing
-rather than by explicit coupling constraints.
+project. The community's demand grows as households connect, which they do progressively
+and in cohorts, as connected households acquire appliances and change their habits, and
+as productive activities appear beside them; the solar resource evolves with the climate;
+fuel prices and equipment costs follow uncertain trajectories; and the national grid may
+arrive. Because the planner can observe how these conditions unfold and react by expanding
+capacity at later milestone years, the appropriate decision-making paradigm is
+\emph{adaptive multi-stage stochastic programming}. The uncertain future is discretised
+into a scenario tree (Section~\ref{sec:tree}); investment decisions are attached to the
+nodes of this tree and are therefore allowed to depend on, but only on, the information
+revealed up to the stage at which they are taken. This information
+restriction---non-anticipativity---is enforced structurally by the tree indexing rather
+than by explicit coupling constraints. Part of what is uncertain is a state rather than an
+event: a village that connects few of its households goes on connecting few, and a world
+in which storage learns quickly goes on learning quickly. Those draws are held along every
+path of the tree rather than redrawn at each stage.
 
 \begin{figure}[h]
     \centering
@@ -238,17 +253,19 @@ optimisation that dispatches each asset to minimise short-run cost. Here we inst
 adopt the rule-based ``generation-balance control'' used in off-grid practice, in which
 the dispatch follows a fixed priority order---solar first, then the battery, and the
 diesel generator only as a last resort---together with a look-ahead rule that reserves
-enough stored energy to carry the community through the night. We show in
-Section~\ref{sec:dispatch} that this controller can be reproduced within a mixed-integer
-linear program using a single binary variable per time step, so that the sizing problem
-remains a single mathematical program whose solution is consistent with the operating
-policy that will actually be used in the field.
+enough stored energy to carry the community through the night. This controller is not
+reproduced inside the optimisation. It is simulated hour by hour, as the algorithm it is,
+and the cost-optimal operating problem is used only as its relaxation: a lower bound that
+the certificate of Section~\ref{sec:certify} pairs with the simulated cost. An earlier
+version of this formulation encoded the controller as mixed-integer constraints;
+Section~\ref{sec:dispatch} explains why that encoding was withdrawn.
 
 Throughout, the planning horizon is partitioned into stages indexed by milestone years.
-Within each tree node a full year of operation is represented by a small set of
-weighted representative days, which keeps the operating sub-problem tractable while
-preserving the diurnal and seasonal structure that drives the value of storage. The
-remainder of the document states the model formally.
+In the programme over the tree, each node's year of operation is represented by sixty-four
+weighted representative days, each running from sunrise to the next sunrise, through which
+the state of charge is chained without interruption; the controller, by contrast, is
+always simulated over the full year. The remainder of the document states the model
+formally.
 
 \section{Sets and indices}
 \label{sec:sets}
@@ -261,14 +278,18 @@ over it.
   \item[$\mathcal{N}$] Set of nodes of the scenario tree, indexed by $n$. Each node
   represents one realisation of the uncertain conditions up to its stage. The unique
   root node is denoted $n_0$.
-  \item[$\mathcal{G}$] Set of technologies, $\mathcal{G}=\{\mathrm{pv},\,
-  \mathrm{batt},\,\mathrm{ge},\,\mathrm{inv}\}$, denoting respectively the photovoltaic
-  array, the battery, the diesel generator and the inverter. 
+  \item[$\mathcal{G}$] Set of technologies,
+  $\mathcal{G}=\{\mathrm{pv},\,\mathrm{pva},\,\mathrm{batt},\,\mathrm{inv},\,\mathrm{ge}\}$,
+  denoting respectively the part of the photovoltaic array on the battery's bus, the part
+  on the load's bus, the battery, the hybrid inverter and the diesel generator.
   \item[$\mathcal{T}_n$] Set of representative days associated with node $n$, indexed by
-  $t$. Each representative day stands for a cluster of similar days within the operating
-  year that the node represents.
+  $t$; sixty-four in the programme over the tree. Each representative day stands for a
+  cluster of similar days within the operating year that the node represents, and runs
+  from sunrise to the next sunrise.
   \item[$\mathcal{H}$] Set of intra-day time steps, indexed by $h\in\{0,\dots,23\}$
-  (hourly resolution). Operation is defined on the triples $(n,t,h)$.
+  (hourly resolution) and counted from sunrise. Operation is defined on the triples
+  $(n,t,h)$. Where the storage recursion steps past the last hour of a representative day
+  it continues at the first hour of the next, $(n,t,24)\equiv(n,t+1,0)$.
   \item[$\mathcal{S}_{\mathrm{ge}}$] Discrete catalogue of commercially available
   generator ratings, indexed by $s$. The generator is a \emph{single} unit chosen from
   this catalogue and replaced when it is upgraded, whereas the photovoltaic array, the
@@ -293,67 +314,105 @@ of demand and resource.
 \paragraph{Notation convention.} Throughout the formulation, \emph{uppercase} symbols
 denote parameters---data fixed before optimisation---and \emph{lowercase} symbols denote
 decision variables, so that the two can be told apart at a glance in every equation. The
-only exceptions are the policy hyper-parameters $\theta\in\Theta$ of
-Section~\ref{sec:refine}, which follow the conventional control-theoretic notation, and a
-handful of named set-valued maps ($\pa$, $\mathrm{stage}$, $\mathrm{yr}$).
+exceptions are the policy hyper-parameters $\theta\in\Theta$ of
+Section~\ref{sec:refine}, which follow the conventional control-theoretic notation, the
+two admission ratios $\rho$ of Section~\ref{sec:coupling}, a handful of named set-valued
+maps ($\pa$, $\mathrm{stage}$, $\mathrm{yr}$, $\band$), and the demand model of
+Section~\ref{sec:demand}, whose symbols describe how the data $D_{n,t,h}$ are generated
+and are introduced there.
 
 \paragraph{Demand and resource.}
 \begin{description}[leftmargin=3.0cm,style=nextline]
-  \item[$D_{n,t,h}$] Community electrical demand in time step $(n,t,h)$ [kW].
+  \item[$D_{n,t,h}$] Load the plant must produce in time step $(n,t,h)$ [kW]: what the
+  customers, the community buildings and the plant's own services draw, increased by the
+  energy the distribution network consumes on the way (Section~\ref{sec:demand}).
   \item[$Y_{n,t,h}$] Specific photovoltaic yield, i.e.\ the power produced per unit of
-  installed array capacity [kW\,kW$^{-1}$], obtained from the node's irradiance scenario.
+  installed array capacity [kW\,kW$^{-1}$], obtained from the node's irradiance and
+  temperature scenario.
   \item[$W_{n,t}$] Weight of representative day $t$ in node $n$ [days\,yr$^{-1}$], equal
   to the number of actual days the representative day stands for; $\sum_{t\in
   \mathcal{T}_n} W_{n,t}=365$.
+  \item[{$G^{\mathrm{on}}_{n,t,h}\in\{0,1\}$}] Whether the national grid's feeder is
+  energised in time step $(n,t,h)$; zero throughout a node the grid has not reached. The
+  outage pattern is generated from the feeder's availability and typical outage length
+  rather than copied from one recorded year.
 \end{description}
 
 \paragraph{Technical parameters.}
 \begin{description}[leftmargin=3.0cm,style=nextline]
   \item[$H^{\mathrm{c}},\ H^{\mathrm{d}}$] One-way charging and discharging
-  efficiencies of the battery.
+  efficiencies of the battery ($0.975$ each).
+  \item[$H^{\mathrm{ac}}$] Efficiency of the double conversion undergone by energy that
+  the array on the load's bus sends to storage, up through its string inverter and down
+  through the hybrid inverter ($0.94$).
   \item[$A_{n,t,h}$] Fractional self-discharge of the battery over one time step,
   dependent on ambient temperature.
   \item[{$F^{e}_{n,t,h}\in(0,1]$}] Temperature-dependent usable-capacity factor of the
-  battery, which scales the upper energy limit.
+  battery, which scales the upper energy limit; both it and $A_{n,t,h}$ follow the declared
+  chemistry, lithium iron phosphate by default.
   \item[$\underline{E},\ \overline{E}$] Lower and upper state-of-charge fractions
   ($0.05$ and $0.95$), expressing the protective trip limits of the battery management
   system.
-  \item[$R_{n,t,h}$] Look-ahead night-reserve energy [kWh]: a forecast of the demand
-  remaining until the next sunrise, used by the generation-balance controller to decide
-  when the battery may serve the load (Section~\ref{sec:dispatch}).
+  \item[$E_0$] State of charge at which operation opens, as a fraction of the upper limit
+  ($0.5$).
+  \item[$\Gamma$] Largest charging or discharging power per unit of installed energy
+  ($0.25$\,h$^{-1}$).
+  \item[$R_{n,t,h}$] Look-ahead night-reserve energy [kWh] computed by the
+  generation-balance controller to decide when the battery may serve the load
+  (Section~\ref{sec:dispatch}). It enters no programme.
   \item[$F^{\mathrm{ge}}$] Minimum stable loading of the generator as a fraction of
   its rating (taken as $0.30$).
-  \item[$F_0,\ F_1$] Intercept and slope of the linearised generator fuel
-  characteristic [L\,h$^{-1}$ and L\,kWh$^{-1}$], so that the fuel flow is
-  $F_0+F_1 p^{\mathrm{ge}}$ when the generator is on.
+  \item[$F_0,\ F_1$] Intercept and slope of a linear \emph{minorant} of the generator's
+  fuel consumption [L\,h$^{-1}$ and L\,kWh$^{-1}$], valid across the whole catalogue, so
+  that the fuel flow of any unit is at least $F_0+F_1 p^{\mathrm{ge}}$ when it is on.
   \item[$K^{\mathrm{ge}}_s$] Rated power of generator catalogue option $s$ [kW].
   \item[$U^{\mathrm{pv}},\ U^{\mathrm{batt}},\ U^{\mathrm{inv}}$] Unit increments of the
-  modular technologies: the rated power of a single photovoltaic panel [kW], the usable
-  energy of a single battery module [kWh] and the rated power of a single inverter module
-  [kW].
+  modular technologies: the rated power of a single photovoltaic panel [kW], on either
+  bus, the usable energy of a single battery module [kWh] and the rated power of a single
+  inverter module [kW].
+  \item[$\rho^{\mathrm{dc}},\ \rho^{\mathrm{ac}}$] Array admitted per unit of hybrid-inverter
+  rating on the battery's bus ($1.3$) and on the load's bus ($1.0$)
+  (Section~\ref{sec:coupling}).
+  \item[$\overline{G}$] Largest power the grid connection can carry [kW], or a bound that
+  never binds where none is declared.
 \end{description}
 
 \paragraph{Economic parameters.}
 \begin{description}[leftmargin=3.0cm,style=nextline]
-  \item[$C^{\mathrm{inv}}_{g,n}$] Investment (capital) cost of technology $g$ if
-  installed at node $n$ [\$\,kW$^{-1}$ or \$\,kWh$^{-1}$], following the node's cost
-  trajectory.
+  \item[$C^{\mathrm{inv}}_{g,n}$] Capital cost of one unit of technology $g$ at the prices
+  of node $n$'s cost future [\$\,kW$^{-1}$ or \$\,kWh$^{-1}$].
+  \item[$C^{\mathrm{conv}}_n$] Cost of the string inverters per unit of array on the load's
+  bus, at node $n$'s prices [\$\,kW$^{-1}$]. Nothing corresponds to it on the battery's
+  bus, where the conversion is bought with the hybrid inverter.
+  \item[$L_g$] Service life of technology $g$ [yr]: twenty-five years for the array,
+  sixteen for the battery, ten for the hybrid inverter, twelve for the string inverters
+  and fifteen for the generator.
   \item[$O_{g}$] Annual operation-and-maintenance cost of technology $g$, expressed as a
   fraction of its capital cost.
-  \item[$C^{\mathrm{fuel}}_n$] Diesel price at node $n$ [\$\,L$^{-1}$].
-  \item[$C^{\mathrm{deg}}$] Battery throughput-degradation cost [\$\,kWh$^{-1}$ of energy
-  discharged], equal to the replacement cost divided by the lifetime energy throughput.
-  \item[$V^{\mathrm{lol}}$] Value of lost load [\$\,kWh$^{-1}$], the penalty applied to unmet demand.
   \item[$I$] Annual discount rate.
+  \item[$\CRF(I,L)$] Capital recovery factor, $I(1+I)^{L}/\big((1+I)^{L}-1\big)$.
+  \item[$C^{\mathrm{ann}}_{g,n}$] Annual cost of holding one unit of technology $g$ at
+  node $n$, maintenance included; for the array on the load's bus the string inverters are
+  added, each part over its own life:
+  \begin{gather*}
+    C^{\mathrm{ann}}_{g,n}=C^{\mathrm{inv}}_{g,n}\big(\CRF(I,L_g)+O_g\big),\\
+    C^{\mathrm{ann}}_{\mathrm{pva},n}
+    = C^{\mathrm{inv}}_{\mathrm{pv},n}\big(\CRF(I,L_{\mathrm{pv}})+O_{\mathrm{pv}}\big)
+    + C^{\mathrm{conv}}_n\big(\CRF(I,L_{\mathrm{conv}})+O_{\mathrm{conv}}\big).
+  \end{gather*}
+  \item[$C^{\mathrm{fuel}}_n$] Diesel price at node $n$ [\$\,L$^{-1}$].
+  \item[$C^{\mathrm{imp}},\ C^{\mathrm{exp}}$] Price paid for energy imported from the grid
+  and price received for energy exported to it [\$\,kWh$^{-1}$].
+  \item[$V^{\mathrm{lol}}$] Value of lost load [\$\,kWh$^{-1}$], the penalty applied to
+  unmet demand.
   \item[$B_n$] Discount factor that brings costs incurred at node $n$ to present
-  value, $B_n=(1+I)^{-\mathrm{yr}(n)}$ where $\mathrm{yr}(n)$ is the calendar year of $\mathrm{stage}(n)$.
+  value, $B_n=(1+I)^{-\mathrm{yr}(n)}$ where $\mathrm{yr}(n)$ is the calendar year of
+  $\mathrm{stage}(n)$.
   \item[$\Delta_n$] Number of operating years that node $n$ represents, i.e.\ the span
   between its stage and the next milestone.
   \item[$C^{g}_0$] Existing installed capacity of technology $g$ already on site at
-  commissioning (brownfield initial condition); zero for a greenfield project. 
-  \item[$V^{\mathrm{ge}}_s$] Resale (or redeployment/transfer) value recovered when an
-  incumbent generator of size $s$ is retired and replaced, net of removal and depreciated
-  by the unit's vintage.
+  commissioning (brownfield initial condition); zero for a greenfield project. For the
+  generator it is the rating $K^{\mathrm{ge}}_{s_0}$ of the unit standing.
 \end{description}
 
 \section{Decision variables}
@@ -365,35 +424,45 @@ layer, which is defined on the representative time steps of each node.
 
 \paragraph{Investment layer.} For each node $n$:
 \begin{align}
-  b^{\mathrm{pv}}_n,\ b^{\mathrm{batt}}_n,\ b^{\mathrm{inv}}_n &\in \Zpos
-    && \text{modules of PV / battery / inverter added at $n$,}\\
+  b^{\mathrm{pv}}_n,\ b^{\mathrm{pva}}_n,\ b^{\mathrm{batt}}_n,\ b^{\mathrm{inv}}_n
+    &\in \Zpos
+    && \text{modules of array (each bus), battery and inverter added at $n$,}\\
   z^{\mathrm{ge}}_{n,s} &\in \{0,1\}
     && \text{indicator that size $s$ is the single active generator at $n$,}\\
-  i^{\mathrm{ge}}_{n,s},\ r^{\mathrm{ge}}_{n,s} &\in [0,1]
-    && \text{install / retire of a size-$s$ generator at $n$,}\\
   \mathrm{cap}^{g}_n &\in \Rpos
     && \text{installed capacity of technology $g$ available at $n$.}
 \end{align}
 The photovoltaic array, battery and inverter are modular: their capacity accumulates
-through the integer counts $b^{\mathrm{pv}},b^{\mathrm{batt}},b^{\mathrm{inv}}$. The
-generator is a single unit: exactly one catalogue size is active at each node,
-$\sum_{s}z^{\mathrm{ge}}_{n,s}=1$, and an upgrade installs a larger unit while retiring the
-incumbent (Section~\ref{sec:brownfield}). The transition variables
-$i^{\mathrm{ge}}_{n,s}$ and $r^{\mathrm{ge}}_{n,s}$ record, respectively, a size
-newly installed at $n$ and a size retired at $n$.
+through the integer counts. The generator is a single unit: exactly one catalogue size is
+active at each node, $\sum_{s}z^{\mathrm{ge}}_{n,s}=1$, and an upgrade installs a larger
+unit in place of the incumbent (Section~\ref{sec:brownfield}).
 
-\paragraph{Operating layer.} For each time step $(n,t,h)$:
+\paragraph{Operating layer.} For each time step $(n,t,h)$, every source is split by
+destination:
 \begin{align}
-  p^{\mathrm{ge}}_{n,t,h} &\in \Rpos && \text{generator power output [kW],}\\
-  p^{\mathrm{c}}_{n,t,h},\ p^{\mathrm{d}}_{n,t,h} &\in \Rpos
-    && \text{battery charging / discharging power [kW],}\\
+  p^{\mathrm{pv}\to\ell}_{n,t,h},\ p^{\mathrm{pv}\to\mathrm{b}}_{n,t,h},\
+  q^{\mathrm{pv}}_{n,t,h} &\in \Rpos
+    && \text{battery-bus array: to load, to battery, curtailed [kW],}\\
+  p^{\mathrm{pva}\to\ell}_{n,t,h},\ p^{\mathrm{pva}\to\mathrm{b}}_{n,t,h},\
+  q^{\mathrm{pva}}_{n,t,h} &\in \Rpos
+    && \text{load-bus array: the same [kW],}\\
+  p^{\mathrm{ge}}_{n,t,h},\ p^{\mathrm{ge}\to\ell}_{n,t,h},\
+  p^{\mathrm{ge}\to\mathrm{b}}_{n,t,h},\ q^{\mathrm{ge}}_{n,t,h} &\in \Rpos
+    && \text{generator: output, to load, to battery, spilled [kW],}\\
+  p^{\mathrm{d}}_{n,t,h} &\in \Rpos && \text{battery discharge to the load [kW],}\\
+  p^{\mathrm{grid}}_{n,t,h},\ p^{\mathrm{exp}}_{n,t,h} &\in \Rpos
+    && \text{power imported from and exported to the grid [kW],}\\
   e_{n,t,h} &\in \Rpos && \text{battery energy content (state of charge) [kWh],}\\
-  q_{n,t,h} &\in \Rpos && \text{curtailed photovoltaic power [kW],}\\
   \ell_{n,t,h} &\in \Rpos && \text{unmet demand (loss of load) [kW],}\\
   y_{n,t,h} &\in \{0,1\} && \text{generator commitment (on/off).}
 \end{align}
-The binary commitment $y_{n,t,h}$ is the only integer operating variable, and there is
-exactly one such variable per time step.
+Splitting the sources by destination is what lets the model say which flows cross the
+hybrid inverter (Section~\ref{sec:coupling}). Where convenient the charging power is
+written
+$p^{\mathrm{c}}_{n,t,h}=p^{\mathrm{pv}\to\mathrm{b}}_{n,t,h}+p^{\mathrm{pva}\to\mathrm{b}}_{n,t,h}
++p^{\mathrm{ge}\to\mathrm{b}}_{n,t,h}$. The binary commitment $y_{n,t,h}$ is the only integer
+operating variable, one per time step, and the lower bound relaxes it
+(Section~\ref{sec:solution}).
 
 \section{Constraints}
 \label{sec:constraints}
@@ -406,6 +475,8 @@ inherited from its parent plus the modules added at the node,
 \begin{align}
   \mathrm{cap}^{\mathrm{pv}}_n   &= \mathrm{cap}^{\mathrm{pv}}_{\pa(n)}
       + U^{\mathrm{pv}}\, b^{\mathrm{pv}}_n, \label{eq:cap-pv}\\
+  \mathrm{cap}^{\mathrm{pva}}_n  &= \mathrm{cap}^{\mathrm{pva}}_{\pa(n)}
+      + U^{\mathrm{pv}}\, b^{\mathrm{pva}}_n, \label{eq:cap-pva}\\
   \mathrm{cap}^{\mathrm{batt}}_n &= \mathrm{cap}^{\mathrm{batt}}_{\pa(n)}
       + U^{\mathrm{batt}}\, b^{\mathrm{batt}}_n, \label{eq:cap-batt}\\
   \mathrm{cap}^{\mathrm{inv}}_n  &= \mathrm{cap}^{\mathrm{inv}}_{\pa(n)}
@@ -422,87 +493,112 @@ state,
   \label{eq:ge-monotone}
 \end{align}
 where~\eqref{eq:ge-monotone} restricts the generator to upgrades (its rating never
-decreases along the tree). The install and retire indicators are linked to the state
-transition by
-\begin{equation}
-  i^{\mathrm{ge}}_{n,s} \geq z^{\mathrm{ge}}_{n,s}-z^{\mathrm{ge}}_{\pa(n),s},
-  \qquad
-  r^{\mathrm{ge}}_{n,s} \leq z^{\mathrm{ge}}_{\pa(n),s},
-  \qquad
-  r^{\mathrm{ge}}_{n,s} \leq 1-z^{\mathrm{ge}}_{n,s}.
-  \label{eq:ge-transition}
-\end{equation}
-The installation cost in the objective drives $i^{\mathrm{ge}}$ down to the actual
-change, while the resale credit drives $r^{\mathrm{ge}}$ up to its bound, which
-equals the actual retirement---so neither can be gamed. The parent state of the root
-encodes the initial condition, $\mathrm{cap}^{g}_{\pa(n_0)}=C^{g}_0$ for the modular
-technologies and $z^{\mathrm{ge}}_{\pa(n_0),s_0}=1$ for the incumbent generator size $s_0$
-(all zero, and $s_0$ the smallest catalogue size, for a greenfield project;
-Section~\ref{sec:brownfield}). Because every scenario that shares a common history passes
-through the same node, and the investment variables are indexed by node rather than by
-scenario, non-anticipativity is enforced implicitly by these recursions: two scenarios
-cannot be assigned different capacities before the stage at which they diverge. No
-additional coupling constraints are required.
+decreases along the tree). The parent state of the root encodes the initial condition,
+$\mathrm{cap}^{g}_{\pa(n_0)}=C^{g}_0$ for the modular technologies and
+$\mathrm{cap}^{\mathrm{ge}}_{\pa(n_0)}=K^{\mathrm{ge}}_{s_0}$ for the incumbent generator
+(all zero for a greenfield project; Section~\ref{sec:brownfield}). Because every scenario
+that shares a common history passes through the same node, and the investment variables
+are indexed by node rather than by scenario, non-anticipativity is enforced implicitly by
+these recursions: two scenarios cannot be assigned different capacities before the stage
+at which they diverge. No additional coupling constraints are required.
 
 \subsection{Brownfield expansion and generator replacement}
 \label{sec:brownfield}
 
 The formulation covers both greenfield projects and---the common case in
-practice---\emph{brownfield} projects that expand an already commissioned microgrid. The
-two differ only in the root's initial condition. A greenfield project starts empty,
-$C^{g}_0=0$; a brownfield project seeds the root's parent with the as-built fleet,
-$\mathrm{cap}^{g}_{\pa(n_0)}=C^{g}_0>0$ for the modular technologies and
-$z^{\mathrm{ge}}_{\pa(n_0),s_0}=1$ for the incumbent generator. The same expansion
-machinery then applies unchanged.
+practice---\emph{brownfield} projects that expand an already commissioned microgrid. On
+the supply side the two differ only in the root's initial condition. A greenfield project
+starts empty, $C^{g}_0=0$; a brownfield project seeds the root's parent with the as-built
+fleet, $\mathrm{cap}^{g}_{\pa(n_0)}=C^{g}_0>0$ for the modular technologies and the
+incumbent rating $K^{\mathrm{ge}}_{s_0}$ for the generator. The same expansion machinery
+then applies unchanged. On the demand side a brownfield site also starts from what is
+there: the households already connected, each with its own connection date
+(Section~\ref{sec:demand}).
 
-Two economic facts follow automatically. First, the existing fleet is a \emph{sunk cost}:
-the capital term $K_n$ (Section~\ref{sec:objective}) prices only the modules \emph{added},
-$b^{g}_n$, and the generator \emph{installed}, $i^{\mathrm{ge}}_{n,s}$, so pre-existing
-capacity incurs no capital charge. Second, the existing fleet still operates and is
-maintained: the operation-and-maintenance term $O_n$ and every dispatch constraint use the
-cumulative $\mathrm{cap}^{g}_n$, which includes $C^{g}_0$.
+Two economic facts follow. First, the plan pays for what it adds and for nothing else: the
+capital term of Section~\ref{sec:objective} charges the capacity the plan has bought,
+$\mathrm{cap}^{g}_n-C^{g}_0$, and for the generator the rating chosen less the rating
+standing. The standing plant is not free---its own replacements fall due---but what it
+still owes is the annuity of those replacements deferred by the age of each vintage, a
+constant that does not depend on the decision. It shifts every cost alike and is left out
+of the minimisation, moving neither the optimum nor the certificate. Second, the standing
+plant still operates: every dispatch constraint uses the cumulative
+$\mathrm{cap}^{g}_n$, which includes $C^{g}_0$, and so does the array-to-converter ceiling
+of Section~\ref{sec:coupling}, a converter having to admit the array already on its
+trackers as well as the one the plan buys.
 
 Because the modular technologies only ever add modules, their capacity is monotone
 non-decreasing and no retirement is modelled. The generator is different: it is a single
 lumpy unit, so expansion means \emph{replacing} the incumbent with a larger catalogue size
 rather than running several units at part load. The state
-formulation~\eqref{eq:cap-ge}--\eqref{eq:ge-transition} captures exactly this---an upgrade
-installs a new size (paying $\sum_s C^{\mathrm{inv}}_{\mathrm{ge},n}K^{\mathrm{ge}}_s
-i^{\mathrm{ge}}_{n,s}$) and retires the incumbent for a resale or redeployment credit
-($\sum_s V^{\mathrm{ge}}_s r^{\mathrm{ge}}_{n,s}$), with the credit depreciated by the
-retired unit's vintage. Restricting the generator to upgrades keeps its rating monotone,
-matching the modular technologies.
+formulation~\eqref{eq:cap-ge}--\eqref{eq:ge-monotone} captures exactly this. A rating
+below the one standing is excluded at every node, since a plant does not sell its
+generating set back, and an upgrade carries no resale credit for the unit it replaces:
+under the annuity accounting of Section~\ref{sec:objective} the incumbent's charge simply
+stops when the larger unit's begins.
 
 None of this affects the certificate of Section~\ref{sec:certify}: the capacity lattice is
-merely offset so that its lower corner is the existing fleet $C^{g}_0$, and the sunk cost
-cancels in both $z_A^\star$ and $z_B^\star$, leaving the price of the heuristic dispatch
+merely offset so that its lower corner is the existing fleet $C^{g}_0$, rounded down to
+whole modules so that a plate which is not a whole number of modules never hands the plan
+capacity nobody installed, and the constant owed on the standing plant cancels in both
+$z_A^\star$ and $z_B^\star$, leaving the price of the heuristic dispatch
 $\Delta_{\mathrm{heur}}$ unchanged in structure.
 
-\subsection{Power balance}
+\subsection{Power balance and the national grid}
 \label{sec:balance}
 
-In each operating time step the instantaneous supply must equal the served demand. With
-the photovoltaic contribution given by the available yield net of curtailment, the
-balance reads
+Every kilowatt an array produces goes to the load, to the battery, or nowhere,
 \begin{equation}
-  Y_{n,t,h}\,\mathrm{cap}^{\mathrm{pv}}_n - q_{n,t,h}
-  + p^{\mathrm{ge}}_{n,t,h}
-  + p^{\mathrm{d}}_{n,t,h} - p^{\mathrm{c}}_{n,t,h}
+  p^{\mathrm{pv}\to\ell}_{n,t,h}+p^{\mathrm{pv}\to\mathrm{b}}_{n,t,h}+q^{\mathrm{pv}}_{n,t,h}
+  = Y_{n,t,h}\,\mathrm{cap}^{\mathrm{pv}}_n,
+  \qquad
+  p^{\mathrm{pva}\to\ell}_{n,t,h}+p^{\mathrm{pva}\to\mathrm{b}}_{n,t,h}+q^{\mathrm{pva}}_{n,t,h}
+  = Y_{n,t,h}\,\mathrm{cap}^{\mathrm{pva}}_n,
+  \label{eq:pv-split}
+\end{equation}
+and in each operating time step the supply reaching the load must equal the served demand,
+\begin{equation}
+  p^{\mathrm{pv}\to\ell}_{n,t,h} + p^{\mathrm{pva}\to\ell}_{n,t,h}
+  + p^{\mathrm{ge}\to\ell}_{n,t,h} + p^{\mathrm{d}}_{n,t,h} + p^{\mathrm{grid}}_{n,t,h}
   = D_{n,t,h} - \ell_{n,t,h},
   \qquad \forall (n,t,h).
   \label{eq:balance}
 \end{equation}
-The product $Y_{n,t,h}\,\mathrm{cap}^{\mathrm{pv}}_n$ couples a parameter to a decision
-variable and is therefore linear. Battery discharging adds to supply while charging adds
-to the demand side; unmet demand $\ell_{n,t,h}$ relaxes the balance at the cost of the
-value of lost load.
+The product $Y_{n,t,h}\,\mathrm{cap}^{g}_n$ couples a parameter to a decision variable and
+is therefore linear. The battery's charging appears in the split of each source rather than
+as a demand on the balance; unmet demand $\ell_{n,t,h}$ relaxes the balance at the cost of
+the value of lost load.
+
+Where the national grid has reached the village, it may serve the load and absorb what the
+arrays would otherwise curtail, within the hours its feeder is energised:
+\begin{equation}
+  p^{\mathrm{grid}}_{n,t,h} \le G^{\mathrm{on}}_{n,t,h}\,\overline{G},
+  \qquad
+  p^{\mathrm{exp}}_{n,t,h} \le G^{\mathrm{on}}_{n,t,h}\,\overline{G},
+  \qquad
+  p^{\mathrm{exp}}_{n,t,h} \le q^{\mathrm{pv}}_{n,t,h}+q^{\mathrm{pva}}_{n,t,h},
+  \qquad \forall (n,t,h).
+  \label{eq:grid}
+\end{equation}
+A node the grid has not reached has $G^{\mathrm{on}}=0$ throughout, which removes both
+flows. The grid belongs in the programme as well as in the simulation: a relaxation unable
+to import would price the plant above what a controller that can import achieves, and it
+would cease to be a lower bound.
 
 \subsection{Generator operation}
 \label{sec:generator}
 
-The generator may produce power only when committed, must respect its installed rating,
-and---when running---must operate above its minimum stable loading. With $M$ a
-sufficiently large constant (conveniently the largest catalogue rating),
+The generator's output is split between the load, the battery and a spill,
+\begin{equation}
+  p^{\mathrm{ge}\to\ell}_{n,t,h}+p^{\mathrm{ge}\to\mathrm{b}}_{n,t,h}+q^{\mathrm{ge}}_{n,t,h}
+  = p^{\mathrm{ge}}_{n,t,h},
+  \label{eq:ge-split}
+\end{equation}
+the spill being what the unit must produce beyond what the load and the battery take in
+order to stay above its minimum loading. The generator may produce power only when
+committed, must respect its installed rating, and---when running---must operate above its
+minimum stable loading. With $M$ a sufficiently large constant (conveniently the largest
+catalogue rating),
 \begin{align}
   p^{\mathrm{ge}}_{n,t,h} &\leq \mathrm{cap}^{\mathrm{ge}}_n, \label{eq:ge-cap}\\
   p^{\mathrm{ge}}_{n,t,h} &\leq M\, y_{n,t,h}, \label{eq:ge-on}\\
@@ -526,95 +622,123 @@ The battery energy content evolves from one time step to the next according to a
 balance that accounts for conversion losses and self-discharge,
 \begin{equation}
   e_{n,t,h+1} = (1-A_{n,t,h})\,e_{n,t,h}
-  + H^{\mathrm{c}}\,p^{\mathrm{c}}_{n,t,h}
+  + H^{\mathrm{c}}\big(p^{\mathrm{pv}\to\mathrm{b}}_{n,t,h}
+  + H^{\mathrm{ac}}\,p^{\mathrm{pva}\to\mathrm{b}}_{n,t,h}
+  + p^{\mathrm{ge}\to\mathrm{b}}_{n,t,h}\big)
   - \frac{p^{\mathrm{d}}_{n,t,h}}{H^{\mathrm{d}}},
-  \qquad \forall (n,t,h).
+  \qquad \forall (n,t,h),
   \label{eq:soc-dynamics}
 \end{equation}
-Each representative day is treated as a self-contained cycle, so that the energy content
-returns to its initial level at the end of the day,
+with $(n,t,24)\equiv(n,t+1,0)$, so that the recursion runs through a node's
+representative days one after the other, and through the hours of the year in order where
+a full year is solved. It opens where the controller opens,
 \begin{equation}
-  e_{n,t,0} = e_{n,t,24},
-  \qquad \forall (n,t).
-  \label{eq:soc-cyclic}
+  e_{n,1,0} = E_0\,\overline{E}\,\mathrm{cap}^{\mathrm{batt}}_n,
+  \qquad \forall n,
+  \label{eq:soc-opening}
 \end{equation}
-This cyclic closure removes the need to couple consecutive representative days and keeps
-each day's operating sub-problem independent given the installed capacities.
+and it ends wherever the dispatch leaves it: no closing condition is imposed, neither on
+each day nor on the year. Both alternatives were tried, and both spoil the bound, the first
+by loosening it and the second by invalidating it.
 
-The closure is a device of the reduced planning problem and must not be carried over to the
-relaxation of Proposition~\ref{prop:bound}. That relaxation minorises the cost of a
-trajectory produced by the rule-based controller, and no rule requires the stored energy to
-return to its opening level at any horizon: a year that ends on a cloudy week ends with a
-depleted pack. Imposing~\eqref{eq:soc-cyclic} on the minorant therefore constrains it away
-from the trajectory it is meant to bound, and the bound loses its validity. This is not
-hypothetical --- imposed over a week of the reference site, the closure raised the ``lower''
-bound some fifteen per cent above the rule trajectory's own cost, inverting the inequality.
-Over the full year the relaxation is consequently solved with a free terminal state, which
-relaxes every terminal condition and so remains a valid minorant of any of them. The stored
-energy is bounded below by the protective discharge trip and above by the
-temperature-derated usable capacity,
+Splitting the year into self-contained days, each opening at the same state of charge,
+hands the programme a free recharge every morning: three hundred and sixty-five a year,
+worth about a sixth of the annualised cost on the reference site, which puts the bound
+below anything achievable. Closing the recursion instead---requiring the energy content to
+return to its opening level at the end of a day or of the year---constrains the programme
+where the controller is not constrained. The relaxation of Proposition~\ref{prop:bound}
+minorises the cost of a trajectory produced by the rule-based controller, and no rule
+requires the stored energy to return to its opening level at any horizon: a year that ends
+on a cloudy week ends with a depleted pack. Imposing a closure on the minorant therefore
+constrains it away from the trajectory it is meant to bound, and the bound loses its
+validity. This is not hypothetical---imposed over a week of the reference site, the closure
+raised the ``lower'' bound some fifteen per cent above the rule trajectory's own cost,
+inverting the inequality. A free terminal state relaxes every terminal condition and so
+remains a valid minorant of any of them.
+
+Running each representative day from sunrise rather than from midnight is what makes the
+compression faithful to the night. The calendar day cuts the night in half and leaves the
+shorter half at its end: on the reference site the evening peak falls at nineteen hours,
+four hours before the array stops producing, while the night it opens lasts thirteen. A
+day that starts at sunrise holds the whole night it has to carry, and rolling the year to
+the hour the array starts producing halves the error a compressed year makes on the
+operating cost.
+
+The stored energy is bounded below by the protective discharge trip and above by the
+temperature-derated usable capacity, and the charging and discharging powers by the
+battery's admissible rate,
 \begin{equation}
   \underline{E}\,\mathrm{cap}^{\mathrm{batt}}_n
   \;\leq\; e_{n,t,h} \;\leq\;
   \overline{E}\, F^{e}_{n,t,h}\,\mathrm{cap}^{\mathrm{batt}}_n,
-  \qquad \forall (n,t,h).
+  \qquad \forall (n,t,h),
   \label{eq:soc-bounds}
 \end{equation}
+\begin{equation}
+  p^{\mathrm{c}}_{n,t,h} \le \Gamma\,\mathrm{cap}^{\mathrm{batt}}_n,
+  \qquad
+  p^{\mathrm{d}}_{n,t,h} \le \Gamma\,\mathrm{cap}^{\mathrm{batt}}_n,
+  \qquad \forall (n,t,h).
+  \label{eq:batt-rate}
+\end{equation}
+
 \subsubsection{Coupling architecture}
 \label{sec:coupling}
 
 What the hybrid inverter has to carry is not a property of the plant alone but of where the
-array is joined to it, and the two arrangements in use differ both in physics and in price.
-Let $\alpha_n \in \{\textsc{dc}, \textsc{ac}\}$ denote that choice, decided alongside the
-capacities rather than fixed beforehand, and split each source by destination:
-$p^{\mathrm{pv}\to\ell}$, $p^{\mathrm{pv}\to\mathrm{b}}$ for the array,
-$p^{\mathrm{ge}\to\ell}$, $p^{\mathrm{ge}\to\mathrm{b}}$ for the generator, so that
-$p^{\mathrm{c}} = p^{\mathrm{pv}\to\mathrm{b}} + p^{\mathrm{ge}\to\mathrm{b}}$.
-
-Under \textsc{dc} coupling the array feeds the battery's own bus through the trackers
-integrated in the hybrid inverter, and only what leaves that bus for the load is converted.
-Under \textsc{ac} coupling the array feeds the load's bus through its own string inverters
-and reaches the load without conversion, while everything entering or leaving storage
-crosses the hybrid inverter. Hence
+array is joined to it, and the arrangements in use differ both in physics and in price. The
+array may be divided between two buses. The part on the battery's bus,
+$\mathrm{cap}^{\mathrm{pv}}_n$, is admitted by the maximum-power-point trackers integrated
+in the hybrid inverter and reaches storage directly; whatever it sends to the load crosses
+the inverter. The part on the load's bus, $\mathrm{cap}^{\mathrm{pva}}_n$, feeds the load
+through string inverters of its own without crossing the hybrid inverter, but whatever it
+sends to storage is converted twice, which $H^{\mathrm{ac}}$ charges
+in~\eqref{eq:soc-dynamics}. The generator stands on the load's bus, so its charging current
+crosses the inverter too. Hence
 \begin{equation}
-  \begin{aligned}
-  \alpha_n = \textsc{dc}:\quad
-    & p^{\mathrm{pv}\to\ell}_{n,t,h} + p^{\mathrm{d}}_{n,t,h}
-      + p^{\mathrm{ge}\to\mathrm{b}}_{n,t,h} \;\leq\; \mathrm{cap}^{\mathrm{inv}}_n, \\
-  \alpha_n = \textsc{ac}:\quad
-    & p^{\mathrm{c}}_{n,t,h} + p^{\mathrm{d}}_{n,t,h}
-      \;\leq\; \mathrm{cap}^{\mathrm{inv}}_n,
-  \end{aligned}
-  \qquad \forall (n,t,h),
+  p^{\mathrm{pv}\to\ell}_{n,t,h} + p^{\mathrm{d}}_{n,t,h}
+  + p^{\mathrm{ge}\to\mathrm{b}}_{n,t,h} + p^{\mathrm{pva}\to\mathrm{b}}_{n,t,h}
+  \;\leq\; \mathrm{cap}^{\mathrm{inv}}_n,
+  \qquad \forall (n,t,h).
   \label{eq:inv-bounds}
 \end{equation}
-together with the battery's own admissible charge rate,
-$p^{\mathrm{c}}_{n,t,h},\, p^{\mathrm{d}}_{n,t,h} \leq
- C\,\mathrm{cap}^{\mathrm{batt}}_n$.
 
 The array is not free of the converter that admits it. A hybrid inverter's integrated
 trackers accept a bounded array per unit of rating --- current three-phase units publish
-thirty-nine kilowatts of array for thirty of inverter --- and an alternating-coupled array
-is held at parity, since off grid whatever the load does not take must be absorbable by the
-battery inverter the instant the load drops. Writing $\rho(\alpha)$ for that ratio,
+thirty-nine kilowatts of array for thirty of inverter --- and an array on the load's bus is
+held at parity, since off grid whatever the load does not take must be absorbable by the
+battery inverter the instant the load drops. Hence
 \begin{equation}
-  \mathrm{cap}^{\mathrm{pv}}_n \;\leq\; \rho(\alpha_n)\, \mathrm{cap}^{\mathrm{inv}}_n,
-  \qquad \forall n.
+  \mathrm{cap}^{\mathrm{pv}}_n \;\leq\; \rho^{\mathrm{dc}}\, \mathrm{cap}^{\mathrm{inv}}_n,
+  \qquad
+  \mathrm{cap}^{\mathrm{pva}}_n \;\leq\; \rho^{\mathrm{ac}}\, \mathrm{cap}^{\mathrm{inv}}_n,
+  \qquad \forall n,
   \label{eq:array-ratio}
 \end{equation}
-Constraint~\eqref{eq:array-ratio} is what makes enlarging the array and enlarging the
-converter one decision rather than two, and it is not a refinement: on the reference
-instance it removes some forty-seven per cent of the Cartesian lattice as plants that
-cannot be wired. Nothing in the model sizes charge controllers outside the hybrid inverter.
-Two regulators on one lithium bank must answer to the same battery-management conversation
-if they are not to negotiate the charge current against each other, which confines the
-arrangement to a single manufacturer's ecosystem; the conversion that \textsc{dc} coupling
-needs is therefore bought with the inverter, and only the string inverters of \textsc{ac}
-coupling appear as a separate cost.
+with $\rho^{\mathrm{dc}}=1.3$ and $\rho^{\mathrm{ac}}=1.0$, the whole field reaching at most
+the sum of the two ceilings. Constraint~\eqref{eq:array-ratio} is what makes enlarging the
+array and enlarging the converter one decision rather than two, and it is not a refinement:
+on the reference instance it removes some forty-seven per cent of the Cartesian lattice as
+plants that cannot be wired. Nothing in the model sizes charge controllers outside the
+hybrid inverter. Two regulators on one lithium bank must answer to the same
+battery-management conversation if they are not to negotiate the charge current against
+each other, which confines the arrangement to a single manufacturer's ecosystem; the
+conversion on the battery's bus is therefore bought with the inverter, and only the string
+inverters of the load's bus appear as a separate cost, $C^{\mathrm{conv}}_n$.
 
-Because the two architectures constrain the same variables differently, a box of the search
-spans capacities but never architectures: each is certified over its own lattice and the
-cheaper optimum is reported, with the margin over the other.
+The two pure arrangements are the corners of this division. Direct-current coupling is
+$\mathrm{cap}^{\mathrm{pva}}_n=0$; alternating-current coupling is
+$\mathrm{cap}^{\mathrm{pv}}_n=0$, under which~\eqref{eq:inv-bounds} reduces to everything
+entering or leaving storage crossing the inverter. Searching over the division therefore
+holds both, and settles in one search what certifying each arrangement over its own lattice,
+as an earlier version of this work did, settled in two. On the single certified year the
+division need not even be searched. The battery-bus part costs less, having no string
+inverters to buy, and it reaches storage without a second conversion; it competes with the
+discharge for the inverter only when the inverter is congested in daylight, which the
+certified trajectories never are. Filling the battery's bus to its ceiling and placing the
+remainder of the field on the load's bus is therefore the division the search would choose,
+and deriving it removes a dimension from the lattice; the rule is validated against the
+undivided search rather than asserted.
 
 \subsection{Rule-based generation-balance control}
 \label{sec:dispatch}
@@ -625,30 +749,29 @@ straightforward: photovoltaic power serves the load first; any surplus charges t
 battery and is curtailed only once the battery is full; remaining demand is met from the
 battery; and the generator is started only when the battery alone cannot carry the load.
 A look-ahead rule refines this priority at night: the battery is allowed to serve the
-load only if it holds enough energy to last until sunrise, and otherwise the generator is
-started and used both to serve the load and to recharge the battery up to---but no
-further than---the level required for the night.
-
-The central modelling observation is that this controller need not be expressed through
-a cascade of logical conditions. The priority order is reproduced by the combination of
-the power balance~\eqref{eq:balance}, the generator commitment
-constraints~\eqref{eq:ge-cap}--\eqref{eq:ge-min} and the operating economics, because the
-objective penalises generator fuel and curtailment; under that objective the optimiser
-spontaneously prefers solar, then battery, then generator. The only genuinely additional
-behaviour is the look-ahead night reserve, which we impose as a deterministic
-time-varying floor on the stored energy,
+load only if it holds enough energy to last until the next photovoltaic surplus, and
+otherwise the generator is started and used both to serve the load and to recharge the
+battery up to---but no further than---the level required for the night. The quantity that
+rule compares the stored energy with is the night reserve
 \begin{equation}
-  e_{n,t,h} \;\geq\; R_{n,t,h},
-  \qquad \forall (n,t,h).
+  R_{n,t,h} \;=\; M^{\mathrm{r}}\,\hat R_{n,t,h},
   \label{eq:night-reserve}
 \end{equation}
-The reserve $R_{n,t,h}$ is precomputed from the forecast demand between time step $h$ and
-the following sunrise, clipped to the installed energy capacity.
+where $\hat R_{n,t,h}$ is the forecast net demand over the next $L$ hours, until the next
+photovoltaic surplus, clipped to the installed energy capacity. The deployed setting is a
+reserve multiplier $M^{\mathrm{r}}=1$, a look-ahead of $L=14$ hours and a generator
+setpoint equal to the minimum stable loading, one point $\theta_0$ of the parameterised
+class of Section~\ref{sec:refine}. The controller acts under the physics of this section:
+the same trip limits, temperature-derated ceiling and self-discharge, the same minimum
+stable loading and conversion limits, and a part-load fuel curve of which
+$F_0+F_1p^{\mathrm{ge}}$ is a minorant; it never charges and discharges in the same hour.
 
-An earlier version of this formulation proposed to impose~\eqref{eq:night-reserve} as a
-hard floor and asserted that the resulting programme reproduces the field controller. It
-does not, on two counts, and the distinction turns out to be the whole subject of this
-work rather than a detail of encoding.
+The controller is \emph{simulated}, hour by hour over the whole year, as the algorithm it
+is. An earlier version of this formulation proposed instead to impose the reserve as a
+hard floor on the stored energy, $e_{n,t,h}\ge R_{n,t,h}$, in the cost-optimal programme,
+and asserted that the resulting programme, with a single commitment binary per hour,
+reproduces the field controller. It does not, on two counts, and the distinction turns
+out to be the whole subject of this work rather than a detail of encoding.
 
 First, the floor is not satisfied by the controller it is supposed to describe. The
 reserve governs whether the battery is \emph{permitted to serve the load}; it does not
@@ -656,10 +779,10 @@ prevent the battery being drawn down when the generator is saturated or absent, 
 case the controller discharges to the protective trip rather than shed load. Measured on
 the reference site, the rule trajectory sits below $R_{n,t,h}$ in between four and sixty
 per cent of the hours depending on how the plant is sized, by as much as seventy-five
-kilowatt-hours. Imposed as a constraint, \eqref{eq:night-reserve} would therefore exclude
-the very behaviour it claims to encode, and a bound computed under it could exceed the
-trajectory it is meant to minorise --- the same failure as the cyclic closure of
-Section~\ref{sec:coupling}, and for the same reason.
+kilowatt-hours. Imposed as a constraint, the floor would therefore exclude the very
+behaviour it claims to encode, and a bound computed under it could exceed the trajectory
+it is meant to minorise --- the same failure as the closure of the storage recursion in
+Section~\ref{sec:battery}, and for the same reason.
 
 Second, and more fundamentally, a programme is not a controller. Adding the floor to the
 cost objective yields an \emph{anticipative} optimisation: it minimises over the whole
@@ -671,12 +794,12 @@ constraint in place of the cost of myopia.
 
 The operating layer is therefore represented twice, and the two representations are of
 different kinds. The \emph{lower} oracle is the programme
-\eqref{eq:balance}--\eqref{eq:inv-bounds} under the cost objective alone, whose optimum
+\eqref{eq:pv-split}--\eqref{eq:array-ratio} under the cost objective alone, whose optimum
 $C^{\mathrm{opt}}_n(x)$ is computable and minorises the controller by
 Proposition~\ref{prop:bound}. The \emph{upper} oracle is the controller itself, executed
 step by step as the algorithm it is; no formulation of it is used, and none is needed.
-Constraint~\eqref{eq:night-reserve} is retained in the notation because the reserve is a
-quantity the controller computes, not because it is imposed on any programme.
+Equation~\eqref{eq:night-reserve} defines a quantity the controller computes; it is imposed
+on no programme.
 
 A softened form of the floor --- required only in the hours when the generator is not
 already at its rating, which is precisely when the controller does respect it --- would
@@ -686,10 +809,10 @@ recorded here as an opening rather than a result.
 \subsection{Curtailment and unmet demand}
 \label{sec:slacks}
 
-Curtailment cannot exceed the available photovoltaic power, and unmet demand cannot
-exceed the demand itself,
+Curtailment and spill are non-negative and bounded by the splits~\eqref{eq:pv-split}
+and~\eqref{eq:ge-split}, and unmet demand cannot exceed the demand itself,
 \begin{equation}
-  0 \leq q_{n,t,h} \leq Y_{n,t,h}\,\mathrm{cap}^{\mathrm{pv}}_n,
+  q^{\mathrm{pv}}_{n,t,h},\ q^{\mathrm{pva}}_{n,t,h},\ q^{\mathrm{ge}}_{n,t,h} \ge 0,
   \qquad
   0 \leq \ell_{n,t,h} \leq D_{n,t,h},
   \qquad \forall (n,t,h).
@@ -699,65 +822,86 @@ exceed the demand itself,
 \section{Objective}
 \label{sec:objective}
 
-The planner minimises the expected discounted total cost over the scenario tree. The
-cost incurred at a node comprises the capital cost of the capacity added there, the
-annual operation-and-maintenance cost of the cumulative fleet, and the operating cost of
-the representative year---fuel, battery degradation and the penalty on unmet demand---
-scaled by the number of operating years the node represents. Writing the incremental
-capital cost of node $n$ as
+The planner minimises the expected discounted total cost over the scenario tree. Capital is
+not paid as a lump sum at installation: every node-year is charged the annual cost of
+holding the capacity the plan has bought by then, each asset over its own service life.
+Writing the capacity the plan holds at node $n$ as
 \begin{equation}
-  K_n \;=\;
-  C^{\mathrm{inv}}_{\mathrm{pv},n}\,U^{\mathrm{pv}} b^{\mathrm{pv}}_n
-  + C^{\mathrm{inv}}_{\mathrm{batt},n}\,U^{\mathrm{batt}} b^{\mathrm{batt}}_n
-  + C^{\mathrm{inv}}_{\mathrm{inv},n}\,U^{\mathrm{inv}} b^{\mathrm{inv}}_n
-  + \sum_{s} C^{\mathrm{inv}}_{\mathrm{ge},n}K^{\mathrm{ge}}_s i^{\mathrm{ge}}_{n,s}
-  - \sum_{s} V^{\mathrm{ge}}_s\, r^{\mathrm{ge}}_{n,s},
+  x^{g}_n = \mathrm{cap}^{g}_n - C^{g}_0
+  \quad (g\in\{\mathrm{pv},\mathrm{pva},\mathrm{batt},\mathrm{inv}\}),
+  \qquad
+  x^{\mathrm{ge}}_n = \sum_{s} \big(K^{\mathrm{ge}}_s-K^{\mathrm{ge}}_{s_0}\big)^{+}
+  z^{\mathrm{ge}}_{n,s},
 \end{equation}
-in which the modular technologies are charged per added module, a generator upgrade pays
-for the newly installed size through $i^{\mathrm{ge}}$ and recovers a resale/transfer
-credit on the retired incumbent through $r^{\mathrm{ge}}$, and pre-existing capacity
-carries no charge (it is sunk; Section~\ref{sec:brownfield}),
-the annual maintenance cost of the cumulative fleet as
+the annual capital charge of the node is
 \begin{equation}
-  O_n \;=\; \sum_{g\in\mathcal{G}} O_g\, C^{\mathrm{inv}}_{g,n}\,\mathrm{cap}^{g}_n,
+  A_n \;=\; \sum_{g\in\mathcal{G}} C^{\mathrm{ann}}_{g,n}\, x^{g}_n,
+  \label{eq:capital}
 \end{equation}
-and the operating cost of one representative year as
+the operating cost of one representative year is
 \begin{equation}
   G_n \;=\; \sum_{t\in\mathcal{T}_n} W_{n,t} \sum_{h\in\mathcal{H}}
   \Big[
     C^{\mathrm{fuel}}_n\big(F_0\,y_{n,t,h} + F_1\,p^{\mathrm{ge}}_{n,t,h}\big)
-    + C^{\mathrm{deg}}\,p^{\mathrm{d}}_{n,t,h}
     + V^{\mathrm{lol}}\,\ell_{n,t,h}
+    + C^{\mathrm{imp}}\,p^{\mathrm{grid}}_{n,t,h}
+    - C^{\mathrm{exp}}\,p^{\mathrm{exp}}_{n,t,h}
   \Big],
+  \label{eq:operating}
 \end{equation}
-the objective is
+and the objective is
 \begin{equation}
   \min \quad
-  \sum_{n\in\mathcal{N}} P_n\,B_n
-  \big( K_n + \Delta_n\,O_n + \Delta_n\,G_n \big).
+  \sum_{n\in\mathcal{N}} P_n\,B_n\,\Delta_n
+  \big( A_n + G_n \big).
   \label{eq:objective}
 \end{equation}
+
+The annuity $C^{\mathrm{ann}}_{g,n}=C^{\mathrm{inv}}_{g,n}\big(\CRF(I,L_g)+O_g\big)$ is the
+equivalent annual cost of holding one unit of $g$ and replacing it at the end of every service life, for
+ever, at the prices of the node's cost future, maintenance included. Charging it at every
+node-year for the capacity held has three consequences. Each asset is recovered over its
+own life rather than the horizon's: a ten-year inverter charged at a twenty-five-year factor
+would look two fifths cheaper than it is, which is precisely the bias that produces
+oversized converters. No replacement schedule has to be tracked down the tree. And no
+salvage value enters: the horizon does not truncate an asset, whose annuity simply ceases
+to be charged when the horizon ends. Pre-existing capacity is excluded from $x^{g}_n$
+(Section~\ref{sec:brownfield}).
+
+The battery carries no throughput charge. Its capital is recovered over its calendar life,
+and charging its wear per kilowatt-hour discharged as well would pay for the same pack
+twice. Nor is a cycle-life limit worth carrying in the programme. The wear of a pack
+overtakes its calendar charge only when it discharges more than
+$\big(\CRF(I,L_{\mathrm{batt}})+O_{\mathrm{batt}}\big)\,N^{\mathrm{cyc}}\,
+(\overline{E}-\underline{E}) = 0.1730\times6000\times0.90\approx934$ kWh a year per
+kilowatt-hour installed, $N^{\mathrm{cyc}}$ being its cycle life, which is 2.84 full cycles
+every day of the year. A solar plant charges once a day, and every pack certified in this
+work discharges about 272 kWh a year per kilowatt-hour, under a third of the threshold. The
+calendar life is what ends the pack.
+
 The path probabilities $P_n$ weight each node by the likelihood of its history, so that
 \eqref{eq:objective} is the expectation of the discounted life-cycle cost over the
-scenario tree---a risk-neutral criterion. Periodic battery replacement and end-of-horizon
-salvage are valued in post-processing through the standard net-present-cost accounting and
-reported alongside the levelised cost of electricity, defined as the annualised net
-present cost divided by the energy served.
+scenario tree---a risk-neutral criterion. The levelised cost of electricity is reported
+from the same annual charges.
 
-\section{Uncertainty space, scenario generation and reduction}
+\section{Uncertainty space, demand model and scenario tree}
 \label{sec:scenarios}
 
-\subsection{The four families of uncertainty}
+\subsection{The families of uncertainty}
+\label{sec:families}
 
-The uncertain future is described by four families of random factors, each evolving along
+The uncertain future is described by five families of random factors, each evolving along
 the planning horizon.
 \begin{description}[leftmargin=2.4cm,style=nextline]
-  \item[Demand] The community load is generated bottom-up from appliance ownership and
-  usage. Three random trajectories are sampled: the number of connections per customer
-  type, the appliance stock per customer type (the name, count and rated power of each
-  appliance), and the usage patterns (total functioning time, functioning time per
-  switch-on event, time-of-use windows and the probability of occasional use). These feed
-  a stochastic load-profile generator calibrated on household surveys and meter readings.
+  \item[Demand] The community load is generated bottom-up, from the connection of
+  households, the behaviour of the connected and the productive activities beside them
+  (Section~\ref{sec:demand}). Two of its draws are states of the community and are held
+  over a path: the \emph{connection trajectory}, which says how many households connect
+  and how fast, and the \emph{growth trajectory}, which says how the consumption of a
+  connected household evolves with the age of its connection. The rest---the behaviour each
+  connected household adopts in a month, how its appliances are used, how many enterprises
+  have opened---is redrawn for every simulated year and carries the inter-annual
+  variability.
   \item[Renewable resource] The solar resource follows one of the shared
   socio-economic pathways SSP1-2.6, SSP2-4.5 and SSP3-7.0, each of which yields
   a distinct trajectory of irradiance and ambient temperature and hence of the specific
@@ -765,36 +909,217 @@ the planning horizon.
   trajectory is now widely regarded as implausible rather than as a business-as-usual
   baseline, and retaining it would place probability mass on a future that inflates the
   spread of the resource scenarios without informing the sizing decision.
-  \item[Economic conditions] The diesel price and the investment-cost trajectories of the
-  photovoltaic array, the battery, the generator and the inverter are sampled, capturing
-  fuel-market volatility and technology learning.
-  \item[Policy] A minimum solar-penetration target may be imposed, sampled as a discrete
-  policy factor.
+  \item[Economic conditions] The capital costs of the array, the battery, the inverter and
+  the generator and the diesel price follow one of three cost futures---low, central and
+  high---each a set of real annual rates per technology, with a break after ten years
+  beyond which learning is expected to slow. The future is drawn once per path and held: a
+  world in which storage learns quickly is one in which converters do too. Fuel does not
+  learn, and its band is centred on a flat real price, an admission of ignorance rather
+  than a forecast.
+  \item[Policy] A minimum solar-penetration target can be sampled as a discrete factor per
+  stage. It is carried by the scenario paths but imposes no constraint in the present
+  model.
+  \item[National grid] Where the arrival of the national grid is uncertain, each milestone
+  carries the probability that the line arrives during it, given that it has not arrived
+  before. The arrival is drawn once per path as the milestone at which it occurs, and it is
+  absorbing: once the line is there it stays, and from then on its availability, its
+  outages and its tariffs enter operation through $G^{\mathrm{on}}$
+  (Section~\ref{sec:balance}).
 \end{description}
 
+\subsection{Demand model}
+\label{sec:demand}
+
+The load $D_{n,t,h}$ of a node is a draw from a stochastic generator calibrated on the meter
+records and household surveys of two reference villages, Samionta and Gbowele. It is built
+in layers, each estimated on what was measured and none extrapolated beyond it.
+
+\paragraph{Behavioural archetypes.} The household-months of the meter records are segmented
+into four behavioural archetypes, and into two states that are not behaviours:
+\emph{inactive}, a connected household that consumes nothing in the month, and
+\emph{outlier}, the residue of observations excluded from the segmentation, whose small
+mass is folded back into the archetypes in proportion. Each archetype carries a set of
+appliances---ratings, counts, durations, windows of use---calibrated on the surveys and
+corrected by one power factor and one duration factor so as to reproduce the archetype's
+measured daily energy and peak. A household in an archetype is simulated as one user of
+the RAMP appliance-usage generator at minute resolution, and the community is aggregated to
+hourly power. A residual calendar-month index restores the seasonality that survives once
+the age of the connection is accounted for.
+
+\paragraph{A mixture law conditioned on maturity.} Which state a connected household
+occupies in a month is drawn from a mixture law conditioned on its socio-economic category
+$k\in\mathcal{K}$ and on the maturity band $\beta$ of its own connection---the months since
+it was connected, in the bands 0--3, 4--6, 7--12, 13--24 and 25 or more---rather than on the
+village or the calendar month. Conditioning on the village does not transfer: predicting
+either reference village from the other errs by 50 and by 130 per cent on daily energy. The
+two villages agree to within a few per cent at connection and diverge afterwards, so that
+the level transfers to a new site and the trajectory does not. The law is estimated with
+the two sites weighted equally, each stratum being shrunk towards the pooled law of its band
+in proportion to its own support.
+
+\paragraph{Growth trajectories.} With two villages, one that grows and one that hardly does,
+the growth of a third cannot be estimated, and the two observed behaviours are carried as an
+envelope rather than averaged into a trajectory that describes neither. The growth
+trajectory $\gamma=\mathrm{slow}$ is Samionta's law, $\gamma=\mathrm{fast}$ is Gbowele's,
+and $\gamma=\mathrm{central}$ is the site-balanced law; we write $\pi_\gamma(c\mid k,\beta)$
+for the probability of state $c$. A band in which the trajectory's village has no record
+inherits the last band it does have, which holds growth constant rather than inventing its
+continuation: no household grows beyond the terminal band.
+
+\paragraph{Progressive connection.} Households do not connect all at once. Measured in months
+$a$ since the village's first connection, the connected share of the census follows a
+logistic diffusion with plateau $S_\omega\in(0,1]$, rate $\Lambda_\omega>0$ and midpoint
+$A^{\mathrm{mid}}_\omega$,
+\begin{equation}
+  \lambda_\omega(a) = \frac{1}{1+\exp\!\big(-\Lambda_\omega\,(a-A^{\mathrm{mid}}_\omega)\big)},
+  \qquad
+  N_k(a) = \Big\lfloor S_\omega\,\lambda_\omega(a)\,H_k + \tfrac12 \Big\rfloor,
+  \label{eq:connection}
+\end{equation}
+where $H_k$ is the census of category $k$ and $N_k(a)$ the households of that category
+connected by month $a$; rounding each category separately keeps every $N_k$ non-decreasing.
+The connection trajectory $\omega\in\{\mathrm{low},\mathrm{central},\mathrm{high}\}$ is
+bracketed by the two villages, as growth is: $\mathrm{low}$ is the curve fitted to
+Samionta's connected households, $\mathrm{high}$ the curve fitted to Gbowele's, and
+$\mathrm{central}$ lies between them. Samionta stopped connecting after a first wave, its
+active households levelling off near a fifth of the census; Gbowele's are still rising two
+years after its plant was commissioned, so that its record bounds its plateau from below
+and not from above, and the plateau of the high trajectory is a convention rather than a
+measurement, at whose admissible ends the sizing is reported. The curves are fitted to the connected households, whether or not they
+consume: a connected household that consumes nothing is the inactive state of the mixture
+law, which must not be counted twice. The model in which the whole census is connected at
+once is the degenerate case $S_\omega=1$, $\Lambda_\omega\to\infty$,
+$A^{\mathrm{mid}}_\omega=0$.
+
+\paragraph{Cohorts.} The households connected in month $u$ form a cohort of
+$n_k(u)=N_k(u)-N_k(u-1)$, and each cohort ages on its own clock: at village age $a$ its
+members are $a-u$ months old, in band $\band(a-u)$. The mixture law therefore applies cohort
+by cohort, not to the community as a whole. Grouping the connected households by the band of
+their cohort, the composition of the month at village age $a$ is
+\begin{equation}
+  X(a) = \sum_{\beta}\sum_{k\in\mathcal{K}} X_{k,\beta}(a),
+  \qquad
+  X_{k,\beta}(a) \sim \operatorname{Mult}\Big(\sum_{u\,:\,\band(a-u)=\beta} n_k(u),\;
+  \pi_\gamma(\cdot\mid k,\beta)\Big),
+  \label{eq:composition}
+\end{equation}
+independent multinomial draws under one law adding up to a single draw. Unconnected
+households are in no state and draw nothing. A community whose households keep connecting
+therefore keeps changing long after its first cohort has matured, and a village whose
+connection has reached its plateau settles once its last cohort reaches the terminal band.
+
+\paragraph{Productive uses.} Enterprises are counted rather than composed. Six activity
+classes---refrigeration, milling, incubation, tailoring, sawmill and small trade---carry
+their measured mean day and its day-to-day spread, since a mill that runs hard two days in
+three is not a mill running steadily at two thirds. The number of enterprises in a month is
+\begin{equation}
+  U(a) \sim \operatorname{Poisson}\Big(\Phi_\gamma\big(\band(a)\big)
+  \sum_{c\neq\mathrm{inactive}} X_c(a)\Big),
+\end{equation}
+an intensity referred to the connected households, measured at the reference villages and
+conditioned on the village's maturity and on the growth trajectory, the classes being then
+allocated multinomially from the trajectory's own mix. Enterprises thereby follow the
+connected households: an enterprise appears beside existing supply, and a ratio taken over
+dwellings not yet connected would not transfer. A surveyed count or roster of enterprises
+replaces the expectation or the draw.
+
+\paragraph{Community uses and the plant's own services.} Places of worship, measured at the
+reference villages, and community buildings a developer describes appliance by appliance are
+present from the first month, being among the first things a line is run for. So is what
+the plant serves for itself: the air conditioning of the room the inverters stand in, at the
+plant, and the street lighting, out on the network. Neither is billed to anyone.
+
+\paragraph{From consumption to the load the plant produces.} The distribution network
+consumes a share $F^{\mathrm{net}}$ of the energy injected into it, so the plant must inject
+$D^{\mathrm{net}}/(1-F^{\mathrm{net}})$ to deliver $D^{\mathrm{net}}$ to the loads out on the
+network, while its own supply is drawn from the busbar beside it and carries no loss:
+\begin{equation}
+  D = \frac{D^{\mathrm{net}}}{1-F^{\mathrm{net}}} + D^{\mathrm{plant}}.
+  \label{eq:network-loss}
+\end{equation}
+The share is $F^{\mathrm{net}}=0.13$, measured on the distribution meters of Gbowele. A later
+measurement at both villages, in October 2026, found an unexplained gap of eighteen to
+nineteen per cent between what the plants delivered and what the metered loads account for,
+and a residual that does not follow the hourly load; both the value and the proportional
+form are therefore under review.
+
+\paragraph{An existing village.} A brownfield site starts from its record: the households
+connected by the record's last month $a^{\mathrm{obs}}$, $N^{\mathrm{obs}}_k$ of each
+category, each in the cohort of its own connection month. The connection trajectory
+continues from there,
+\begin{equation}
+  \begin{gathered}
+  N_k(a) = N^{\mathrm{obs}}_k + \Big\lfloor \big(\overline{N}_k - N^{\mathrm{obs}}_k\big)
+  \frac{\lambda_\omega(a)-\lambda_\omega(a^{\mathrm{obs}})}{1-\lambda_\omega(a^{\mathrm{obs}})}
+  + \tfrac12 \Big\rfloor,
+  \qquad a > a^{\mathrm{obs}},\\
+  \overline{N}_k = \max\Big(\Big\lfloor S_\omega H_k + \tfrac12\Big\rfloor,\,
+  N^{\mathrm{obs}}_k\Big),
+  \end{gathered}
+  \label{eq:connection-brownfield}
+\end{equation}
+which begins on the observation, never decreases and never disconnects anyone. The age of
+the village at the plan's first year then follows from the record rather than being
+declared.
+
 \subsection{Monte-Carlo sampling, scenario reduction and tree construction}
+\label{sec:tree}
 
-A large Monte-Carlo ensemble of complete scenario paths is drawn by sampling each family
-of uncertainty along the horizon. Because the resulting ensemble is far too large to
-optimise over directly, it is condensed in two complementary ways.
+A large Monte-Carlo ensemble of complete scenario paths is drawn. Each path draws once, and
+holds over the horizon, its \emph{regime} $\xi=(\omega,\gamma,\kappa)$---its connection
+trajectory, its growth trajectory and its cost future---and, where the grid's arrival is
+uncertain, the milestone at which the line arrives. At every milestone it draws the climate
+pathway and a realisation of the community's year, which carry the inter-annual
+variability. Given the regime and the age of the village the generator's draws are
+exchangeable, so the realisations are taken from small cached pools sampled with
+replacement, which represent the conditional distribution as faithfully as a fresh
+simulation per path, at a hundredth of the cost. Because the resulting ensemble is far too
+large to optimise over directly, it is condensed in two complementary ways.
 
-First, the ensemble is reduced \emph{across scenarios}. At each stage the sampled
-outcomes are clustered---by a medoid-based reduction such as $k$-medoids or fast-forward
-selection on a feature representation of the paths---to a small set of representative
-outcomes, each carrying the probability mass of its cluster. Nesting the stage-wise
-representative outcomes produces a branching scenario tree: a node at one stage gives
-rise to several children at the next, and the path probability $P_n$ is the product of
-the conditional branch probabilities along the path. A two-stage program is recovered as
-the special case of a tree with a single decision node at the first stage.
+First, the ensemble is reduced \emph{across scenarios}, and the reduction respects the
+distinction just drawn. The root of the tree is the here-and-now decision and holds a single
+node. The regime is revealed at the first milestone after it: the tree branches there over
+regimes, and every node below a regime's branch keeps that regime, so that along every path
+of the tree the connected households never decrease, the growth trajectory never changes and
+the prices follow one future. When the ensemble's regimes outnumber the branches allowed,
+they are reduced to medoid regimes, each a regime that occurs and each carrying the
+probability mass of its cluster. Below each regime, the stage-wise outcomes of that regime's
+own paths are clustered---by $k$-medoids on what a sizing is sensitive to: the energy to
+serve, its peak and when in the day it falls, the resource, how the two line up, and the
+prices---and the representatives are nested as a fan, so that climate and inter-annual
+variability branch freely within the regime. The arrival of the grid is absorbing: below a
+node the line has reached, every node is connected. The path probability $P_n$ is the
+product of the conditional branch probabilities along the path. A two-stage program is
+recovered as the special case of a tree with a single decision node at the first stage.
 
-Second, the ensemble is reduced \emph{in time}. Within each node, the full operating year
-is compressed into a handful of weighted representative days (typically four to twelve) by
-clustering the daily demand and resource shapes, the medoid of each cluster becoming a
-representative day $t$ with weight $W_{n,t}$ equal to the size of its cluster. This
-time-domain reduction, combined with the cyclic closure~\eqref{eq:soc-cyclic}, is what
-keeps the operating sub-problems small enough that the whole tree can be optimised at
-once. The error introduced by both reductions, relative to the full ensemble, is
-quantified and reported so that the compression remains transparent.
+Revealing the regime at the first milestone is an assumption, and it is stated as one: five
+years of operation show how many households a village connects, how their consumption grows
+and which way prices are moving, to within the bracket the regimes span. The persistence is
+not an assumption but a correction. An earlier construction nested the stage-wise medoids of
+the whole ensemble as a fan, every node of a stage receiving the same children, and along a
+path of that tree a village could grow quickly to its fifth year, shrink by its tenth and grow
+again---a mean reversion that neither the reference villages nor the learning literature
+support.
+
+The distortion the reduction introduces is measured and reported rather than assumed small:
+at every stage, the mean distance of an outcome to the node standing for it; across regimes,
+the distance of each regime to its representative; and over whole trajectories, both the
+distance from each sampled path to the nearest path of the tree and the distance from each
+path of the tree, weighted by its probability, to the nearest sampled path. The last is what
+a fan nesting fails: it contains every combination of stage representatives, and so gives
+weight to trajectories that no village follows.
+
+Second, the ensemble is reduced \emph{in time}. Within each node, the year of operation is
+compressed into sixty-four weighted representative days by clustering the daily shapes of
+demand and resource together, each day running from sunrise to sunrise; the medoid of each
+cluster becomes a representative day $t$ with weight $W_{n,t}$ equal to the size of its
+cluster. Medoids are real days, so the compressed year keeps genuine peaks and genuine calm
+spells rather than the flattened average a centroid would produce. The compression is
+imposed on the programme alone, where on the reference site it costs about 0.6 per cent of
+the bound and buys a twelvefold speed-up. It is never imposed on the simulation of the
+controller, which runs the whole year at every node: the quantity the simulation measures
+is the cost of not knowing the coming days, and a set of representative days, each simulated
+on its own, distorts precisely that.
 
 \section{Deterministic equivalent and solution}
 \label{sec:solution}
@@ -802,16 +1127,29 @@ quantified and reported so that the compression remains transparent.
 Collecting the node-indexed investment variables, the time-step-indexed operating
 variables, the constraints of Section~\ref{sec:constraints} over all nodes and time
 steps, and the objective~\eqref{eq:objective} yields a single mixed-integer linear
-program---the deterministic equivalent of the multi-stage stochastic program. Its only
-integer variables are the modular module counts $b^{\mathrm{pv}}_n$,
-$b^{\mathrm{batt}}_n$, $b^{\mathrm{inv}}_n$, the generator state
-$z^{\mathrm{ge}}_{n,s}$, and one generator-commitment binary per operating time step. The number of commitment binaries is
-the product of the number of tree nodes, the number of representative days per node and
-the twenty-four hours of the day; with a modest number of representative days this remains
-well within the reach of contemporary mixed-integer solvers. The non-anticipativity of the
+program---the deterministic equivalent of the multi-stage stochastic program under
+cost-optimal operation. Its integer variables are the module counts $b^{\mathrm{pv}}_n$,
+$b^{\mathrm{pva}}_n$, $b^{\mathrm{batt}}_n$ and $b^{\mathrm{inv}}_n$, the generator state
+$z^{\mathrm{ge}}_{n,s}$, and one generator-commitment variable per operating time step,
+which the lower bound relaxes to $[0,1]$: the relaxation keeps the bound valid and makes it
+far cheaper. On the reference tree of forty-six nodes and sixty-four representative days the
+programme has some seven hundred and eighty thousand columns. The non-anticipativity of the
 investment policy is, as noted, embedded in the tree indexing and requires no explicit
 constraints. The model is implemented in an algebraic modelling layer over labelled
-multidimensional arrays and solved by a standard branch-and-cut solver.
+multidimensional arrays and solved by an open-source branch-and-cut solver, or by a
+commercial one where a licence is available, which returns the same bound in about half the
+time. When the programme is solved with integer variables, the value used as a lower bound
+is the solver's guaranteed dual bound and not its incumbent, which bounds the programme's own
+optimum from above.
+
+Two scopes are used, and they differ in what they guarantee. The single certified year of
+Section~\ref{sec:certify} is solved at one node over the full year of 8\,760 hours: the
+cost-optimal programme is then a true relaxation of the controller, and its value a valid
+bound. On the tree, the programme is solved on representative days, which is an
+approximation rather than a relaxation: the weighted cost of the representative days is
+neither above nor below that of the full year in general. Its deviation from the full-year
+programme is measured---about 0.6 per cent of the bound at sixty-four days aligned on
+sunrise on the reference site---and is reported with every result that rests on it.
 
 \section{Certified-optimal sizing under the rule-based dispatch policy}
 \label{sec:certify}
@@ -831,14 +1169,15 @@ forward simulation of the controller as an upper bound.
 
 Let $x$ denote the complete vector of investment decisions---equivalently the cumulative
 capacities $\{\mathrm{cap}^{g}_n\}_{g,n}$---and let $\mathcal{X}$ be the finite discrete
-lattice of admissible investments (integer PV, battery and inverter module counts within
-bounds---floored at the existing fleet $C^{g}_0$---and the single generator's catalogue
-size). For a fixed $x$ and a node $n$, write
-$\mathcal{F}_n(x)$ for the operating feasible set defined by the power
-balance~\eqref{eq:balance}, the generator
-constraints~\eqref{eq:ge-cap}--\eqref{eq:ge-min}, the storage
-dynamics~\eqref{eq:soc-dynamics}--\eqref{eq:inv-bounds} and the
-slacks~\eqref{eq:slacks}, and let $c_n(\cdot)$ be the per-year operating cost $G_n$. Define
+lattice of admissible investments (integer array, battery and inverter module counts within
+bounds---floored at the existing fleet $C^{g}_0$ and cleared of the plants the
+ceilings~\eqref{eq:array-ratio} cannot wire---and the single generator's catalogue size).
+For a fixed $x$ and a node $n$, write $\mathcal{F}_n(x)$ for the operating feasible set
+defined by the splits and the balance~\eqref{eq:pv-split}--\eqref{eq:grid}, the generator
+constraints~\eqref{eq:ge-split}--\eqref{eq:ge-min}, the storage
+dynamics and limits~\eqref{eq:soc-dynamics}--\eqref{eq:batt-rate}, the conversion
+limit~\eqref{eq:inv-bounds} and the slacks~\eqref{eq:slacks}, and let $c_n(\cdot)$ be the
+per-year operating cost $G_n$. Define
 \begin{align}
   C^{\mathrm{opt}}_n(x) &= \min_{u\,\in\,\mathcal{F}_n(x)} c_n(u)
       && \text{(cost-optimal dispatch),}\\
@@ -846,10 +1185,10 @@ slacks~\eqref{eq:slacks}, and let $c_n(\cdot)$ be the per-year operating cost $G
       && \text{(rule-based dispatch),}
 \end{align}
 where $u^{\mathrm{rule}}_n(x)$ is the trajectory produced by the generation-balance
-controller. With $K_n,O_n$ as in Section~\ref{sec:objective}, the two sizing objectives are
+controller. With $A_n$ as in Section~\ref{sec:objective}, the two sizing objectives are
 \begin{equation}
-  Z_\bullet(x) = \sum_{n\in\mathcal{N}} P_n\,B_n
-  \big( K_n(x) + \Delta_n O_n(x) + \Delta_n\,C^{\bullet}_n(x) \big),
+  Z_\bullet(x) = \sum_{n\in\mathcal{N}} P_n\,B_n\,\Delta_n
+  \big( A_n(x) + C^{\bullet}_n(x) \big),
   \qquad \bullet\in\{\mathrm{opt},\mathrm{rule}\},
 \end{equation}
 with global optima $z_A^\star=\min_{x\in\mathcal{X}} Z_{\mathrm{opt}}(x)$ (the
@@ -887,8 +1226,8 @@ $\min_{x\in\mathcal{X}\cap B} Z_{\mathrm{rule}}(x)$.
 By Assumption~\ref{ass:feas}, $u^{\mathrm{rule}}_n(x)$ is feasible for the minimisation
 defining $C^{\mathrm{opt}}_n(x)$, hence
 $C^{\mathrm{opt}}_n(x)=\min_{u\in\mathcal{F}_n(x)}c_n(u)\le
-c_n(u^{\mathrm{rule}}_n(x))=C^{\mathrm{rule}}_n(x)$. The investment and maintenance terms
-$K_n,O_n$ are identical in $Z_{\mathrm{opt}}$ and $Z_{\mathrm{rule}}$, and the weights
+c_n(u^{\mathrm{rule}}_n(x))=C^{\mathrm{rule}}_n(x)$. The capital terms $A_n$ are identical
+in $Z_{\mathrm{opt}}$ and $Z_{\mathrm{rule}}$, and the weights
 $P_n B_n\Delta_n\ge0$; summing preserves the inequality, giving
 $Z_{\mathrm{opt}}(x)\le Z_{\mathrm{rule}}(x)$ pointwise and $z_A^\star\le z_B^\star$ after
 minimisation. For the relaxation, any $x\in\mathcal{X}\cap B$ satisfies
@@ -899,7 +1238,11 @@ $Z_{\mathrm{rule}}(x)\ge Z_{\mathrm{opt}}(x)\ge\min_{x'\in B}Z_{\mathrm{opt}}(x'
 The bound needs no monotonicity argument: relaxing integrality (a superset of capacities)
 and replacing the rule-based cost by the cost-optimal cost (a smaller value) both can only
 \emph{decrease} the objective, so $\underline{Z}(B)$ underestimates the rule-based optimum
-over the box. The lower-bounding problem $\underline{Z}(B)$ is exactly the
+over the box. Nor does it need the programme's fuel curve to be the controller's: the
+programme prices fuel with the minorant $F_0+F_1p^{\mathrm{ge}}$, valid across the
+catalogue, while the simulation prices it with the installed unit's own part-load curve, and
+evaluating the rule trajectory with the minorant can only lower its cost, so the inequality
+holds \emph{a fortiori}. The lower-bounding problem $\underline{Z}(B)$ is exactly the
 deterministic-equivalent program of Section~\ref{sec:solution} restricted to $x\in B$;
 relaxing the generator-commitment binary in it yields a still-valid but cheaper linear
 lower bound.
@@ -925,25 +1268,47 @@ This gives the following procedure, which we call \emph{branch-and-simulate}.
   boxes with the root $B_0=\operatorname{conv}(\mathcal{X})$.
   \item Pop a box $B$. Compute the lower bound $\underline{Z}(B)$ by solving the
   cost-optimal relaxation (Section~\ref{sec:solution}) restricted to $x\in B$.
-  \item If $\underline{Z}(B)\ge\bar{z}-\varepsilon$, \emph{prune} $B$
+  \item If $\underline{Z}(B)\ge\bar{z}$, \emph{prune} $B$
   (Proposition~\ref{prop:bound}).
   \item Otherwise round the relaxed solution to an integer point $\hat{x}\in
   \mathcal{X}\cap B$, evaluate the upper bound $Z_{\mathrm{rule}}(\hat{x})$ by
   \emph{forward-simulating} the controller on every node and scenario, and update the
   incumbent if it improves.
   \item Branch: split $B$ along an integer capacity coordinate and return the children to
-  the queue.
-  \item Terminate when the queue is empty or
-  $\bar{z}-\min_{\text{open }B}\underline{Z}(B)\le\varepsilon$; return the incumbent and
-  its certified gap.
+  the queue; a box holding few enough designs is instead enumerated by simulation.
+  \item Terminate when the queue is empty, every design of $\mathcal{X}$ having been either
+  discarded by a bound or evaluated by a simulation; return the incumbent.
 \end{enumerate}
 Because $\mathcal{X}$ is finite the branching terminates, and on termination the incumbent
-is a certified $\varepsilon$-global optimum of the rule-based sizing problem $z_B^\star$.
-Only linear or mixed-integer relaxations (lower bounds) and forward simulations of the
-real controller (upper bounds) are ever solved; the controller is never approximated by
-constraints, so its behaviour is reproduced \emph{exactly}. The pruning is tight precisely
-when the rule-based controller is close to cost-optimal, so that the method is fast in the
-regime where the heuristic is good and merely slower---never incorrect---when it is poor.
+is a certified global optimum of the rule-based sizing problem $z_B^\star$. Termination is
+by exhaustion and not by a vanishing gap, and cannot be otherwise: as boxes shrink, the
+bound of a singleton is exactly the cost-optimal value at that design, so the smallest bound
+over the queue tends to $z_A^\star$ while the incumbent tends to $z_B^\star$, and their
+difference tends to $\Delta_{\mathrm{heur}}>0$. What the bound buys is not a closing gap but
+the right to discard whole regions unexamined. Only linear or mixed-integer relaxations
+(lower bounds) and forward simulations of the real controller (upper bounds) are ever
+solved; the controller is never approximated by constraints, so its behaviour is reproduced
+\emph{exactly}. The pruning is tight precisely when the rule-based controller is close to
+cost-optimal, so that the method is fast in the regime where the heuristic is good and
+merely slower---never incorrect---when it is poor.
+
+The two oracles do not cost the same, and on real data the ratio dictates the order of the
+work. A year of simulated operation costs about a millisecond once the hourly loops are
+compiled, a relaxation over the full year tens of seconds. The search therefore buys a strong
+incumbent first, by a coarse multi-resolution sweep of simulations, and spends relaxations
+only on proving that nothing better remains, a relaxation being worth its price only on a box
+holding many more designs than one relaxation costs simulations.
+
+On the tree, the object to certify is the root and not the plan. Only the year-0 plant is
+bought; everything below it is a future the plan is ready for. The same scheme applies with
+boxes taken in root coordinates alone. The lower oracle is the deterministic equivalent with
+the root confined to the box and every descendant left free, which by
+Proposition~\ref{prop:bound} minorises the rule-based cost of every plan rooted in that box,
+to within the compression error of Section~\ref{sec:solution}; the upper oracle is a
+coordinated descent over the plan with the root pinned, which returns a buildable plan and
+therefore a true cost. When a box narrows to a single plant, the descent bounds the best plan
+rooted there from above only, so a plant whose bound still lies below the incumbent cannot be
+excluded until the descent is tight enough; such plants are reported rather than rounded away.
 
 \subsection{The price of the heuristic dispatch}
 
@@ -1046,6 +1411,17 @@ separating the cost of using a simple rule (attacked by the hysteresis, setpoint
 reserve parameters) from the cost of imperfect information (attacked by the look-ahead
 horizon $L$). The decomposition tells the planner whether to invest in smarter logic or in
 better forecasting.
+
+\paragraph{A forecasting controller is a member of the class.} A control module now in
+development is an instance of this class. Running beside the plant, it forecasts demand and
+yield over the coming hours and sends the inverters the state of charge at which the
+generator must start: it sets the start threshold $\tilde E_{\mathrm{on}}$ causally, from a
+forecast over a horizon $L$, and leaves the dispatch itself to the inverters. Provided the
+inverters go on enforcing the trip limits and the minimum loading, as they do under the
+present rule, its trajectories remain in $\mathcal{F}(x)$, the certificate holds for it
+unchanged, and its value is measured as the reduction of $z_B(\theta)$ it achieves at a
+fixed sizing---a share of the price of the heuristic dispatch recovered by a parameter sent
+to the controller rather than by capacity.
 
 \subsection{Relation to prior work}
 

@@ -231,3 +231,66 @@ def test_the_baskets_come_to_what_the_budget_says_they_do() -> None:
     admitted = excluded["quantity"] * excluded["offshore_xof"] / 1610.04
     assert admitted / storage == pytest.approx(0.81, abs=0.02)
     assert admitted / (storage + admitted) == pytest.approx(0.45, abs=0.02)
+
+
+# ------------------------------------------------- the derivation, without the workbook
+def test_the_settings_agree_with_the_archived_derivation() -> None:
+    """Four prices are copied by hand, and until now nothing could check three of them.
+
+    The test above holds the array and the pack against the arithmetic written into their
+    own provenance, which catches a basket changed in one place and not the other. It does
+    not catch the figure itself being mistyped, and it says nothing at all about the
+    inverter or the generating set. The one test that reads the workbook is skipped unless
+    ``MGPY_BUDGET`` points at it, which is true on one machine.
+
+    ``data/costs/equipment_prices.json`` closes that: it is what the builder derived, in the
+    units the settings carry, written by ``--archive`` and committed. The workbook stays
+    outside the repository and so does its bill of quantities; what is archived is the four
+    per-unit figures, the rate and the landing uplift, beside the name and the digest of the
+    workbook they came from.
+    """
+    import json
+
+    from microgrid_expansion.build_equipment_prices import ARCHIVE
+
+    assert ARCHIVE.exists(), (
+        f"{ARCHIVE} is missing; produce it with python -m "
+        "microgrid_expansion.build_equipment_prices --budget <workbook> --archive")
+    archive = json.loads(ARCHIVE.read_text(encoding="utf-8"))
+    settings = default_settings()
+    generator = max(settings.generators, key=lambda g: g.rating_kw)
+
+    assert archive["xof_per_usd"] == pytest.approx(XOF_PER_USD)
+    assert archive["landing_uplift"] == pytest.approx(LANDING_UPLIFT)
+    assert archive["derived_from"] and archive["sha1"], "the archive names no workbook"
+
+    # Each family's whole price is its own units plus its basket, and the settings carry
+    # that sum. They are quoted to a tenth of a dollar, which is the tolerance below.
+    carried = {
+        "photovoltaic": settings.photovoltaic.cost_usd_kw,
+        "battery": settings.battery.cost_usd_kwh,
+        "inverter": settings.inverter.cost_usd_kw,
+        "generator": generator.cost_usd_kva,
+    }
+    for family, figure in carried.items():
+        block = archive["families"][family]
+        assert block["whole_landed_xof_per_unit"] == pytest.approx(
+            block["landed_xof_per_unit"] + block["extras_landed_xof_per_unit"])
+        assert block["settings_usd_per_unit"] == pytest.approx(
+            block["whole_landed_xof_per_unit"] / archive["xof_per_usd"])
+        assert figure == pytest.approx(block["settings_usd_per_unit"], abs=0.05), (
+            f"the settings carry {figure} per {block['unit']} of {family} and the "
+            f"derivation gives {block['settings_usd_per_unit']:.2f}")
+
+
+def test_the_generator_is_quoted_per_kva_and_sized_per_kw() -> None:
+    """The one price that is not in the unit the model spends.
+
+    A set is quoted per kilovolt-ampere and the model sizes active power, so the archive's
+    figure and the catalogue's own ``cost_usd_kw`` differ by the power factor. Conflating
+    them would understate the generating set by a fifth.
+    """
+    settings = default_settings()
+    for spec in settings.generators:
+        assert spec.cost_usd_kw == pytest.approx(spec.cost_usd_kva / spec.power_factor)
+        assert spec.power_factor < 1.0

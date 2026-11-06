@@ -299,3 +299,88 @@ def test_the_descent_starts_coarse_and_settles_fine() -> None:
     assert min(scales) == 1, "the descent never settles at a single module"
     source = inspect.getsource(certify_tree)
     assert "sorted(set(scales), reverse=True)" in source, "coarse does not come first"
+
+
+# ------------------------------------------------------------------ the command
+def test_a_stated_gap_stops_the_search_and_claims_no_proof(tiny) -> None:
+    """Stopping short is allowed; calling it a proof is not.
+
+    A search run to optimality spends its tail on boxes that are both numerous and nearly
+    as dear as the plant in hand. ``target_gap`` buys that tail back, and the boxes it
+    leaves unopened have to be reported as open: a certificate that cleared its queue on a
+    tolerance and then said ``proven`` would be the one failure this whole scheme exists to
+    avoid.
+    """
+    from microgrid_expansion.exact.first_stage import certify_first_stage
+    from microgrid_expansion.exact.tree_certify import certify_tree
+    from microgrid_expansion.model import build_model
+    from microgrid_expansion.post import extract_solution
+    from microgrid_expansion.solve import solve
+
+    cfg, settings, tree, rep, _ = tiny
+    programme = build_model(tree, rep, cfg, architecture="dc", settings=settings)
+    solved = solve(programme, settings, solver=cfg.solver)
+    incumbent = certify_tree(extract_solution(programme, cfg), tree, rep, solved.bound,
+                             architecture="dc", settings=settings, verbose=False)
+
+    loose = certify_first_stage(tree, rep, cfg, incumbent.plans, incumbent.z_rule,
+                                architecture="dc", settings=settings,
+                                max_programmes=4, target_gap=0.25, verbose=False)
+    tight = certify_first_stage(tree, rep, cfg, incumbent.plans, incumbent.z_rule,
+                                architecture="dc", settings=settings,
+                                max_programmes=4, verbose=False)
+
+    assert loose.programmes_solved <= tight.programmes_solved
+    if loose.programmes_solved < tight.programmes_solved or not loose.proven:
+        assert not loose.proven, "a search stopped at a tolerance reported a proof"
+        assert loose.lower_bound <= loose.z_rule + 1e-6
+
+
+def test_a_recorded_plant_is_carried_into_a_longer_search(tiny) -> None:
+    """What resuming means here: the plant found last time prunes the boxes again.
+
+    The expense of this search is the programmes, and a tighter incumbent excludes boxes
+    without solving any. A run continued with a budget it did not have before must
+    therefore not rediscover what the first run already paid for.
+    """
+    from microgrid_expansion.exact.first_stage import certify_first_stage
+
+    cfg, settings, tree, rep, lattice = tiny
+    # A plant far better than anything in this lattice, handed in as a previous result.
+    handed = {"pv_kw": 6.0, "pv_ac_kw": 0.0, "battery_kwh": 10.0, "inverter_kw": 5.0,
+              "generator_kw": float(min(lattice.generator_ratings))}
+    certificate = certify_first_stage(tree, rep, cfg, {}, 1.0,
+                                      architecture="dc", settings=settings,
+                                      max_programmes=4, verbose=False,
+                                      incumbent_root=handed)
+    assert certificate.root == handed, "the recorded plant was not the one carried"
+    assert certificate.programmes_solved == 0, (
+        "a dominating incumbent should prune every box for nothing")
+    assert certificate.z_rule == pytest.approx(1.0)
+
+
+def test_the_command_records_what_the_proof_rests_on(tmp_path) -> None:
+    """A result nobody can re-run is not a result.
+
+    The five per cent quoted for this search came from a calculation reachable only from a
+    test. The command exists so the figure can be produced again, and the record names the
+    commit, the settings, the seed and the time it took.
+    """
+    import json
+
+    from microgrid_expansion.exact.first_stage import main
+
+    out = tmp_path / "summary_first_stage.json"
+    code = main(["--site", "Samionta", "--architecture", "dc",
+                 "--stage-years", "0", "5", "--branching", "1", "2",
+                 "--mc-paths", "8", "--rep-days", "2", "--max-programmes", "1",
+                 "--out", str(out)])
+    assert code == 0
+    record = json.loads(out.read_text())
+    assert record["site"] == "Samionta" and record["architecture"] == "dc"
+    assert record["commit"] and record["seed"] == 0
+    assert record["settings"]["max_programmes"] == 1
+    assert record["settings"]["discount_rate"] == pytest.approx(
+        default_settings().economics.discount_rate)
+    assert record["certificate"]["lower_bound"] <= record["certificate"]["z_rule"] + 1e-6
+    assert record["seconds"]["total"] > 0

@@ -199,7 +199,7 @@ def plan_expansion(job: Job, overrides: dict[str, Any],
     # tolerance. The two differ by about a hundredth of a per cent here, and only the first
     # is a bound.
     lower = solved.bound
-    plans = extract_solution(programme, cfg)
+    plans = extract_solution(programme, cfg, settings)
     job.done = step + 3
 
     job.announce("job.descend")

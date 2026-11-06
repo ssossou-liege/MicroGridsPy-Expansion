@@ -68,11 +68,6 @@ PV_UNIT_KW = _S.photovoltaic.unit_kw                  # u^pv
 BATT_UNIT_KWH = _S.battery.unit_kwh                   # u^batt
 INV_UNIT_KW = _S.inverter.unit_kw                     # u^inv
 
-# --- brownfield initial condition (existing installed capacity) -------------
-INITIAL_PV_KW = 0.0
-INITIAL_BATT_KWH = 0.0
-INITIAL_INV_KW = 0.0
-GEN_INITIAL_KW = GEN_CATALOG_KW[0]
 
 
 @dataclass
@@ -130,11 +125,11 @@ class ModelConfig:
     gen_catalog_kw: tuple[float, ...] = GEN_CATALOG_KW
     gen_salvage_frac: float = GEN_SALVAGE_FRAC
 
-    # --- Brownfield initial condition (existing installed capacity) ---
-    initial_pv_kw: float = INITIAL_PV_KW
-    initial_batt_kwh: float = INITIAL_BATT_KWH
-    initial_inv_kw: float = INITIAL_INV_KW
-    gen_initial_kw: float = GEN_INITIAL_KW
+    # The plant already standing is declared with the village, in
+    # ``settings.InstalledPlant``, not here. It was declared here as well -- four figures no
+    # module read -- and the generator's default was the smallest set in the catalogue, so
+    # the day anything read it every greenfield plan would have started with a generating
+    # set nobody had bought.
 
     # --- Age of the connection the tree starts from ---
     # The plan ages the community from this, milestone by milestone. Held here for the same
@@ -162,8 +157,6 @@ class ModelConfig:
                              "node; branching starts after it")
         if self.n_rep_days < 1:
             raise ValueError("a node needs at least one representative day")
-        if self.gen_initial_kw not in (0.0, *self.gen_catalog_kw):
-            raise ValueError("gen_initial_kw must be 0 or a catalogue size")
 
 
 def crf(r: float = DISCOUNT_RATE, n: int = PROJECT_YEARS) -> float:

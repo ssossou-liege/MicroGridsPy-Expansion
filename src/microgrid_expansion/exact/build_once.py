@@ -186,7 +186,7 @@ def _solved(tree, rep, cfg: ModelConfig, settings: ProjectSettings, architecture
     solved = solve(programme, settings, solver=cfg.solver)
     if solved.objective == float("inf"):
         raise RuntimeError("no feasible plan under this policy")
-    plans = extract_solution(programme, cfg)
+    plans = extract_solution(programme, cfg, settings)
     programme_seconds = time.perf_counter() - at
 
     at = time.perf_counter()

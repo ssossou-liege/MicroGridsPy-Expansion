@@ -46,7 +46,11 @@ def add_dispatch_constraints(m: linopy.Model, v: dict, c: Coords, cfg: ModelConf
     # different pair of converters is charged for the pair it declared.
     from ..settings import default_settings
 
-    coupling = (default_settings() if settings is None else settings).coupling
+    resolved = default_settings() if settings is None else settings
+    coupling = resolved.coupling
+    # The plant already on the ground is part of what the dispatch may use. Left out, a
+    # village running since 2024 was dispatched as though its array were not there.
+    installed = getattr(resolved, "installed", None)
     double = coupling.ac_double_conversion_efficiency
     eta_pv = (battery.charge_efficiency * double
               if ac_coupled else battery.charge_efficiency)
@@ -58,7 +62,8 @@ def add_dispatch_constraints(m: linopy.Model, v: dict, c: Coords, cfg: ModelConf
 
     for n in c.node:
         node = int(n)
-        cap_pv, cap_batt, cap_inv, cap_gen, cap_pv_ac = capacity(v, c, node, cfg)
+        cap_pv, cap_batt, cap_inv, cap_gen, cap_pv_ac = capacity(
+            v, c, node, cfg, installed)
         block = data[node]
         demand = _grid(block["demand"], c)
         yield_ = _grid(block["yield"], c)

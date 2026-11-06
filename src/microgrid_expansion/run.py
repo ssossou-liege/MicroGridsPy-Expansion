@@ -95,7 +95,7 @@ def run(cfg: ModelConfig, out_dir: Path = RESULTS_DIR, verbose: bool = True,
         # The programme's plan is optimal for a dispatch nobody will run. Descend from it
         # towards the plan the controller itself prefers, or the gap reported would be the
         # cost of having sized for the wrong operator rather than the price of myopia.
-        certificate = certify_tree(extract_solution(programme, cfg), tree, rep,
+        certificate = certify_tree(extract_solution(programme, cfg, settings), tree, rep,
                                    solved.objective, architecture=architecture,
                                    settings=settings, verbose=verbose)
         outcomes.append((certificate.z_rule, solved.objective, architecture,

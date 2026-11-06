@@ -940,6 +940,135 @@ class TrajectoryWeights:
 
 
 @dataclass
+class Vintage:
+    """One batch of capacity already standing, and the calendar year it went in.
+
+    Capacity alone is not enough to price an existing asset. What the project still owes on
+    it is the replacement it will need, and when that falls due depends on how much of its
+    service life is already spent: a converter installed this year and one installed nine
+    years ago are the same kilowatt and not remotely the same liability.
+    """
+
+    #: Kilowatts, or kilowatt-hours for storage. Whatever unit the technology is sized in.
+    capacity: float = 0.0
+    #: Calendar year of commissioning. A year's resolution is enough: it moves the deferral
+    #: factor by a few per cent of a term that is itself a fraction of the annuity.
+    commissioned_year: int = 0
+
+
+@dataclass
+class InstalledPlant:
+    """The plant already on the ground, which a plan extends rather than invents.
+
+    Both reference villages have been running for years, and every plan computed for them
+    was nonetheless a greenfield plan. That is wrong in two directions at once. It charges
+    the project for an array, a pack and a converter that are standing and paid for, which
+    overstates what the next step costs. And it leaves the search free to answer with a
+    plant smaller than the one in service, which is not an answer: nobody uninstalls a
+    working array to follow a plan.
+
+    Each technology holds a *list* of vintages, because neither village has a single age.
+    Samionta's field is 17.48 kWp from February 2024 and 8.38 kWp more from November 2025;
+    its storage is 55 kWh from 2024 and 40 kWh more from July 2026. One age per technology
+    would charge those at the same deferral, and the error runs in the project's favour,
+    which is the direction that does not get noticed.
+
+    Everything defaults to empty, and silence is read as bare ground. That is the honest
+    reading: inventing a plant for a village that has none would charge it for equipment
+    nobody bought, which is the mirror of the fault this block exists to fix.
+    """
+
+    #: Calendar year the plan's first milestone falls in. The ages are measured from it.
+    #: It is not ``ProjectSettings.year``, which names the meteorological year the demand
+    #: and the resource are built for: a plan decided in 2026 may well be studied on the
+    #: weather of 2025, and conflating the two would age the plant by the wrong interval.
+    base_year: int = 2026
+    #: Array on the hybrid inverter's own trackers, feeding the battery's bus.
+    pv: tuple[Vintage, ...] = ()
+    #: Array on string inverters, feeding the load's bus.
+    pv_ac: tuple[Vintage, ...] = ()
+    battery: tuple[Vintage, ...] = ()
+    inverter: tuple[Vintage, ...] = ()
+    generator: tuple[Vintage, ...] = ()
+
+    #: The technologies this block describes, in the order the cost coefficients use.
+    TECHNOLOGIES = ("pv", "battery", "inverter", "generator", "pv_ac")
+
+    def vintages(self, technology: str) -> tuple[Vintage, ...]:
+        """The batches of one technology, oldest first."""
+        if technology not in self.TECHNOLOGIES:
+            raise ValueError(f"unknown technology {technology!r}; "
+                             f"available: {', '.join(self.TECHNOLOGIES)}")
+        return tuple(sorted(getattr(self, technology),
+                            key=lambda v: v.commissioned_year))
+
+    def capacity(self, technology: str) -> float:
+        """Total capacity of one technology, every vintage together."""
+        return float(sum(v.capacity for v in self.vintages(technology)))
+
+    def age_years(self, vintage: Vintage) -> float:
+        """Service life already spent, in years, never negative.
+
+        A batch commissioned after the plan's first milestone is treated as new rather than
+        as owed a credit: the plan cannot take delivery before it begins.
+        """
+        return float(max(self.base_year - int(vintage.commissioned_year), 0))
+
+    @property
+    def is_empty(self) -> bool:
+        """Whether this describes bare ground."""
+        return all(not getattr(self, name) for name in self.TECHNOLOGIES)
+
+
+#: The plant standing at each reference village, as its operator declares it and the
+#: production logs corroborate it. Not a default: ``ProjectSettings.installed`` stays empty,
+#: so every figure computed before this one is unchanged and a brownfield plan is asked for
+#: rather than assumed.
+#:
+#: Two unit conventions meet here and they are not interchangeable. Victron plates its
+#: inverters in kVA, which this project converts at 0.8 kW per kVA -- the same factor the
+#: generating-set catalogue above is built on, where 10, 15 and 20 kVA become 8, 12 and
+#: 16 kW. Deye plates in watts, so a SUN12K is twelve kilowatts and converting it would
+#: understate it by a fifth. The 20 kVA sets of both villages are therefore 16 kW, Gbowele's
+#: 30 kVA of Quattro is 24 kW, and Samionta's three and then four SUN12K are 36 and 48 kW.
+REFERENCE_PLANTS: dict[str, "InstalledPlant"] = {
+    # Energised February 2024. The field was extended in November 2025, and on 29 July 2026
+    # the storage went from 55 to 95 kWh while a repaired conversion unit was reinstalled,
+    # taking the three SUN12K to four. Direct-current coupling throughout: one hybrid
+    # inverter with its own trackers and no string inverter, so nothing on the load's bus.
+    "Samionta": lambda: InstalledPlant(
+        base_year=2026,
+        pv=(Vintage(17.48, 2024), Vintage(8.38, 2025)),
+        battery=(Vintage(55.0, 2024), Vintage(40.0, 2026)),
+        inverter=(Vintage(36.0, 2024), Vintage(12.0, 2026)),
+        generator=(Vintage(16.0, 2024),)),
+    # Commissioned October 2024 and unchanged since. The field is genuinely divided between
+    # the two buses -- three Victron solar chargers on the battery's and a photovoltaic
+    # inverter on the load's -- which is what the model calls mixed coupling. The plate is
+    # the authority on the total, 22.45 kWp, and the Victron export is the authority on the
+    # split: peaks of 16.11 kW across the chargers against 6.06 kW on the alternating side,
+    # so 72.7 per cent of the field on the battery's bus and the rest on the load's.
+    "Gbowele": lambda: InstalledPlant(
+        base_year=2026,
+        pv=(Vintage(22.45 * 16.11 / 22.17, 2024),),
+        pv_ac=(Vintage(22.45 * 6.06 / 22.17, 2024),),
+        battery=(Vintage(40.0, 2024),),
+        inverter=(Vintage(24.0, 2024),),
+        generator=(Vintage(16.0, 2024),)),
+}
+
+
+def reference_plant(site: str) -> InstalledPlant:
+    """The plant standing at one reference village, or bare ground for anywhere else.
+
+    A village this project has no record of is bare ground, which is the honest reading:
+    inventing a plant for it would charge it for equipment nobody bought.
+    """
+    build = REFERENCE_PLANTS.get(str(site))
+    return build() if build is not None else InstalledPlant()
+
+
+@dataclass
 class ProjectSettings:
     """Everything a project needs beyond its measured data."""
 
@@ -967,6 +1096,8 @@ class ProjectSettings:
     calibration: CalibrationSettings = field(default_factory=CalibrationSettings)
     grid: GridSpec = field(default_factory=GridSpec)
     infrastructure: InfrastructureSpec = field(default_factory=InfrastructureSpec)
+    #: What is already built. Empty means bare ground; see ``InstalledPlant``.
+    installed: InstalledPlant = field(default_factory=InstalledPlant)
     solver: SolverSettings = field(default_factory=SolverSettings)
 
     # ---------------------------------------------------------------- validation
@@ -1098,7 +1229,16 @@ class ProjectSettings:
             if f.name not in raw:
                 continue
             value = raw[f.name]
-            if f.name == "generators":
+            if f.name == "installed":
+                # Rebuilt by hand, because the generic path cannot see inside a list: a
+                # saved plant came back as a list of plain mappings, and a reloaded project
+                # then described a village whose vintages had no dates.
+                setattr(settings, f.name, InstalledPlant(
+                    base_year=int(value.get("base_year", InstalledPlant.base_year)),
+                    **{name: tuple(Vintage(**item) if isinstance(item, dict) else item
+                                   for item in (value.get(name) or ()))
+                       for name in InstalledPlant.TECHNOLOGIES}))
+            elif f.name == "generators":
                 setattr(settings, f.name, [
                     GeneratorSpec(**{**g, "provenance": Provenance(**g["provenance"])}
                                   if isinstance(g.get("provenance"), dict) else g)

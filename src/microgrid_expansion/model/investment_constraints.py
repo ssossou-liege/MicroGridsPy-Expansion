@@ -36,13 +36,27 @@ def add_investment_constraints(m: linopy.Model, v: dict, c: Coords,
     """
     from ..settings import default_settings
 
-    coupling = (default_settings() if settings is None else settings).coupling
+    resolved = default_settings() if settings is None else settings
+    coupling = resolved.coupling
+    installed = getattr(resolved, "installed", None)
     divided = architecture == "mixed"
     ratio = (coupling.dc_ac_ratio_max if architecture in ("dc", "mixed")
              else coupling.ac_ratio_max)
     ratings = np.asarray(cfg.gen_catalog_kw, dtype=float)
 
     m.add_constraints(v["z_ge"].sum("gsize") == 1, name="one_generator")
+
+    # A plant does not sell its generating set back, so a rating below the one on site is
+    # not a decision the plan may take -- at any node, not only at the root.
+    standing_gen = installed_base(installed)[3]
+    if standing_gen > 0.0:
+        if not any(float(r) >= standing_gen - 1e-9 for r in ratings):
+            raise ValueError(
+                f"the standing generating set is {standing_gen:g} kW and the catalogue "
+                "holds nothing that large; a plan cannot replace it with a smaller one")
+        for k, rating in enumerate(ratings):
+            if float(rating) < standing_gen - 1e-9:
+                m.add_constraints(v["z_ge"].sel(gsize=k) == 0, name=f"no_gen_below_{k}")
 
     if root_box is not None:
         root = int(c.node[0])
@@ -61,12 +75,10 @@ def add_investment_constraints(m: linopy.Model, v: dict, c: Coords,
 
     for n in c.node:
         parent = c.parent[int(n)]
-        cap_pv = _accumulated(v, c, int(n), "b_pv", cfg.pv_unit_kw)
-        cap_batt = _accumulated(v, c, int(n), "b_batt", cfg.batt_unit_kwh)
-        cap_inv = _accumulated(v, c, int(n), "b_inv", cfg.inv_unit_kw)
-        cap_gen = sum(float(r) * v["z_ge"].sel(node=int(n), gsize=k)
-                      for k, r in enumerate(ratings))
-        cap_pv_ac = _accumulated(v, c, int(n), "b_pv_ac", cfg.pv_unit_kw)
+        # The whole plant, not only what the plan adds: a converter has to admit the array
+        # already on its trackers as well as the one the plan buys.
+        cap_pv, cap_batt, cap_inv, cap_gen, cap_pv_ac = capacity(
+            v, c, int(n), cfg, installed)
         if divided:
             # Each part of the array is admitted by its own converter, so the field as a
             # whole may reach the sum of the two ceilings.
@@ -98,16 +110,65 @@ def _accumulated(v: dict, c: Coords, node: int, module: str, unit: float):
     return unit * sum(v[module].sel(node=int(k)) for k in chain)
 
 
-def capacity(v: dict, c: Coords, node: int, cfg: ModelConfig):
-    """The five capacities at a node, as linear expressions.
+def installed_base(installed=None) -> tuple:
+    """What already stands, in the order the capacities are counted [kW, kWh, kW, kW, kW].
+
+    All five, the generating set included. Where it enters differs by technology, and that
+    asymmetry is real rather than an oversight: the plan *adds* modules of array, storage
+    and conversion, so their totals are this base plus what it buys, while it does not add
+    generating sets but chooses one rating from a catalogue, so that total is the choice
+    itself and this base is a floor on the choice. Every caller states which it is doing.
+    Returning zero for the set here instead, as this first did, leaves the second reader to
+    rediscover the asymmetry, which is how one figure comes to be read two ways.
+    """
+    if installed is None:
+        return (0.0, 0.0, 0.0, 0.0, 0.0)
+    return (installed.capacity("pv"), installed.capacity("battery"),
+            installed.capacity("inverter"), installed.capacity("generator"),
+            installed.capacity("pv_ac"))
+
+
+def capacity(v: dict, c: Coords, node: int, cfg: ModelConfig, installed=None):
+    """The five capacities standing at a node, as linear expressions.
+
+    What the plant *is*, which is what the dispatch may use and what the converter has to
+    admit: the plant already on the ground plus whatever the plan has added by this node.
+    Use :func:`added_capacity` for what the plan pays for.
 
     The array comes in two parts, one on each bus. Under a pure arrangement the part on the
     load's bus is pinned to zero and the tuple reads as it did before.
     """
+    base = installed_base(installed)
+    added = added_capacity(v, c, node, cfg, installed)
     ratings = np.asarray(cfg.gen_catalog_kw, dtype=float)
+    # The chosen rating is the whole set, so the standing one is not added to it: it was a
+    # floor on the choice, which ``add_investment_constraints`` imposes.
+    chosen = sum(float(r) * v["z_ge"].sel(node=node, gsize=k)
+                 for k, r in enumerate(ratings))
+    return (base[0] + added[0], base[1] + added[1], base[2] + added[2],
+            chosen, base[4] + added[4])
+
+
+def added_capacity(v: dict, c: Coords, node: int, cfg: ModelConfig, installed=None):
+    """The five capacities the plan buys by a node, as linear expressions.
+
+    What the project pays for. A village with a plant pays for the extension, not for the
+    plant: the array, the storage and the conversion already standing were bought years
+    ago, and the modular variables of this programme count additions, so for those three
+    this is simply the accumulation along the path. The generating set is the exception
+    again -- the plan picks a rating, so what it buys is the rating it picks less the one
+    already on site, which the floor in :func:`add_investment_constraints` keeps positive.
+    """
+    base = installed_base(installed)
+    ratings = np.asarray(cfg.gen_catalog_kw, dtype=float)
+    # Written as a credit inside the coefficients rather than as ``chosen - standing``.
+    # Exactly one binary is set, so the two are the same number, but the subtraction leaves
+    # a constant term in the expression and linopy declines to carry one in an objective.
+    # The floor on the choice keeps every coefficient non-negative.
+    chosen_added = sum(max(float(r) - base[3], 0.0) * v["z_ge"].sel(node=node, gsize=k)
+                       for k, r in enumerate(ratings))
     return (_accumulated(v, c, node, "b_pv", cfg.pv_unit_kw),
             _accumulated(v, c, node, "b_batt", cfg.batt_unit_kwh),
             _accumulated(v, c, node, "b_inv", cfg.inv_unit_kw),
-            sum(float(r) * v["z_ge"].sel(node=node, gsize=k)
-                for k, r in enumerate(ratings)),
+            chosen_added,
             _accumulated(v, c, node, "b_pv_ac", cfg.pv_unit_kw))

@@ -520,7 +520,7 @@ def certify_first_stage(
             if solved.bound == float("inf") or solved.bound >= best_value - epsilon:
                 pruned_programme += 1
                 continue
-            plans = extract_solution(programme, cfg)
+            plans = extract_solution(programme, cfg, settings)
             certificate = certify_tree(plans, tree, rep, solved.bound,
                                        architecture=architecture, settings=settings,
                                        fixed_nodes=frozenset({root_node}), verbose=False)
@@ -594,7 +594,7 @@ def _incumbent(tree: ScenarioTree, rep: dict[int, RepDays], cfg: ModelConfig,
     solved = solve(programme, settings, solver=cfg.solver, **(solver_options or {}))
     if solved.objective == float("inf"):
         raise RuntimeError(f"no feasible plan under coupling {architecture}")
-    certificate = certify_tree(extract_solution(programme, cfg), tree, rep, solved.bound,
+    certificate = certify_tree(extract_solution(programme, cfg, settings), tree, rep, solved.bound,
                                architecture=architecture, settings=settings,
                                verbose=verbose)
     return certificate.plans, certificate.z_rule, solved.bound

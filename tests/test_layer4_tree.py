@@ -131,7 +131,7 @@ def test_the_programme_minorises_the_controller(small_tree):
     solved = solve(programme, settings, solver=cfg.solver)
     assert "ok" in solved.status
 
-    plans = extract_solution(programme, cfg)
+    plans = extract_solution(programme, cfg, settings)
     rule, _ = evaluate_plan(plans, tree, architecture="dc", settings=settings)
     assert solved.objective <= rule + 1e-6
 

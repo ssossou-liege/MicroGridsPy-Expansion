@@ -198,7 +198,7 @@ def test_the_descent_leaves_a_pinned_root_where_it_was_put(tiny) -> None:
     cfg, settings, tree, rep, _ = tiny
     programme = build_model(tree, rep, cfg, architecture="dc", settings=settings)
     solved = solve(programme, settings, solver=cfg.solver)
-    plans = extract_solution(programme, cfg)
+    plans = extract_solution(programme, cfg, settings)
     before = _root_of(plans, tree)
 
     certificate = certify_tree(plans, tree, rep, solved.bound, architecture="dc",
@@ -320,7 +320,7 @@ def test_a_stated_gap_stops_the_search_and_claims_no_proof(tiny) -> None:
     cfg, settings, tree, rep, _ = tiny
     programme = build_model(tree, rep, cfg, architecture="dc", settings=settings)
     solved = solve(programme, settings, solver=cfg.solver)
-    incumbent = certify_tree(extract_solution(programme, cfg), tree, rep, solved.bound,
+    incumbent = certify_tree(extract_solution(programme, cfg, settings), tree, rep, solved.bound,
                              architecture="dc", settings=settings, verbose=False)
 
     loose = certify_first_stage(tree, rep, cfg, incumbent.plans, incumbent.z_rule,

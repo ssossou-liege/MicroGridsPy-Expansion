@@ -19,8 +19,18 @@ class NodePlan:
     pv_ac_kw: float = 0.0
 
 
-def extract_solution(programme, cfg) -> dict[int, NodePlan]:
-    """Installed capacity at every node, accumulated along its path from the root."""
+def extract_solution(programme, cfg, settings=None) -> dict[int, NodePlan]:
+    """Capacity standing at every node: what was already there, plus what the plan adds.
+
+    The plant on the ground comes from ``settings``, the same object the programme was
+    built from, rather than as a figure each caller passes. Nine callers read a solution
+    and one of them forgetting would report a brownfield plan as its extension alone, with
+    the village apparently running on the modules the plan buys.
+    """
+    from ..model.investment_constraints import installed_base
+
+    base = installed_base(None if settings is None
+                          else getattr(settings, "installed", None))
     v, c = programme.variables, programme.coords
     ratings = np.asarray(cfg.gen_catalog_kw, dtype=float)
     added = {name: np.asarray(v[name].solution, dtype=float)
@@ -37,10 +47,13 @@ def extract_solution(programme, cfg) -> dict[int, NodePlan]:
             cursor = c.parent[cursor]
         plans[node] = NodePlan(
             node=node,
-            pv_kw=cfg.pv_unit_kw * sum(added["b_pv"][k] for k in chain),
-            battery_kwh=cfg.batt_unit_kwh * sum(added["b_batt"][k] for k in chain),
-            inverter_kw=cfg.inv_unit_kw * sum(added["b_inv"][k] for k in chain),
+            pv_kw=base[0] + cfg.pv_unit_kw * sum(added["b_pv"][k] for k in chain),
+            battery_kwh=base[1] + cfg.batt_unit_kwh * sum(added["b_batt"][k]
+                                                          for k in chain),
+            inverter_kw=base[2] + cfg.inv_unit_kw * sum(added["b_inv"][k] for k in chain),
+            # The chosen rating is the whole set, the standing one having been a floor on
+            # the choice rather than something to build on.
             generator_kw=float(ratings @ chosen[index[node]]),
-            pv_ac_kw=cfg.pv_unit_kw * sum(added["b_pv_ac"][k] for k in chain),
+            pv_ac_kw=base[4] + cfg.pv_unit_kw * sum(added["b_pv_ac"][k] for k in chain),
         )
     return plans

@@ -183,7 +183,7 @@ def wait_and_see(cfg: ModelConfig, weights: tuple[float, float, float],
                        **(solver_options or {}))
         if solved.objective == float("inf"):
             raise RuntimeError(f"leaf {leaf}: no plan for a future that is known")
-        plans = extract_solution(programme, cfg)
+        plans = extract_solution(programme, cfg, settings)
         certificate = certify_tree(plans, chain, chain_rep, solved.bound,
                                    architecture=architecture, settings=settings,
                                    verbose=False)
@@ -324,7 +324,7 @@ def run_case(case: Case, cfg: ModelConfig, mean_value: bool = False,
                        **(solver_options or {}))
         if solved.objective == float("inf"):
             continue
-        plans = extract_solution(programme, cfg)
+        plans = extract_solution(programme, cfg, settings)
         solved_in = time.perf_counter() - at
 
         at = time.perf_counter()

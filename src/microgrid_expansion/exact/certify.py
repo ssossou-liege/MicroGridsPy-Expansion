@@ -38,7 +38,7 @@ import numpy as np
 from .. import config
 from ..instances import SiteYear, build_site_year
 from ..resource.yield_model import module_from
-from ..settings import ProjectSettings, default_settings
+from ..settings import ProjectSettings, default_settings, reference_plant
 from .lower_bound import CapacityBox, Economics, cost_optimal_dispatch
 
 #: Relaxations a narrowing typically spends: four axes, two ends each, a handful of rounds.
@@ -196,11 +196,38 @@ class Lattice:
         inv_for_array = pv_max * settings.photovoltaic.unit_kw / ratio
         inv_max = int(np.ceil(max(inv_for_peak, inv_for_array)
                               / settings.inverter.unit_kw))
+        # The plant already standing is the floor of the search, not a cost adjustment. A
+        # design below it is not a plan: nobody uninstalls a working array to follow one.
+        # The floors round *down*, because a plate that is not a whole number of modules
+        # cannot be represented and rounding up would hand the plan capacity nobody
+        # installed -- half a kilowatt of array, or a whole kilowatt of conversion.
+        plant = getattr(settings, "installed", None)
+        pv_floor = batt_floor = inv_floor = 0
+        gen_floor = 0.0
+        if plant is not None and not plant.is_empty:
+            # ``n_pv`` counts the whole field whenever the split is derived, which is the
+            # default, so the floor is the array on both buses together.
+            field_kw = plant.capacity("pv") + plant.capacity("pv_ac")
+            pv_floor = int(field_kw / settings.photovoltaic.unit_kw + 1e-9)
+            batt_floor = int(plant.capacity("battery") / settings.battery.unit_kwh + 1e-9)
+            inv_floor = int(plant.capacity("inverter") / settings.inverter.unit_kw + 1e-9)
+            gen_floor = plant.capacity("generator")
+
+        ratings = tuple(sorted(g.rating_kw for g in settings.generators
+                               if g.rating_kw >= gen_floor - 1e-9))
+        if not ratings:
+            raise ValueError(
+                f"the standing generating set is {gen_floor:g} kW and the project "
+                "catalogues nothing that large; a plan cannot replace it with a smaller "
+                "one, so either the catalogue or the declared plant is wrong")
+
         return cls(pv_unit_kw=settings.photovoltaic.unit_kw,
                    batt_unit_kwh=settings.battery.unit_kwh,
                    inv_unit_kw=settings.inverter.unit_kw,
-                   generator_ratings=tuple(sorted(g.rating_kw for g in settings.generators)),
-                   n_pv=(0, pv_max), n_batt=(0, batt_max), n_inv=(1, inv_max),
+                   generator_ratings=ratings,
+                   n_pv=(pv_floor, max(pv_max, pv_floor)),
+                   n_batt=(batt_floor, max(batt_max, batt_floor)),
+                   n_inv=(max(1, inv_floor), max(inv_max, inv_floor)),
                    n_pv_ac=(0, 0), architecture=architecture,
                    coupling=settings.coupling,
                    generators=tuple(settings.generators))
@@ -415,6 +442,50 @@ def _infrastructure_usd_yr(settings) -> float:
                                   horizon_years=settings.economics.horizon_years)
 
 
+def _installed_capacities(economics) -> tuple:
+    """What already stands, in the order the capital floor counts capacities."""
+    return (economics.installed_capacity("pv") + economics.installed_capacity("pv_ac"),
+            economics.installed_capacity("battery"),
+            economics.installed_capacity("inverter"),
+            economics.installed_capacity("generator"))
+
+
+def _design_capital_usd_yr(capacities, economics, annualised=None,
+                           battery_annualised=None) -> float:
+    """Annualised capital of one design: what it buys, plus what already stands.
+
+    A village with a plant pays for the extension, not for the plant. What is standing was
+    bought years ago and the project does not buy it again; what it still owes on it is its
+    upkeep and the replacement its remaining life defers, and that is a constant every
+    design carries -- so it shifts every cost by the same amount and leaves the ranking,
+    and therefore the certificate, where it was. What moves the optimum is the floor the
+    standing plant puts under the lattice.
+
+    The storage is the one technology whose coefficient depends on the plan: a pack cycled
+    hard is replaced before its calendar life is up. The added pack is charged on the life
+    the plan's own cycling implies, and the standing pack on its calendar life, because the
+    wear it has already taken is not in the model and charging it on this plan's duty would
+    bill a pack bought in 2024 for a plan drawn in 2026.
+    """
+    annualised = economics.annualised() if annualised is None else annualised
+    if battery_annualised is None:
+        battery_annualised = economics.battery_annualised()
+    add_pv, add_batt, add_inv, add_gen, add_pv_ac = economics.added_capacity(capacities)
+    # Both parts of the field buy their modules; only the part on the load's bus buys the
+    # string inverters that put it there. Charging the first coefficient to ``pv_kw`` alone
+    # left the second part free, which understated every design that used it and let the
+    # relaxation exceed a cost that had not been fully counted.
+    return (annualised[0] * add_pv
+            + economics.string_inverter_annualised() * add_pv_ac
+            + annualised[0] * add_pv_ac
+            + battery_annualised * add_batt
+            + annualised[2] * add_inv
+            + annualised[3] * add_gen
+            + economics.existing_plant_usd_yr
+            + economics.grid_connection_usd_yr
+            + economics.infrastructure_usd_yr)
+
+
 def _price_relative(z_rule: float, z_opt: float, economics) -> float:
     """The price of the heuristic, against the cost the dispatch can actually move.
 
@@ -425,8 +496,9 @@ def _price_relative(z_rule: float, z_opt: float, economics) -> float:
     example site it fell from 6.1 to 3.5 per cent without a line of the controller
     changing. Netting them out keeps the figure a property of the plant.
     """
-    constant = getattr(economics, "grid_connection_usd_yr", 0.0) + getattr(
-        economics, "infrastructure_usd_yr", 0.0)
+    constant = (getattr(economics, "grid_connection_usd_yr", 0.0)
+                + getattr(economics, "infrastructure_usd_yr", 0.0)
+                + getattr(economics, "existing_plant_usd_yr", 0.0))
     movable = max(z_opt - constant, 1.0)
     return 100.0 * (z_rule - z_opt) / movable
 
@@ -471,14 +543,7 @@ def _evaluate_rule(instance, capacities, economics, battery, generator, controll
     battery_annualised = economics.battery_annualised(
         capacities.battery_kwh,
         float(dispatch.discharge_kw.sum()) * (8760.0 / instance.demand_kw.size))
-    capital = (annualised[0] * capacities.pv_kw
-               + economics.string_inverter_annualised() * capacities.pv_ac_kw
-               + annualised[0] * capacities.pv_ac_kw
-               + battery_annualised * capacities.battery_kwh
-               + annualised[2] * capacities.inverter_kw
-               + annualised[3] * capacities.generator_kw
-               + economics.grid_connection_usd_yr
-               + economics.infrastructure_usd_yr)
+    capital = _design_capital_usd_yr(capacities, economics, annualised, battery_annualised)
     # A required service level bounds the search rather than describing its outcome. It
     # only ever removes designs, so the certificate stays a certificate -- over the smaller
     # set the requirement defines, which is the set the contract allows anyway.
@@ -801,7 +866,8 @@ def narrow_to_incumbent(instance, lattice, incumbent, economics, battery, genera
     return narrowed, removed, calls
 
 
-def _capital_floor(lattice, box, annualised, constant: float = 0.0) -> float:
+def _capital_floor(lattice, box, annualised, constant: float = 0.0,
+                   installed: tuple = (0.0, 0.0, 0.0, 0.0)) -> float:
     """Cheapest annualised capital any design in the box can carry.
 
     Operating cost is non-negative and capital is increasing in every capacity, so the
@@ -811,14 +877,20 @@ def _capital_floor(lattice, box, annualised, constant: float = 0.0) -> float:
     above it, and this free test discards that volume before a single relaxation is spent.
 
     ``constant`` carries the costs no design escapes -- the connection, the network, the
-    civil works, the development -- which raise every floor by the same amount and so make
-    the test bite sooner without ever discarding the optimum.
+    civil works, the development, the upkeep of the plant already standing -- which raise
+    every floor by the same amount and so make the test bite sooner without ever
+    discarding the optimum.
+
+    ``installed`` is what the village already has, in the same four units. Only capacity
+    above it is bought, and since the lattice's own floor is that plant, the subtraction
+    can never turn negative on an admissible box.
     """
+    pv0, batt0, inv0, gen0 = installed
     return (constant
-            + annualised[0] * box.pv[0] * lattice.pv_unit_kw
-            + annualised[1] * box.batt[0] * lattice.batt_unit_kwh
-            + annualised[2] * box.inv[0] * lattice.inv_unit_kw
-            + annualised[3] * min(box.gens))
+            + annualised[0] * max(box.pv[0] * lattice.pv_unit_kw - pv0, 0.0)
+            + annualised[1] * max(box.batt[0] * lattice.batt_unit_kwh - batt0, 0.0)
+            + annualised[2] * max(box.inv[0] * lattice.inv_unit_kw - inv0, 0.0)
+            + annualised[3] * max(min(box.gens) - gen0, 0.0))
 
 
 def _field_bounds(lattice, box) -> dict:
@@ -1015,7 +1087,9 @@ def _certify(instance, lattice, settings, tolerance, max_relaxations,
         for child in _split(box):
             floor = _capital_floor(lattice, child, annualised,
                                    economics.grid_connection_usd_yr
-                                   + economics.infrastructure_usd_yr)
+                                   + economics.infrastructure_usd_yr
+                                   + economics.existing_plant_usd_yr,
+                                   installed=_installed_capacities(economics))
             if floor >= incumbent - margin:
                 pruned_points += child.n_admissible(lattice)   # discarded on capital, for free
                 free_prunes += 1
@@ -1139,9 +1213,21 @@ def main(argv: list[str] | None = None) -> int:
                         help="overrides the project setting; gurobi is about four times "
                              "faster than highs on the wide boxes of the search, when a "
                              "licence is available")
+    parser.add_argument("--brownfield", action="store_true",
+                        help="size the extension of the plant already standing at the "
+                             "site, rather than a plant on bare ground. The standing "
+                             "capacity becomes the floor of the search and is not bought "
+                             "again; what it still owes, its upkeep and the replacement "
+                             "its remaining life defers, is charged")
     args = parser.parse_args(argv)
 
     settings = default_settings()
+    if args.brownfield:
+        settings.installed = reference_plant(args.site)
+        if settings.installed.is_empty:
+            raise SystemExit(f"no plant is on record at {args.site}; a brownfield plan "
+                             "needs the capacities already standing and the years they "
+                             "went in")
     if args.solver is not None:
         settings.solver.name = args.solver
     if args.voll is not None:

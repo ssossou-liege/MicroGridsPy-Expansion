@@ -91,9 +91,18 @@ def simulate_node(plan, year: dict, costs: dict, settings: ProjectSettings,
     from ..model.economics import annualised_unit_costs
     a_pv, a_batt, a_inv, a_gen, a_pv_ac = annualised_unit_costs(costs, architecture,
                                                                 settings)
-    capital = (a_pv * plan.pv_kw + a_pv_ac * capacities.pv_ac_kw
-               + a_batt * plan.battery_kwh
-               + a_inv * plan.inverter_kw + a_gen * plan.generator_kw)
+    # What the plan buys, not what the plant is. The array, the storage, the conversion
+    # and the generating set already standing were bought years ago and are not bought
+    # again; what they still owe is a constant, charged where the plan's value is read
+    # rather than per node. On bare ground the base is zero and this is the expression it
+    # replaces, to the last digit.
+    from ..model.investment_constraints import installed_base
+    base = installed_base(getattr(settings, "installed", None))
+    capital = (a_pv * max(plan.pv_kw - base[0], 0.0)
+               + a_pv_ac * max(capacities.pv_ac_kw - base[4], 0.0)
+               + a_batt * max(plan.battery_kwh - base[1], 0.0)
+               + a_inv * max(plan.inverter_kw - base[2], 0.0)
+               + a_gen * max(plan.generator_kw - base[3], 0.0))
     return NodeTrace(annual_cost_usd=capital + operating, served_kwh=served,
                      unserved_kwh=unserved, generator_kwh=thermal, fuel_litres=fuel,
                      feasible=True)

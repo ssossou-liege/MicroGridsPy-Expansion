@@ -121,6 +121,12 @@ class Economics:
     #: calendar life is used, which is the relaxation the lower bound wants.
     battery_spec: object | None = None
 
+    #: The plant already standing, as ``settings.InstalledPlant`` describes it. ``None`` is
+    #: bare ground. It enters the cost twice and in two different ways: what it already
+    #: covers is capacity the design does not buy, and what it still owes -- its upkeep and
+    #: the replacement its remaining life defers -- is a constant every design carries.
+    installed: object | None = None
+
     @classmethod
     def from_settings(cls, settings, architecture: str = "mixed", **overrides
                       ) -> "Economics":
@@ -135,6 +141,9 @@ class Economics:
         """
         generator = max(settings.generators, key=lambda g: g.rating_kw)
         coupling = settings.coupling
+        # The plant on the ground belongs to the project like every price here. Left out,
+        # a village running since 2024 was certified as bare ground.
+        overrides.setdefault("installed", getattr(settings, "installed", None))
         return cls(
             discount_rate=settings.economics.discount_rate,
             pv_usd_kw=settings.photovoltaic.cost_usd_kw,
@@ -182,6 +191,91 @@ class Economics:
             life = self.battery_spec.effective_lifetime_years(capacity_kwh,
                                                               annual_discharge_kwh)
         return self.battery_usd_kwh * (config.crf(self.discount_rate, life) + om_batt)
+
+    # ------------------------------------------------------------ the standing plant
+    def _deferred(self, life: float, age_years: float) -> float:
+        """Capital recovery factor of an asset whose replacement is deferred by its age.
+
+        A kilowatt is recovered here at the factor of its own service life, and that is
+        exactly the annuity of buying it now and replacing it for ever:
+        ``crf(r, L) = r / (1 - (1+r)^-L)``. One already standing differs in a single
+        respect, that its first replacement falls in ``L - a`` years rather than in ``L``,
+        so its annuity is the same one discounted over that deferral. At ``a = L`` the two
+        coincide, which is right: an asset at the end of its life has to be bought again,
+        and being there is worth nothing. Past its life it is not charged *more* than a new
+        one, hence the floor on the remaining years.
+        """
+        remaining = max(float(life) - float(age_years), 0.0)
+        return config.crf(self.discount_rate, life) / (1.0 + self.discount_rate) ** remaining
+
+    def existing_annualised(self, plant=None) -> tuple[float, float, float, float, float]:
+        """Annual cost of keeping what already stands, per technology [$/yr].
+
+        In the order the capacities are counted in: array on the battery's bus, storage,
+        hybrid inverter, generating set, array on the load's bus. Each vintage is charged
+        separately, because neither reference village has a field or a pack of one age, and
+        one age for the lot would defer the whole of it by the wrong interval.
+
+        The storage is charged on its calendar life rather than on the life its cycling
+        would imply. The wear a standing pack has already taken is not in the model, and
+        charging its replacement on the cycling of a plan drawn after it was bought would
+        attribute this plan's duty to a pack that was not sized for it.
+        """
+        plant = self.installed if plant is None else plant
+        if plant is None:
+            return (0.0, 0.0, 0.0, 0.0, 0.0)
+        om_pv, om_batt, om_inv, om_gen = self.om_rates
+        life_pv, life_batt, life_inv, life_gen = self.lifetimes
+        out = []
+        for technology, unit_cost, life, om in (
+                ("pv", self.pv_usd_kw, life_pv, om_pv),
+                ("battery", self.battery_usd_kwh, life_batt, om_batt),
+                ("inverter", self.inverter_usd_kw, life_inv, om_inv),
+                ("generator", self.generator_usd_kw, life_gen, om_gen),
+                ("pv_ac", self.pv_usd_kw, life_pv, om_pv)):
+            total = 0.0
+            for vintage in plant.vintages(technology):
+                age = plant.age_years(vintage)
+                total += vintage.capacity * unit_cost * (self._deferred(life, age) + om)
+                if technology == "pv":
+                    total += vintage.capacity * self.conversion_usd_kw * (
+                        self._deferred(self.conversion_lifetime_y, age)
+                        + self.conversion_om_rate)
+                elif technology == "pv_ac":
+                    total += vintage.capacity * self.string_inverter_usd_kw * (
+                        self._deferred(self.conversion_lifetime_y, age)
+                        + self.conversion_om_rate)
+            out.append(total)
+        return tuple(out)
+
+    @property
+    def existing_plant_usd_yr(self) -> float:
+        """What the standing plant costs a year, whatever the plan decides.
+
+        A constant of the design, like the network and the connections: it shifts every
+        cost by the same amount and leaves the ranking, and so the certificate, untouched.
+        What moves the optimum is the floor the plant puts under the search, not this.
+        """
+        return float(sum(self.existing_annualised()))
+
+    def installed_capacity(self, technology: str) -> float:
+        """Capacity of one technology already standing, in its own unit."""
+        if self.installed is None:
+            return 0.0
+        return self.installed.capacity(technology)
+
+    def added_capacity(self, capacities) -> tuple[float, float, float, float, float]:
+        """What one design buys, over and above what is already there.
+
+        Never negative. A design below the standing plant is not admissible -- the lattice
+        puts its floor at what exists -- and clamping here keeps a cost finite rather than
+        crediting the project for capacity it would have to remove.
+        """
+        return (max(capacities.pv_kw - self.installed_capacity("pv"), 0.0),
+                max(capacities.battery_kwh - self.installed_capacity("battery"), 0.0),
+                max(capacities.inverter_kw - self.installed_capacity("inverter"), 0.0),
+                max(capacities.generator_kw - self.installed_capacity("generator"), 0.0),
+                max(capacities.pv_ac_kw - self.installed_capacity("pv_ac"), 0.0))
 
     def annualised(self) -> tuple[float, float, float, float]:
         """Annualised cost of one unit of each capacity, capital plus maintenance.
@@ -508,7 +602,22 @@ def cost_optimal_dispatch(
     # the price of the heuristic plus the network.
     # Added to the solved value rather than to the model: a constant term shifts no
     # optimum, and linopy declines to carry one.
-    constant = economics.grid_connection_usd_yr + economics.infrastructure_usd_yr
+    #
+    # The plant already standing enters here for the same reason, and it is exactly a
+    # constant. Every admissible design carries at least what exists -- the lattice puts
+    # its floor there -- so ``cap - installed`` is the capacity actually bought and the
+    # credit below is the difference between charging the whole and charging the
+    # extension. What the standing plant still owes, its upkeep and the replacement its
+    # remaining life defers, is added in its place. Were the floor not the standing plant
+    # this credit would over-pay a design below it, which is why the floor and this term
+    # belong to one change.
+    credit = (a_pv * economics.installed_capacity("pv")
+              + a_pv_ac * economics.installed_capacity("pv_ac")
+              + a_batt * economics.installed_capacity("battery")
+              + a_inv * economics.installed_capacity("inverter")
+              + a_gen * economics.installed_capacity("generator"))
+    constant = (economics.grid_connection_usd_yr + economics.infrastructure_usd_yr
+                + economics.existing_plant_usd_yr - credit)
     m.add_objective(operating + capital)
 
     # The bound is solved thousands of times; its progress bars would drown every other

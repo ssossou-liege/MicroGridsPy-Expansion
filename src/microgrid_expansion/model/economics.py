@@ -18,7 +18,7 @@ import numpy as np
 from .. import config
 from ..config import ModelConfig
 from .coords import Coords
-from .investment_constraints import capacity
+from .investment_constraints import added_capacity
 
 
 def check_one_discount_rate(cfg: ModelConfig, settings) -> float:
@@ -107,7 +107,12 @@ def add_objective(m: linopy.Model, v: dict, c: Coords, cfg: ModelConfig, data: d
         block = data[node]
         weight = float(c.prob[node]) * float(c.disc[node])
         years = float(c.n_years[node])
-        cap_pv, cap_batt, cap_inv, cap_gen, cap_pv_ac = capacity(v, c, node, cfg)
+        # What the plan buys, not what the plant is: the array, the storage and the
+        # conversion already standing were bought years ago and are not bought again. On
+        # bare ground the two coincide, which is why every figure computed before this is
+        # unchanged by it.
+        cap_pv, cap_batt, cap_inv, cap_gen, cap_pv_ac = added_capacity(
+            v, c, node, cfg, getattr(settings, "installed", None))
         a_pv, a_batt, a_inv, a_gen, a_pv_ac = annualised_unit_costs(
             block["costs"], architecture, settings)
 

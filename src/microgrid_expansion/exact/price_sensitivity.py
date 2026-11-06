@@ -119,7 +119,7 @@ def solve_once(cfg: ModelConfig, settings: ProjectSettings, verbose: bool = True
     solved = solve(programme, settings, solver=cfg.solver)
     if solved.objective == float("inf"):
         raise RuntimeError("no feasible plan at these prices")
-    plans = extract_solution(programme, cfg)
+    plans = extract_solution(programme, cfg, settings)
     programme_seconds = time.perf_counter() - at
 
     at = time.perf_counter()

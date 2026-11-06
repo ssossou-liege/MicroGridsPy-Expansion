@@ -1,0 +1,105 @@
+{
+ "what": "the year-0 plant of both reference villages, on bare ground and as an extension of the plant already standing",
+ "held_fixed": "one instance per village: reference year 2025, central trajectory, twelve months of connection maturity, the project's own network loss. Only the standing plant differs between the two rows of a pair, so the difference is the plant's and not the demand's. A plan decided today would use each village's real maturity, thirty-three months at Samionta and twenty-five at Gbowele, which is a separate run.",
+ "reproduces": "the two greenfield rows reproduce summary_certification_samionta_central_mixed_m12_voll1.json and summary_certification_gbowele_central_mixed_m12_voll1.json to the last digit, the standing plant being empty by default",
+ "gap_note": "gap_rel_pct is (z_rule - z_opt) / z_rule in per cent, and every case is proven over its lattice: the gap is the price of the heuristic controller, not an unfinished search",
+ "standing_plant_note": "standing_plant_usd_yr is what the plant already there still owes each year, its maintenance plus the replacement its remaining service life defers. It is a constant of the design",
+ "cases": [
+  {
+   "site": "Samionta",
+   "architecture": "dc",
+   "regime": "greenfield",
+   "floor_pv_kw": 0.0,
+   "floor_battery_kwh": 0.0,
+   "floor_inverter_kw": 2.5,
+   "generator_ratings": [
+    8.0,
+    12.0,
+    16.0
+   ],
+   "lattice_size": 1068522,
+   "standing_plant_usd_yr": 0.0,
+   "z_rule": 6372.570736316138,
+   "z_opt": 6066.999071307194,
+   "gap_rel": 4.795108248348602,
+   "proven": true,
+   "pv_kw": 42.25,
+   "pv_ac_kw": 30.25,
+   "battery_kwh": 180.0,
+   "inverter_kw": 32.5,
+   "generator_kw": 8.0,
+   "seconds": 43.92043914599344
+  },
+  {
+   "site": "Samionta",
+   "architecture": "dc",
+   "regime": "brownfield",
+   "floor_pv_kw": 25.5,
+   "floor_battery_kwh": 95.0,
+   "floor_inverter_kw": 47.5,
+   "generator_ratings": [
+    16.0
+   ],
+   "lattice_size": 98448,
+   "standing_plant_usd_yr": 2054.408104303211,
+   "z_rule": 4978.602426576292,
+   "z_opt": 4692.165523403131,
+   "gap_rel": 5.75335965057444,
+   "proven": true,
+   "pv_kw": 65.0,
+   "pv_ac_kw": 6.0,
+   "battery_kwh": 180.0,
+   "inverter_kw": 50.0,
+   "generator_kw": 16.0,
+   "seconds": 5.673178790020756
+  },
+  {
+   "site": "Gbowele",
+   "architecture": "mixed",
+   "regime": "greenfield",
+   "floor_pv_kw": 0.0,
+   "floor_battery_kwh": 0.0,
+   "floor_inverter_kw": 2.5,
+   "generator_ratings": [
+    8.0,
+    12.0,
+    16.0
+   ],
+   "lattice_size": 497805,
+   "standing_plant_usd_yr": 0.0,
+   "z_rule": 4821.351573536516,
+   "z_opt": 4557.086805830356,
+   "gap_rel": 5.481134567258269,
+   "proven": true,
+   "pv_kw": 29.25,
+   "pv_ac_kw": 21.25,
+   "battery_kwh": 130.0,
+   "inverter_kw": 22.5,
+   "generator_kw": 8.0,
+   "seconds": 22.57859832595568
+  },
+  {
+   "site": "Gbowele",
+   "architecture": "mixed",
+   "regime": "brownfield",
+   "floor_pv_kw": 22.0,
+   "floor_battery_kwh": 40.0,
+   "floor_inverter_kw": 22.5,
+   "generator_ratings": [
+    16.0
+   ],
+   "lattice_size": 86319,
+   "standing_plant_usd_yr": 1233.703771418056,
+   "z_rule": 4074.927301390067,
+   "z_opt": 3838.0531394123186,
+   "gap_rel": 5.812966574813353,
+   "proven": true,
+   "pv_kw": 32.5,
+   "pv_ac_kw": 17.5,
+   "battery_kwh": 135.0,
+   "inverter_kw": 25.0,
+   "generator_kw": 16.0,
+   "seconds": 6.486409686971456
+  }
+ ]
+}

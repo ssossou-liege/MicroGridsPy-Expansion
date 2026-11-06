@@ -191,7 +191,17 @@ class BatterySpec:
              "the energy bought and half the price of the BYD the earlier quotation used "
              "alone. It covers the pack rather than the cells alone, and excludes the "
              "battery management unit, which is bought once per site. Cycle life and "
-             "efficiencies remain manufacturer figures"))
+             "efficiencies remain manufacturer figures. "
+             "Checked against the operator's Deye invoice of October 2025, which prices a "
+             "high-voltage rack -- packs, control box and accessories -- at 89.6 $/kWh "
+             "before shipping, three per cent above the same budget's export price for the "
+             "SE-G10.2. Landed at the 9.56 % uplift that is 98.2 $/kWh, and at the 650 "
+             "FCFA to the invoiced dollar the payment ledger shows for that order it is "
+             "about 105, so the rack lands six to twelve per cent below the pack price "
+             "declared here, before the cabling a 51.2 V plant needs. It is a check and "
+             "not a substitute: the modelled sites are 51.2 V plants, which the weighting "
+             "above describes, and a high-voltage rack is another architecture, needing a "
+             "high-voltage hybrid inverter that invoice does not carry"))
 
     def degradation_usd_kwh(self) -> float:
         """Throughput cost of storage [$ per kWh discharged].

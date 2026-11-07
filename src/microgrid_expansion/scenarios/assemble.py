@@ -32,6 +32,8 @@ class AxisDraw:
     #: Whether the national grid has reached the village by this milestone. A state, not an
     #: event: once the line is there it stays.
     grid_connected: bool = False
+    #: Connection trajectory, held over the path; ``census`` under the whole census.
+    connection: str = "census"
 
 
 @dataclass
@@ -72,6 +74,20 @@ def sample_scenario_paths(
     module = module_from((settings or default_settings()).photovoltaic)
 
     site = getattr(cfg, "site", "Samionta")
+    # The schedules a path may follow, built once: drawn per path by name, held over it.
+    from ..demand.connection import plan as connection_plan
+    from ..sites import get_site
+
+    project = settings or default_settings()
+    if space.demand.connection_mode != project.connection.mode:
+        raise ValueError(
+            f"the space draws the connection under {space.demand.connection_mode!r} and the "
+            f"project describes it under {project.connection.mode!r}; build the space from "
+            "the project's settings")
+    connection = connection_plan(get_site(site), project)
+    # A site with its own record in a brownfield run starts from its derived age.
+    base_maturity = (connection.year0_age if connection.year0_age is not None
+                     else getattr(cfg, "maturity_months", 12))
     resolved: list[ScenarioPath] = []
     for pid, raw in enumerate(raw_paths):
         draws, demand, pv_unit, t_amb = [], {}, {}, {}
@@ -83,11 +99,13 @@ def sample_scenario_paths(
             draws.append(AxisDraw(y, stage["resource"], stage["policy"], costs,
                                   trajectory=stage["trajectory"],
                                   cost_scenario=stage["cost_scenario"],
-                                  grid_connected=bool(stage.get("grid_connected", False))))
+                                  grid_connected=bool(stage.get("grid_connected", False)),
+                                  connection=stage.get("connection", "census")))
             demand[y] = demand_paths.simulate_stage_demand(
                 space.demand, y, rng, site=site, trajectory=stage["trajectory"],
-                base_maturity_months=getattr(cfg, "maturity_months", 12),
-                network_loss_fraction=getattr(cfg, "network_loss_fraction", 0.0))
+                base_maturity_months=base_maturity,
+                network_loss_fraction=getattr(cfg, "network_loss_fraction", 0.0),
+                connection=connection.schedule(stage.get("connection", "census")))
             pv_unit[y], t_amb[y] = pv_paths.simulate_stage_pv(
                 stage["resource"], y, site=site, rng=rng, module=module)
         resolved.append(ScenarioPath(pid, draws, demand, pv_unit, t_amb))

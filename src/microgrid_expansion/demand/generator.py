@@ -565,6 +565,9 @@ class DemandYear:
     #: itself. Carried apart because no distribution loss applies to it -- it never travels
     #: the conductor the losses occur in. A subset of ``unbilled_kw``.
     at_plant_kw: np.ndarray | None = None
+    #: Households connected each month, by category, whether or not they consumed. Under
+    #: the whole census it is the census in every month.
+    connected: dict[int, dict[str, int]] = field(default_factory=dict)
 
     @property
     def annual_energy_kwh(self) -> float:
@@ -616,14 +619,21 @@ def simulate_demand_year(
     scaling: ArchetypeScaling | None = None,
     apply_seasonality: bool = True,
     include_productive: bool = True,
+    connection: "ConnectionSchedule | None" = None,
 ) -> DemandYear:
     """Draw one community load profile for ``site`` over the calendar year ``year``.
 
     The behavioural composition is resolved from the *maturity* of the connection rather
     than from the site's identity, so a locality with no meter record of its own can be
     simulated from its census alone -- which is the situation of every site the model is
-    meant to size. ``maturity_months`` is the age of the connection at the start of the
-    simulated year, and the community ages month by month through it.
+    meant to size. ``maturity_months`` is the village age at the start of the simulated
+    year, whole months since the site's first connection, and the village ages month by
+    month through it.
+
+    ``connection`` says which households are on the grid and since when; ``None`` is the
+    whole census at village month 0, every household then as old as the village. Each
+    cohort is composed under the law of its own maturity band, and an unconnected household
+    is in no state at all: it draws nothing and counts for nothing.
 
     ``trajectory`` selects which of the observed growth behaviours to apply; the two
     reference villages bracket a factor of two after two years, so a sizing should be
@@ -631,9 +641,11 @@ def simulate_demand_year(
     seasonality is restored afterwards through the residual seasonal index, the part of the
     monthly variation that survives conditioning on maturity.
     """
+    from .connection import ConnectionSchedule
     from .growth import maturity_band, seasonal_index, trajectory_law
     from .productive import ProductiveCalibration, monthly_profile_kw, sample_units
 
+    schedule = ConnectionSchedule.whole_census(site) if connection is None else connection
     law = trajectory_law(trajectory)
     productive = ProductiveCalibration.load() if include_productive else None
     appliances = load_archetype_appliances()
@@ -646,12 +658,25 @@ def simulate_demand_year(
     at_plant: list[np.ndarray] = []
     composition: dict[int, dict[str, int]] = {}
     enterprises: dict[int, dict[str, int]] = {}
+    connected_by_month: dict[int, dict[str, int]] = {}
     for month in range(1, 13):
-        band = maturity_band(maturity_months + month - 1)
-        weights = law.xs(band, level="maturity")
-        counts = sample_composition(weights, site.census, month, rng,
-                                    by_maturity=True)
+        age = maturity_months + month - 1
+        # The band of the village, which is the clock the productive-use intensity was
+        # estimated on. Each cohort's own band decides its composition below.
+        band = maturity_band(age)
+        # Independent multinomial draws under one law add up to one multinomial draw, so
+        # grouping the cohorts by band is exact and costs one draw per band and category.
+        # Under the whole census there is one band, and the call is the one made before
+        # cohorts existed, with the same arguments in the same order: the random stream is
+        # unchanged.
+        counts = {state: 0 for state in (*ARCHETYPES, INACTIVE)}
+        for cohort_band, census in schedule.census_by_band(age).items():
+            part = sample_composition(law.xs(cohort_band, level="maturity"), census, month,
+                                      rng, by_maturity=True)
+            for state, n in part.items():
+                counts[state] = counts.get(state, 0) + n
         composition[month] = counts
+        connected_by_month[month] = schedule.connected(age)
         minutes = _simulate_month(counts, appliances, year, month,
                                   seed=int(rng.integers(0, 2**31 - 1)), rng=rng,
                                   scaling=scaling)
@@ -755,4 +780,5 @@ def simulate_demand_year(
         enterprises=enterprises,
         unbilled_kw=unbilled_series if unbilled_series.any() else None,
         at_plant_kw=at_plant_series if at_plant_series.any() else None,
+        connected=connected_by_month,
     )

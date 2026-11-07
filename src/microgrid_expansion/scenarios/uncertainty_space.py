@@ -36,6 +36,16 @@ class DemandAxis:
     #: lists them. ``None`` leaves the sampler's own equal thirds, which is what every
     #: tree drawn before this carried without saying so.
     trajectory_probabilities: tuple[float, ...] | None = None
+    #: How the connection trajectory is drawn, in the order ``demand.connection``'s
+    #: ``TRAJECTORIES`` lists them; ``None`` leaves equal thirds. Drawn once per path and
+    #: held, as the growth trajectory is.
+    connection_probabilities: tuple[float, ...] | None = None
+    #: ``independent`` draws it apart from the growth trajectory; ``paired`` takes each
+    #: reference village's connection with its own growth, and draws nothing.
+    connection_pairing: str = "independent"
+    #: ``census`` holds a single trajectory, the whole census at village month 0, and
+    #: draws nothing either.
+    connection_mode: str = "census"
 
 
 @dataclass
@@ -160,6 +170,11 @@ def space_from_settings(settings) -> "UncertaintySpace":
     weights = getattr(settings, "trajectory_weights", None)
     demand = DemandAxis(trajectory_probabilities=weights.as_probabilities()) if weights \
         else DemandAxis()
+    connection = getattr(settings, "connection", None)
+    if connection is not None:
+        demand.connection_probabilities = connection.weights.as_probabilities()
+        demand.connection_pairing = connection.pairing
+        demand.connection_mode = connection.mode
 
     # The futures the prices move in belong to the project too, and the sampler reads them
     # from the space rather than from the settings it is not given.

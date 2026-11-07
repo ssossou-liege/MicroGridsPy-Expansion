@@ -68,6 +68,9 @@ PV_UNIT_KW = _S.photovoltaic.unit_kw                  # u^pv
 BATT_UNIT_KWH = _S.battery.unit_kwh                   # u^batt
 INV_UNIT_KW = _S.inverter.unit_kw                     # u^inv
 
+# --- distribution network (see settings.InfrastructureSpec) -----------------
+NETWORK_LOSS_FRACTION = _S.infrastructure.network_loss_fraction
+
 
 
 @dataclass
@@ -131,20 +134,25 @@ class ModelConfig:
     # the day anything read it every greenfield plan would have started with a generating
     # set nobody had bought.
 
-    # --- Age of the connection the tree starts from ---
-    # The plan ages the community from this, milestone by milestone. Held here for the same
-    # reason as the horizon: the tree is drawn before a settings object exists, and a plan
-    # built from a one-year-old connection is the wrong plan for a village being connected
-    # next month.
+    # --- Age of the village the tree starts from ---
+    # The village age at year 0: whole months since the site's first customer connection.
+    # The plan ages the community from this, milestone by milestone. Under the whole census
+    # every household is that old, which is what the figure meant before households joined
+    # in cohorts; under progressive connection each cohort is younger by the month it
+    # joined in. Held here for the same reason as the horizon: the tree is drawn before a
+    # settings object exists, and a plan built from a one-year-old village is the wrong
+    # plan for a village being connected next month. A brownfield site with its own record
+    # derives its age from the roster instead, and this is then not read.
     maturity_months: int = 12
 
     # --- The network between the plant and the customer ---
     # Share of the energy injected that the distribution network consumes. Held here as
     # well as in the project settings, for the same reason the horizon and the discount
     # rate are: the tree is drawn before a settings object exists, and the demand it draws
-    # is the demand the plant must produce. The two defaults must agree, or a plan and the
-    # certificate of its first year would be sized for different demands.
-    network_loss_fraction: float = 0.13
+    # is the demand the plant must produce. The default is read from the project's, so the
+    # two cannot disagree: a plan and the certificate of its first year would otherwise be
+    # sized for different demands.
+    network_loss_fraction: float = NETWORK_LOSS_FRACTION
 
     def validate(self) -> None:
         """Check internal consistency (stage count vs branching, etc.)."""

@@ -790,6 +790,21 @@ class InfrastructureSpec:
     #: plant's own supply were counted as the loads they are. The feeder meters answer the
     #: same question one step closer to the customer, and they answer it differently.
     network_loss_fraction: float = 0.13
+    network_loss_provenance: Provenance = field(default_factory=lambda: Provenance(
+        source="Gbowele's two feeder meters against its customers' meters, with the street "
+               "lighting and the plant's own supply counted as the loads they are: 13 % of "
+               "the energy injected; the operator's own energy balance gives 15 to 16 % over "
+               "a longer window. Samionta has no feeder meter and carries Gbowele's figure",
+        verified=False,
+        note="the level is consistent with October 2026 and the form is not settled. The "
+             "unexplained gap of that month, 18.2 % at Samionta and 19.1 % at Gbowele, "
+             "includes the street lighting, which the model already counts as a load, and "
+             "at Gbowele the plant's own supply; net of them it is about (516 - 181) / 2 533 "
+             "kWh injected at Samionta, close to 13 %, and (402 - 140) / 2 338 on Gbowele's "
+             "distribution side, close to 11 %. What remains open is the form: at Gbowele "
+             "the distribution-side gap is roughly flat across the hours of the day rather "
+             "than proportional to the load, so a share of the injection may not be the "
+             "right shape for it"))
 
     provenance: Provenance = field(default_factory=lambda: Provenance(
         source="", verified=False,
@@ -949,6 +964,71 @@ class TrajectoryWeights:
         return (float(self.slow), float(self.central), float(self.fast))
 
 
+#: The names ``ConnectionSettings`` accepts, which ``demand.connection`` reads as well.
+CONNECTION_MODES = ("census", "progressive")
+#: From the fewest households connected in the end to the most.
+CONNECTION_TRAJECTORIES = ("low", "central", "high")
+CONNECTION_PAIRINGS = ("independent", "paired")
+HIGH_PLATEAUS = ("profile_lower_bound", "census")
+BROWNFIELD_BRACKETS = ("own", "between_villages")
+
+
+@dataclass
+class ConnectionWeights:
+    """How likely each connection trajectory is held to be, when the tree is drawn.
+
+    A third each, for the reason the growth weights are: two reference villages bracket how
+    many households a third will connect, and say nothing about which end it is nearer.
+    """
+
+    low: float = 1.0 / 3
+    central: float = 1.0 / 3
+    high: float = 1.0 / 3
+
+    def as_probabilities(self) -> tuple[float, float, float]:
+        """In the order ``demand.connection.TRAJECTORIES`` lists them."""
+        return (float(self.low), float(self.central), float(self.high))
+
+
+@dataclass
+class ConnectionSettings:
+    """How the households of the census come onto the grid.
+
+    Connecting the whole census at year 0 sized every plan for a village that does not
+    exist yet: the two reference villages connected a fifth and three fifths of theirs over
+    two and a half years. ``progressive`` follows a logistic diffusion fitted on them, with
+    the households joining in monthly cohorts that each age on their own clock.
+    """
+
+    #: ``census`` connects the whole census at village month 0, the model before
+    #: progressive connection; ``progressive`` follows the fitted curves. It stays at
+    #: ``census`` until the stored results are recomputed under the other, so that the
+    #: change of default and the recomputation are one step.
+    mode: str = "census"
+    #: Trajectory of the single certified year.
+    trajectory: str = "central"
+    weights: ConnectionWeights = field(default_factory=ConnectionWeights)
+    #: ``independent`` draws the connection and the growth trajectory apart; ``paired``
+    #: joins each reference village's connection to its own growth.
+    pairing: str = "independent"
+    #: The high plateau while Gbowele's is not identified: the smallest its record does not
+    #: reject at 95 %, or the whole census, the conservative end for sizing.
+    high_plateau: str = "profile_lower_bound"
+    #: A site with its own record follows its own fit (``own``), or the two villages'
+    #: bracket conditioned on its observed stock (``between_villages``).
+    brownfield_bracket: str = "own"
+    provenance: Provenance = field(default_factory=lambda: Provenance(
+        source="logistic fit of the connected household stock in the operator's customer "
+               "roster, Samionta from June 2023 and Gbowele from June 2024 to May 2026 "
+               "(demand/build_connection_curves.py, "
+               "data/ramp_params/reference/connection_curves.csv)",
+        verified=False,
+        note="Samionta's plateau is identified, 49 households (s.e. 3.0, optimistic for a "
+             "cumulative series); Gbowele's is not, and the high trajectory reads it as "
+             "at least the 92 households connected. Two villages bracket a third: the "
+             "spread between them is carried, the within-site errors are not drawn"))
+
+
 @dataclass
 class Vintage:
     """One batch of capacity already standing, and the calendar year it went in.
@@ -1092,6 +1172,8 @@ class ProjectSettings:
     #: fixes one trajectory for the reference year, which is a study of a demand assumed,
     #: while these weigh the futures the expansion plan is sized against.
     trajectory_weights: TrajectoryWeights = field(default_factory=TrajectoryWeights)
+    #: How the households come onto the grid, for the reference year and for the tree.
+    connection: ConnectionSettings = field(default_factory=ConnectionSettings)
 
     currency: CurrencySettings = field(default_factory=CurrencySettings)
     photovoltaic: PhotovoltaicSpec = field(default_factory=PhotovoltaicSpec)
@@ -1160,6 +1242,25 @@ class ProjectSettings:
         if abs(sum(weights) - 1.0) > 1e-6:
             raise ValueError(
                 f"trajectory weights must sum to one, got {sum(weights):.6f} "
+                f"from {weights}")
+
+        connection = self.connection
+        for name, value, allowed in (
+                ("mode", connection.mode, CONNECTION_MODES),
+                ("trajectory", connection.trajectory, CONNECTION_TRAJECTORIES),
+                ("pairing", connection.pairing, CONNECTION_PAIRINGS),
+                ("high_plateau", connection.high_plateau, HIGH_PLATEAUS),
+                ("brownfield_bracket", connection.brownfield_bracket, BROWNFIELD_BRACKETS)):
+            if value not in allowed:
+                raise ValueError(f"unknown connection.{name} {value!r}; choose from "
+                                 f"{list(allowed)}")
+        # Refused rather than normalised, as the growth weights are.
+        weights = connection.weights.as_probabilities()
+        if any(w < 0.0 for w in weights):
+            raise ValueError(f"connection weights must be non-negative, got {weights}")
+        if abs(sum(weights) - 1.0) > 1e-6:
+            raise ValueError(
+                f"connection weights must sum to one, got {sum(weights):.6f} "
                 f"from {weights}")
 
         low, high = self.economics.value_of_lost_load_range_usd_kwh

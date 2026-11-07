@@ -25,6 +25,8 @@ Hashed into the demand fingerprint. Changing one of these invalidates every cach
 | `archetype_scaling.csv` | `generator.py`, `calibration.py` | the power and time scaling applied to an archetype's appliance usage |
 | `cluster_params.csv` | `generator.py`, `demand/__init__.py` | the appliance parameters, one row per archetype, appliance and parameter |
 | `community_class_profiles.csv` | `uses.py` | the hourly shape of each class of community building, with its daily energy and its variability |
+| `connection_curves.csv` | `connection.py` | the logistic connection curve of each reference village's household stock, under three plateau variants (estimate, profile lower bound, census), with standard errors, the identification of the plateau and the months the roster covers; written by `build_connection_curves.py` |
+| `connection_observed.csv` | `connection.py` | households connected per reference village, category and connection month: the observed state a brownfield plan starts from; written by `build_connection_curves.py` |
 | `mixture_by_maturity.csv` | `maturity.py` | the mixture law conditioned on months since connection, with its prior, its posterior and the shrinkage weight |
 | `pue_class_mix.csv` | `productive.py` | the mix of productive-use classes under each growth trajectory |
 | `pue_class_profiles.csv` | `productive.py` | the hourly shape of each productive-use class |

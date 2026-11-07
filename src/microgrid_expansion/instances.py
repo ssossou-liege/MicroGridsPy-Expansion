@@ -88,7 +88,7 @@ class SiteYear:
 #: strength, the maturity bands or the winsorising quantiles changed what a year contains
 #: and invalidated nothing.
 _GENERATION_SOURCES = ("generator.py", "growth.py", "productive.py", "archetypes.py",
-                       "uses.py", "maturity.py", "partition.py",
+                       "uses.py", "maturity.py", "partition.py", "connection.py",
                        "build_mixture_probabilities.py",
                        "build_monthly_household_clusters.py")
 
@@ -96,7 +96,7 @@ _GENERATION_SOURCES = ("generator.py", "growth.py", "productive.py", "archetypes
 #: CSVs, which the digest already covers, so hashing them too would rebuild every cached
 #: year for a change that cannot reach one.
 _OFFLINE_SOURCES = ("__init__.py", "build_archetype_shapes.py",
-                    "build_community_profiles.py",
+                    "build_community_profiles.py", "build_connection_curves.py",
                     "build_meter_archive.py",
                     "build_productive_profiles.py",
                     "calibration.py", "validate.py")
@@ -262,10 +262,23 @@ def _module_fingerprint(module) -> str:
             f"|{module.u0_w_m2_k}|{module.u1_w_s_m3_k}")
 
 
+def _connection_fingerprint(connection, maturity_months: int) -> str:
+    """What a connection schedule adds to a key, and nothing under the whole census.
+
+    The digest of the stock over the twelve months of the year, which is all of the
+    schedule a year can see. Appended only when the schedule is not the whole census, for
+    the reason the module is: every year cached before schedules existed was a year of the
+    whole census, and keys exactly as it did.
+    """
+    if connection is None or connection.is_whole_census:
+        return ""
+    return f"|k:{connection.digest(until=int(maturity_months) + 11)}"
+
+
 def _cache_key(site: str, year: int, trajectory: str, maturity_months: int,
                seed: int, chemistry: str, archetypes: str = "std",
                description: str = "", network_loss: float = 0.0,
-               module: str = "") -> str:
+               module: str = "", connection: str = "") -> str:
     # The chemistry belongs in the key: it changes the storage ceiling and the
     # self-discharge the instance carries, so a cached instance from another chemistry
     # would silently describe a different battery. So does the demand fingerprint, for the
@@ -275,9 +288,10 @@ def _cache_key(site: str, year: int, trajectory: str, maturity_months: int,
     # The network loss belongs in the key for the plainest of the reasons above: it decides
     # the demand the instance carries. A year built for a lossless network describes a
     # smaller plant, and serving it under a fifteen per cent loss is a different study.
+    # The connection schedule, through ``_connection_fingerprint``.
     raw = (f"{site}|{year}|{trajectory}|{maturity_months}|{seed}|{chemistry}"
            f"|{_demand_fingerprint()}|{archetypes}|{description}"
-           f"|{network_loss:.6f}{module}")
+           f"|{network_loss:.6f}{module}{connection}")
     return hashlib.sha1(raw.encode()).hexdigest()[:16]
 
 
@@ -339,6 +353,7 @@ def build_site_year(
     use_cache: bool = True,
     network_loss_fraction: float = 0.0,
     module=None,
+    connection=None,
 ) -> SiteYear:
     """Resolve a site and year into aligned hourly series.
 
@@ -351,6 +366,10 @@ def build_site_year(
     generator because it is a property of the conductor and not of anybody's behaviour: the
     generator says what the village asks for, and this says what the plant must produce for
     the village to get it.
+
+    ``connection`` is the ``ConnectionSchedule`` the households follow, and ``None`` the
+    whole census at village month 0. ``maturity_months`` is then the village age at the
+    first month of the year.
     """
     from .demand import archetypes as _archetypes
     from .demand.generator import simulate_demand_year
@@ -371,7 +390,8 @@ def build_site_year(
     loss = check_network_loss(network_loss_fraction)
     key = _cache_key(site.name, year, trajectory, maturity_months, seed, chemistry,
                      _archetypes.fingerprint(site.name), _site_fingerprint(site),
-                     network_loss=loss, module=_module_fingerprint(module))
+                     network_loss=loss, module=_module_fingerprint(module),
+                     connection=_connection_fingerprint(connection, maturity_months))
     path = CACHE_DIR / f"siteyear_{site.name.lower()}_{key}.npz"
 
     if use_cache and path.exists():
@@ -394,7 +414,8 @@ def build_site_year(
     demand = simulate_demand_year(site, year=year, seed=seed,
                                   maturity_months=maturity_months,
                                   trajectory=trajectory,
-                                  scaling=_archetypes.scaling_for(site.name))
+                                  scaling=_archetypes.scaling_for(site.name),
+                                  connection=connection)
     resource = simulate_resource_year(site, year, module=module, chemistry=chemistry)
     if demand.hourly_kw.size != resource.specific_yield.size:
         raise ValueError(

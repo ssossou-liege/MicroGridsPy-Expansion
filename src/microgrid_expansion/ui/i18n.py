@@ -878,6 +878,8 @@ STRINGS: dict[str, dict[str, str]] = {
     "choice.slow": {"en": "slow", "fr": "lente"},
     "choice.central": {"en": "central", "fr": "centrale"},
     "choice.fast": {"en": "fast", "fr": "rapide"},
+    "choice.low": {"en": "low", "fr": "basse"},
+    "choice.high": {"en": "high", "fr": "haute"},
     "choice.yes": {"en": "yes", "fr": "oui"},
     "choice.no": {"en": "no", "fr": "non"},
     "choice.mixed": {"en": "divided array", "fr": "champ divisé"},
@@ -998,6 +1000,24 @@ STRINGS: dict[str, dict[str, str]] = {
               "pour certifier à la place une croissance supposée, ce qui répond à « de "
               "quoi aurait-on besoin si elle croissait ainsi » et laisse la décision de "
               "l'année zéro inchangée."},
+    "f.connection_trajectory": {"en": "Connection trajectory of the certified year",
+                                "fr": "Trajectoire de raccordement de l'année certifiée"},
+    "f.connection_trajectory.hint": {
+        "en": "How many of the census's households are on the grid in the year that is "
+              "certified, and how fast they joined. Low follows the reference village that "
+              "connected a fifth of its households, high the one that has connected three "
+              "fifths and is still rising, central lies between them; a village with a plant "
+              "and its own record is bracketed by that record. It applies once the "
+              "connection is progressive. Until then every household of the census is "
+              "connected from the first month, and this changes nothing.",
+        "fr": "Combien de ménages du recensement sont raccordés pendant l'année certifiée, "
+              "et à quel rythme ils l'ont été. La trajectoire basse suit le village de "
+              "référence qui a raccordé le cinquième de ses ménages, la haute celui qui en "
+              "a raccordé les trois cinquièmes et continue de croître, la centrale se tient "
+              "entre les deux ; un village qui a déjà sa centrale et son propre relevé est "
+              "encadré par ce relevé. Elle s'applique quand le raccordement est progressif. "
+              "D'ici là, tous les ménages du recensement sont raccordés dès le premier mois, "
+              "et ce choix ne change rien."},
     "f.maturity": {"en": "Age of the connection", "fr": "Ancienneté du raccordement"},
     "f.maturity.hint": {
         "en": "Zero for a new site; twelve for a grid in service for a year.",

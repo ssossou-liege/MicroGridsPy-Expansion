@@ -104,9 +104,9 @@ _OFFLINE_SOURCES = ("__init__.py", "build_archetype_shapes.py",
 #: Calibration tables the generation does not read. Hashed, they invalidated every cached
 #: year whenever they were rebuilt, for a change that cannot reach one. The type-by-month
 #: mixture was superseded by the maturity-conditioned law and is read only by ``validate.py``
-#: and the tests; the six others are the record of the segmentation, written so that a
+#: and the tests; six others are the record of the segmentation, written so that a
 #: calibration can be checked against the meters rather than taken on trust, and read by
-#: nothing. Rebuilding the segmentation to look at it rebuilt three hours and a half of
+#: nothing, and the last is the state of every meter, written for the field team. Rebuilding the segmentation to look at it rebuilt three hours and a half of
 #: cached demand. The directory's own README states the same division table by table, and a
 #: test holds the two statements together.
 _NOT_READ_AT_GENERATION = ("mixture_probabilities_type_month.csv",
@@ -115,7 +115,8 @@ _NOT_READ_AT_GENERATION = ("mixture_probabilities_type_month.csv",
                            "monthly_household_features.csv",
                            "monthly_household_cluster_assignments.csv",
                            "gbowele_monthly_cluster_summary.csv",
-                           "samionta_monthly_cluster_summary.csv")
+                           "samionta_monthly_cluster_summary.csv",
+                           "meter_status.csv")
 
 #: Measured inputs the segmentation reads at generation: the household register and each
 #: reference site's meter archive. They were missing from the key altogether, so five more

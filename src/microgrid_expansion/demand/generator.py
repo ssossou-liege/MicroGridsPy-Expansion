@@ -276,21 +276,49 @@ def _measured_groups(site):
             for (billable, on_network), counts in sorted(groups.items(), reverse=True)]
 
 
-def _declared_counts(site, counts: dict[str, int]) -> dict:
+def _intensity(calibration, band: str, trajectory: str) -> float:
+    """Productive users per connected household at a maturity band, as ``sample_units``
+    reads it."""
+    band = band if band in calibration.intensity.index else calibration.intensity.index[-1]
+    column = trajectory if trajectory in calibration.intensity.columns else "central"
+    return float(calibration.intensity.loc[band, column])
+
+
+def _observed_units(calibration, site_name: str, count: int) -> dict[str, int]:
+    """A reference village's observed productive users, split by its own measured mix.
+
+    The mix of each reference village is the share of its own metered enterprises in each
+    class, so the split of its whole count is that village's state, in whole numbers;
+    largest remainders keep the total exact for any other count.
+    """
+    from .growth import TRAJECTORIES
+
+    column = next((t for t, name in TRAJECTORIES.items() if name == site_name), "central")
+    exact = calibration.mix[column] * int(count)
+    units = np.floor(exact + 1e-9).astype(int)
+    short = int(count) - int(units.sum())
+    if short > 0:
+        units[(exact - units).sort_values(ascending=False, kind="stable").index[:short]] += 1
+    return {klass: int(n) for klass, n in units.items()}
+
+
+def _declared_counts(site, counts: dict[str, int], connected: int | None = None) -> dict:
     """The declared uses in force this month, with how many of each.
 
     A community use is there from the start, and so is anything the plant serves for itself:
     the street lighting is lit the night the line is energised, and the inverter room is air
     conditioned before a single household is connected. A productive use waits for the line
     as the calibrated trades do, so its count is scaled by the share of households connected
-    and may round to none in the early months.
+    and may round to none in the early months. ``connected`` is the households that share
+    is taken over; ``None`` counts those outside the inactive state.
     """
     declared = getattr(site, "declared_uses", None)
     if not declared:
         return {}
     from .generator import INACTIVE                      # the key for an unconnected home
 
-    connected = sum(v for k, v in counts.items() if k != INACTIVE)
+    if connected is None:
+        connected = sum(v for k, v in counts.items() if k != INACTIVE)
     share = connected / max(getattr(site, "n_households", 0) or 1, 1)
     productive = getattr(site, "productive_mix", None) or {}
     community = getattr(site, "community_mix", None) or {}
@@ -683,10 +711,16 @@ def simulate_demand_year(
         profile = _to_hourly_kw(minutes)
         if season is not None:
             profile = profile * float(season.get(month, 1.0))
+        # The households the productive users are referred to. The intensity was estimated
+        # per household of the connected stock, so that is the base under a progressive
+        # schedule. The whole census keeps the reading the model had before, households
+        # outside the inactive state, so that no year drawn under it moves: the legacy
+        # reading, kept for that alone.
+        connected = (sum(v for k, v in counts.items() if k != INACTIVE)
+                     if schedule.is_whole_census else sum(schedule.connected(age).values()))
         if productive is not None:
             # Enterprises are counted, not composed: how many have started trading is what
             # varies with the age of the connection, and it is drawn rather than fixed.
-            connected = sum(v for k, v in counts.items() if k != INACTIVE)
             # A site that states how many enterprises it expects is believed over a ratio
             # carried across from the reference villages, scaled by how far its connection
             # has actually advanced.
@@ -706,8 +740,25 @@ def simulate_demand_year(
             if roster:
                 share = connected / max(site.n_households, 1)
                 roster = {k: int(round(v * share)) for k, v in roster.items()}
-            units = sample_units(productive, connected, band, trajectory, rng,
-                                 expected_units=expected_units, declared_mix=roster)
+            observed = schedule.observed_productive(age)
+            if observed is not None and expected_units is None and not roster:
+                # A village with its own record starts from the productive users it has,
+                # as it does from its households, and the rule decides only what changes
+                # after the record's last month: the users it expects of the stock then,
+                # less those it expects of the stock at the record's end, never fewer than
+                # none. On the record, nothing is drawn.
+                held, last = observed
+                expected_units = 0.0 if age <= last else max(
+                    0.0, _intensity(productive, band, trajectory) * connected
+                    - _intensity(productive, maturity_band(last), trajectory)
+                    * sum(schedule.connected(last).values()))
+                units = sample_units(productive, connected, band, trajectory, rng,
+                                     expected_units=expected_units)
+                for klass, n in _observed_units(productive, site.name, held).items():
+                    units[klass] = units.get(klass, 0) + n
+            else:
+                units = sample_units(productive, connected, band, trajectory, rng,
+                                     expected_units=expected_units, declared_mix=roster)
             enterprises[month] = units
             profile = profile + monthly_profile_kw(units, productive,
                                                    profile.size // 24, rng)
@@ -737,7 +788,7 @@ def simulate_demand_year(
         # load sits on the network decides whether a distribution loss applies to it. The
         # street lighting answers no and yes, the plant's own supply no and no. All three
         # are added to the load: the plant serves every one of them.
-        declared = _declared_counts(site, counts)
+        declared = _declared_counts(site, counts, connected)
         unbilled_month = measured_unbilled
         at_plant_month = measured_at_plant
         if declared:

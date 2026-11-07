@@ -35,21 +35,31 @@ def size_site(job: Job, overrides: dict[str, Any],
     growth. Omitted, it falls back to the project's own choice, which is the "what if this
     village grows slowly" study rather than the decision.
     """
+    from ..demand.connection import plan as connection_plan
     from ..exact.certify import Lattice, certify_exhaustive
     from ..instances import build_site_year
     from ..resource.yield_model import module_from
+    from ..sites import get_site
 
     settings = settings_from(overrides)
     job.total = total_steps
 
     job.announce("job.build")
     certified_on = trajectory or settings.demand_trajectory
+    # The households on the grid in the certified year, as ``certify`` builds them: the
+    # whole census under the shipped connection, the chosen trajectory's stock under the
+    # progressive one, and for a village with a plant and a record, that record, with the
+    # village's age at year 0 derived from it rather than taken from the form.
+    connection = connection_plan(get_site(settings.site), settings)
+    maturity = (settings.maturity_months if connection.year0_age is None
+                else connection.year0_age)
     instance = build_site_year(
         settings.site, settings.year, trajectory=certified_on,
-        maturity_months=settings.maturity_months,
+        maturity_months=maturity,
         network_loss_fraction=settings.infrastructure.network_loss_fraction,
         module=module_from(settings.photovoltaic),
-        chemistry=settings.battery.chemistry)
+        chemistry=settings.battery.chemistry,
+        connection=connection.schedule(settings.connection.trajectory))
     job.done = step + 1
 
     job.announce("job.lattice")
@@ -91,6 +101,11 @@ def size_site(job: Job, overrides: dict[str, Any],
         # Whether the year was certified on the demand the tree put under its root or on a
         # trajectory the reader picked. The two are different claims and the sheet says so.
         "trajectory_from_root": trajectory is not None,
+        "connection": {"mode": connection.mode,
+                       "trajectory": (None if connection.mode == "census"
+                                      else settings.connection.trajectory),
+                       "village_age_months": maturity,
+                       "village_age_derived": connection.year0_age is not None},
         "currency": _currency(settings),
         "finance": finance.to_dict(),
         "finance_unsubsidised": {"irr": unsubsidised.irr,

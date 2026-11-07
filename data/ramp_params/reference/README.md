@@ -25,8 +25,8 @@ Hashed into the demand fingerprint. Changing one of these invalidates every cach
 | `archetype_scaling.csv` | `generator.py`, `calibration.py` | the power and time scaling applied to an archetype's appliance usage |
 | `cluster_params.csv` | `generator.py`, `demand/__init__.py` | the appliance parameters, one row per archetype, appliance and parameter |
 | `community_class_profiles.csv` | `uses.py` | the hourly shape of each class of community building, with its daily energy and its variability |
-| `connection_curves.csv` | `connection.py` | the logistic connection curve of each reference village's household stock, under three plateau variants (estimate, profile lower bound, census), with standard errors, the identification of the plateau and the months the roster covers; written by `build_connection_curves.py` |
-| `connection_observed.csv` | `connection.py` | households connected per reference village, category and connection month: the observed state a brownfield plan starts from; written by `build_connection_curves.py` |
+| `connection_curves.csv` | `connection.py` | the logistic connection curve of each reference village's household stock net of departures, under four plateau variants (estimate, the two ends of the plateau's profile interval, census), with standard errors, the identification of the plateau and the months the record covers; written by `build_connection_curves.py` |
+| `connection_observed.csv` | `connection.py` | customers per reference village, type (household category or productive user), connection month and, for a household whose failed meter was not replaced, the month it left the grid: the observed state a brownfield plan starts from; written by `build_connection_curves.py` |
 | `mixture_by_maturity.csv` | `maturity.py` | the mixture law conditioned on months since connection, with its prior, its posterior and the shrinkage weight |
 | `pue_class_mix.csv` | `productive.py` | the mix of productive-use classes under each growth trajectory |
 | `pue_class_profiles.csv` | `productive.py` | the hourly shape of each productive-use class |
@@ -45,6 +45,7 @@ that a calibration can be checked against the meters rather than taken on trust.
 | `monthly_household_cluster_assignments.csv` | `build_monthly_household_clusters.py` | the same rows with the cluster each was assigned to |
 | `gbowele_monthly_cluster_summary.csv` | `build_monthly_household_clusters.py` | Gbowele month by month: the cluster mix by customer type and the peak |
 | `samionta_monthly_cluster_summary.csv` | `build_monthly_household_clusters.py` | Samionta month by month, as above |
+| `meter_status.csv` | `build_connection_curves.py` | every customer code of the roster or the meter archive: its type and where the type comes from, its connection month, its first and last reading, and whether its meter still records, has failed (with the month the household left), never recorded, or is no customer's; the list the field team confirms |
 | `mixture_probabilities_type_month.csv` | `build_mixture_probabilities.py` | the mixture law by customer type and calendar month, superseded by the maturity-conditioned one and read now only by `validate.py` |
 
 `pivot.py` beside them is a helper for reading these tables by hand; nothing imports it.

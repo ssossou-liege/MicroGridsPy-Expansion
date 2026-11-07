@@ -1,7 +1,9 @@
 site_name,variant,plateau_households,census_households,plateau_share,rate_per_month,midpoint_months,se_plateau,se_rate,se_midpoint,identified,n_months,origin_month,last_month
 Samionta,estimate,49.0,231,0.212121,0.129575,13.221624,2.950834,0.017941,1.330548,True,36,2023-06,2026-05
 Samionta,profile_lower_bound,49.0,231,0.212121,0.129574,13.221619,,0.009696,0.554948,True,36,2023-06,2026-05
+Samionta,profile_upper_bound,53.0,231,0.229437,0.111699,14.995337,,0.008065,0.584518,True,36,2023-06,2026-05
 Samionta,census,231.0,231,1.0,0.04638,61.048889,,0.003934,3.220963,True,36,2023-06,2026-05
 Gbowele,estimate,159.0,159,1.0,0.095689,26.72603,222.014832,0.044501,25.377227,False,24,2024-06,2026-05
 Gbowele,profile_lower_bound,92.0,159,0.578616,0.118875,17.124157,,0.016262,0.90291,False,24,2024-06,2026-05
+Gbowele,profile_upper_bound,159.0,159,1.0,0.095689,26.726031,,0.011536,1.466159,False,24,2024-06,2026-05
 Gbowele,census,159.0,159,1.0,0.095689,26.726031,,0.011536,1.466159,False,24,2024-06,2026-05

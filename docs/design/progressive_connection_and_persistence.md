@@ -130,7 +130,7 @@ Sources:
   connection month over all customer types, which is how
   `demand/build_productive_profiles.connection_intensity` takes it, so the connection curve
   and the productive-user intensity run on one clock. The household stock counts the rows of
-  type `HH` connected in or before each month.
+  type `HH` connected in or before each month, less those that left (section 4.7).
 - `data/demand/household_customers.csv`, the household register, for the category (HH1 to
   HH3) of each household, which the brownfield state needs (section 4.5).
 - The meter archives, for the validation of section 12 (active households) only, not for the
@@ -177,8 +177,9 @@ a midpoint in mid-2024; at Gbowele, no identified plateau.
 ### 4.3 The bracket
 
 As for growth, the uncertainty is carried between the two sites, not within one. Samionta's
-plateau share is known to about 0.016 (3.7 households of 231), while the two villages differ by
-more than 0.3 of their census: the within-site errors are reported, not drawn.
+plateau lies between 49 and 53 households, 0.017 of its census either way, while the two
+villages differ by more than 0.3 of their census: the within-site errors are reported, not
+drawn.
 
 | Trajectory | Plateau share | Rate and midpoint |
 |---|---|---|
@@ -280,6 +281,71 @@ result and every existing test keeps passing; the change of default and the reco
 belong together. `validate()` refuses unknown names and weights that do not sum to one, and
 `from_dict` round-trips the block.
 
+### 4.7 The record, the silent meters and the census (decisions A to C)
+
+Decided by the author on 2026-11-07, after session 2 found the roster ending in May 2026
+while the meters run to 1 November 2026, and households of the roster without readings.
+
+**The record [decision A].** Two records are built, and `build_connection_curves --record`
+chooses:
+
+- `roster`: the operator's customer roster. Its customers keep their roster type and
+  connection date, and `T` is the month of its latest connection, May 2026.
+- `extended`: the roster and every customer of the meter archive the roster does not list,
+  up to the archive's last complete month, October 2026. Such a customer is connected in the
+  month of its first reading. Its type comes from the operator's field census, received on
+  7 November 2026: its category column first, its type column where that is empty, read as a household
+  of that category (HH1 to HH3), a productive user (SME) or a church (CHU). Where the census
+  gives no type, it is read off the consumption by a documented rule
+  (`build_connection_curves.classify_meter`): a meter drawing at least 35 % of its energy
+  between 07:00 and 18:00, or 1.5 kWh a day or more, is a productive user; one drawing at
+  least a quarter of its week on Sundays is a church; any other is a household of the site's
+  commonest category. These customers are held in `data/demand/archive_customers.csv`
+  (code, site, type, category, connection month, source), which `--census` rebuilds from the
+  two workbooks, reading their code and type columns only; nothing the generation runs reads
+  it. Roster types stay authoritative for roster customers; a fresh roster would replace the
+  census and profile types and the first-reading dates, and nothing else.
+
+Both typing sources were checked on the roster's own customers. The profile rule misplaces
+28.6 % of the 203 metered ones (22.2 % counting the household categories as one), and no
+rule on these descriptors does much better: a nearest-centroid classifier on the 24-hour
+shape reaches 70 % in cross-validation, against 69 % for calling every customer a household.
+The census differs from the roster for 67.6 % of the 204 (its category column calls HH2 most of
+the roster's HH1 households and all its HH3), and for 28 % by its type column alone. Both are
+above the 5 % the author set for the extended record, so **the shipped tables hold the roster
+record**, and the extended one is a sensitivity, written on request.
+
+**Silent meters [decision B].** A meter whose last reading, a zero included, falls three
+months or more before the end of the archive has failed. According to the operator a failed
+meter lets no energy through, so it is neither a loss nor an inactive household.
+
+- A replaced meter keeps its customer code, and the archive is kept per code, so a household
+  continuing on a new meter is one customer already (the census lists four such codes at
+  Samionta). No other identifier links two codes in the repository's data.
+- Otherwise, a meter starting at the same site within two months after the failure, within a
+  factor of two of its daily energy over the three months either side and with a mean day
+  correlated at 0.8 or more, is a candidate replacement. Candidates are listed, not merged:
+  an unmerged pair is a departure and a new connection, which leaves the stock as it is and
+  resets only the cohort's age. None was found.
+- A household whose failed meter was not replaced leaves the connected stock from the month
+  after its last reading. The departures are carried in `connection_observed.csv`
+  (`departure_month`) and taken off their own cohort.
+- A roster customer whose meter never recorded is listed apart and left out of the stock. A
+  code absent from both the roster and the census whose readings stopped early is not a
+  customer: a meter tried in the test period or for a week, and taken down.
+- `meter_status.csv` lists every code with its status, for the field team to confirm.
+
+The curves are fitted on the net stock; the mixture law does not change.
+
+**The S2-A5 test [decision C]** is made in month `T` on the households connected before `T`
+began, net of departures: on the simulated side, that stock, each cohort at its own age in
+`T`, through the site's own mixture law (slow for Samionta, fast for Gbowele); on the meters,
+the same households, active when the month's energy is above zero, which is the model's own
+definition of the inactive state (`build_monthly_household_clusters`: `total_kWh <= 0`). Given
+the stock, the active count is a sum of independent draws, which sets the standard deviation.
+As a sensitivity, the households whose failed meter was not replaced are kept in the stock and
+counted inactive on the meters.
+
 ## 5. Cohort ageing in the demand generator (session 2)
 
 ### 5.1 Interface
@@ -331,22 +397,37 @@ are unchanged (I4). Each band's mapping keeps `site.census`'s key order for the 
 Nothing else in the month changes. `_simulate_month(counts, ...)` builds the active households
 only, so a schedule with fewer connected households makes every simulated year cheaper.
 
-### 5.3 Productive users: the current rule, kept
+### 5.3 Productive users [decision D]
 
 - The expected count is the intensity times the connected count, the intensity being read at
   the band of the **village age**, `maturity_band(a)`.
   `build_productive_profiles.connection_intensity` estimates it by village age, so the
   generator reads it on the same clock. Under a single cohort the two bands coincide.
-- The connected count stays what the generator counts today: households in a state other than
-  `inactive`, summed over the cohorts. Unconnected households are in no state and do not count.
-- `_declared_counts` and the roster scaling keep `share = connected / n_households`.
+- *Revised.* Under a progressive schedule the connected count is the **connected stock**
+  `sum_k N_k(a)`, the base the intensity was estimated on (rows of type `HH` by connection
+  date). Under the whole census it stays the households outside the `inactive` state: the
+  legacy reading, kept so that no stored result moves. `_declared_counts` and the roster
+  scaling take `share = connected / n_households` on the same base.
+- **A village with a plant** starts from the productive users its record holds, as section
+  4.5 does for households, and the rule decides only what changes after `T`. With `P(a)` the
+  productive users connected at village month `a` (roster, or roster and archive), net of any
+  that left, and `lambda(a)` the intensity at `maturity_band(a)` under the growth trajectory:
 
-A discrepancy to report, not to fix: the intensity was estimated per household of the
-connected *stock* (rows of type `HH` by connection date), while the generator applies it per
-*active* household. With the whole census connected the difference passed unseen; with a stock
-of a few dozen households it will not. Session 2 reports the expected count under both readings
-against the productive users observed in August 2026 (15 and 43) and changes nothing without
-the author's decision.
+      units(a) = split(P(min(a, T))) + Poisson(mu(a)),
+      mu(a)    = 0                                                    if a <= T,
+               = max(0, lambda(a) sum_k N_k(a) - lambda(T) sum_k N_k(T))  if a > T,
+
+  the Poisson part split multinomially by the trajectory's class mix, as today. `split`
+  divides a count among the classes by the village's own measured mix, by largest remainders;
+  that mix is the share of the village's own metered enterprises in each class, so at `T` the
+  split is the observed state in whole numbers (14 at Samionta, 42 at Gbowele under the roster
+  record). It is the simplest form that reproduces the observed state at `T` exactly: nothing
+  is drawn on the record, and beyond it the observed users stay and only the rule's
+  increment is drawn, never negative. A site that declares its own enterprises
+  (`productive_units` or `productive_mix`) keeps its declaration instead.
+
+Measured against the meters (S2-A6), counting customers of type productive user with more
+than 0.05 kWh in month `T`: see section 12.
 
 ### 5.4 Outputs
 
@@ -362,8 +443,12 @@ today.
 ## 6. Cache keys (session 2)
 
 **Instance key** (`instances._cache_key`): append `schedule.digest(until=maturity_months + 11)`,
-and only when the schedule is not the whole census, so that every cached instance stays valid.
-That is the convention this codebase already follows for new parts of a key.
+and only when the schedule is not the whole census, the convention this codebase follows for
+new parts of a key. *Corrected:* that does not keep every cached instance valid. The two
+calibration tables are read at generation and so enter the demand fingerprint, and adding
+them (or rewriting them, as the revision of section 4.7 does) invalidates every cached
+instance and pool once. The digest also covers a schedule's departures and observed
+productive users, where it has them.
 
 **Pool key** (`scenarios.demand_paths._pool_path` and `demand_pool`). Today the file name
 carries the site's name, the demand fingerprint, the trajectory and the age. Two gaps predate
@@ -423,7 +508,7 @@ convention recommended in section 9.3 it becomes the plan's year 4. Command line
 `certify --connection {low,central,high}`, defaulting to `settings.connection.trajectory`; the
 summary JSON records the connection trajectory, the village age and the connected stock by
 category. `--brownfield` also switches the demand to the observed state of section 4.5, which is
-the run the real Samionta still lacks: 33 months, a few dozen households, its own plant.
+the run the real Samionta still lacks: 41 months, a few dozen households, its own plant.
 
 ## 9. Persistent scenario tree (session 3)
 
@@ -610,7 +695,7 @@ Session 2:
 | `test_the_connected_stock_never_decreases` | for every trajectory, greenfield and brownfield, and every category: `N_k(a)` integer, non-decreasing, within `[0, H_k]`; cohort sizes non-negative |
 | `test_each_cohort_ages_on_its_own_clock` | `census_by_band(a)` puts a cohort connected at month `u` in `maturity_band(a - u)`: cohorts of months 0 and 10 seen at village age 12 fall in 7-12 and 0-3 |
 | `test_an_unconnected_household_draws_nothing` | a schedule with no connection gives no household load and an expected productive count of zero, while the community and self uses are present from the first month |
-| `test_productive_users_follow_the_connected_households` | the mean passed to the Poisson draw is the intensity at `maturity_band(a)` times the active connected count, so doubling every cohort doubles it |
+| `test_productive_users_follow_the_connected_households` | the mean passed to the Poisson draw is the intensity at `maturity_band(a)` times the connected stock under a progressive schedule and the active count under the whole census (section 5.3), so doubling every cohort doubles it |
 | `test_the_brownfield_state_is_the_roster` | for each reference site, the schedule up to the roster's last month equals `connection_observed.csv`, and the derived village age matches the origin month |
 | `test_a_trajectory_never_disconnects` | a plateau below the observed stock leaves the stock flat at the observation |
 | `test_the_instant_curve_is_the_whole_census` | `ConnectionCurve(1.0, math.inf, 0)` yields `ConnectionSchedule.whole_census` |
@@ -620,6 +705,10 @@ Session 2:
 | `test_the_connection_draw_leaves_the_stream_alone` | `mc_sampler.sample_paths` under `mode = "census"` returns exactly today's draws; under `progressive`, every stage of a path carries the same connection trajectory |
 | `test_connection_settings_round_trip` | save and load give equal settings; unknown names and weights that do not sum to one are refused |
 | `test_the_network_loss_has_a_provenance` | `infrastructure.network_loss_provenance` exists and is listed by `unverified()`; the configuration's default equals the settings' |
+| `test_a_departure_leaves_its_own_cohort` | (section 4.7) a departure lowers the stock from its month, is taken off the cohort it joined in, enters the digest only from its month, and cannot exceed its cohort or precede its connection |
+| `test_a_silent_meter_leaves_the_stock` | a meter is failed exactly when its last reading falls three months or more before the archive's end, its household leaves the month after, no record holds a meter that never recorded or a code that is no customer's, and the extended stock at `T` is what joined less what left |
+| `test_the_observed_productive_users_are_held_on_the_record` | (section 5.3) a village's own mix splits its observed productive users exactly; on the record nothing is drawn, and beyond it the mean drawn is the rule's increment, never negative, on top of the users held |
+| `test_the_interface_offers_the_connection_trajectory` | the field is offered in both languages with the three trajectories, and an unknown name is refused |
 
 Session 3:
 
@@ -649,8 +738,43 @@ Session 2 is done when:
   both villages; given the connected stock, the number of households outside the `inactive`
   state is binomial under the mixture law, which sets the deviation. If they do not, the
   session reports it and stops; it does not tune anything.
-- **S2-A6.** The productive users expected under the observed state are reported against the 15
-  and 43 observed in August 2026, under both readings of section 5.3.
+- **S2-A6.** The productive users expected under the observed state are reported against the
+  productive users metered in month `T` (customers of type productive user, roster or
+  inferred, with more than 0.05 kWh in the month). The 15 and 43 first given here are that
+  count in August 2026 under a classification made outside the repository.
+
+S2-A5 is now made as section 4.7 states. Results, reported and not tuned (2026-11-07):
+
+| Record, month `T` | Village | Households | Expected active (s.d.) | Metered | Within 2 s.d. | Without a reading in `T` | Expected over the rest |
+|---|---|---|---|---|---|---|---|
+| roster, May 2026 | Samionta | 49 | 46.9 (1.4) | 44 | no, by 0.1 | 3 | 44.0 (1.4) |
+| roster, May 2026 | Gbowele | 57 | 53.2 (1.9) | 53 | yes | 0 | 53.2 (1.9) |
+| extended, Oct. 2026 | Samionta | 48 | 46.2 (1.3) | 46 | yes | 0 | 46.2 (1.3) |
+| extended, Oct. 2026 | Gbowele | 92 | 88.3 (1.9) | 84 | no | 4 | 84.4 (1.8) |
+
+With the failed meters kept as inactive households, the extended record gives 47.2 (1.3)
+against 46 at Samionta and 91.2 (1.9) against 84 at Gbowele; the roster record has no
+departure before May. Every shortfall lies in households that have no reading at all in `T`:
+three Samionta meters with a gap in May 2026 that record again afterwards, and four Gbowele
+meters connected in May 2026 that have been silent since late August or early September, short
+of the three months that would make them failed. The model's law was estimated on months with
+readings, so a month without any is not an observation of the inactive state; read that way,
+both villages pass under both records. Which reading the criterion takes is the author's
+(section 14).
+
+S2-A6 (2026-11-07), the site's own growth trajectory:
+
+| Record, month `T` | Village | Metered | Anchored on the record | Rule, per connected household | Rule, per active household |
+|---|---|---|---|---|---|
+| roster, May 2026 | Samionta | 13 | 14 | 11.4 | 10.9 |
+| roster, May 2026 | Gbowele | 41 | 42 | 58.3 | 52.6 |
+| extended, Oct. 2026 | Samionta | 16 | 16 | 11.4 | 11.0 |
+| extended, Oct. 2026 | Gbowele | 43 | 43 | 60.8 | 58.1 |
+
+The anchored rule holds the connected productive users, one of whom at each village drew 0.05
+kWh or less in May. The rule alone overstates Gbowele by about two fifths: its intensity at
+13 to 24 months is an aggregate over months when few households were connected, before the 35
+of May 2026.
 
 Session 3 is done when:
 
@@ -672,7 +796,9 @@ Session 2, from the files read in session 1:
 - new `src/microgrid_expansion/demand/build_connection_curves.py`: the fit and the observed
   table; offline;
 - new `data/ramp_params/reference/connection_curves.csv` and `connection_observed.csv`, and the
-  directory's README;
+  directory's README; and, from the revision of section 4.7, `meter_status.csv` (for
+  inspection, listed in `instances._NOT_READ_AT_GENERATION`) and
+  `data/demand/archive_customers.csv`, listed in `data/README.md`;
 - `demand/generator.py`: `simulate_demand_year(connection=...)`, the composition by band,
   `DemandYear.connected`;
 - `instances.py`: `_GENERATION_SOURCES`, `_OFFLINE_SOURCES`, `_cache_key`,
@@ -727,6 +853,21 @@ Noticed while reading, for whichever session next touches the file:
 | 7 | Tree shape (9.6) | nine regimes, no fan: 46 nodes |
 | 8 | Base and form of the network loss (10) | 13 % kept; settled in session 4 |
 | 9 | Growth beyond 24 months (15) | maturity bands unchanged in sessions 2 and 3 |
+
+**The author's choices (2026-11-07).** Points 1 to 9 stand at their defaults. An extra
+milestone at year 2 was considered and rejected, as too close to the root to reinvest. The
+points session 2 left open were decided as section 4.7 (record, silent meters, the S2-A5
+test), section 5.3 (productive users) and section 4.5 (the `own` bracket) now state.
+
+Left open by the revision, for session 4 unless the author settles them sooner:
+
+| | Question | State |
+|---|---|---|
+| 10 | The census of households. The operator's field census counts 171 households at Gbowele (HH1 144, HH2 16, HH3 11) against the 159 (143, 5, 11) of `sites.py`, and 230 at Samionta against 231 | `sites.py` unchanged, so that no stored result moves; the bound `H` stays 159. With `H` = 171, Gbowele's plateau is still not identified: interval 92 to 171 on the roster record (127 to 171 on the extended one), the census variant at `r` = 0.094 per month and a midpoint at 28.0 months |
+| 11 | Which record the tables hold | the roster record, both typing sources of the extended one exceeding 5 % (section 4.7); a fresh roster, or the field team's types for the seven profile-typed codes, would allow the extended record |
+| 12 | A month without any reading in S2-A5 | counted inactive in the criterion as worded; read as no observation, both villages pass (section 12) |
+| 13 | Meters silent for less than three months | four Gbowele households connected in May 2026 have recorded nothing since late August or early September 2026; by the next export they are failed meters or not |
+| 14 | The productive intensity beyond the record | at Gbowele the rule expects about 0.63 productive users per connected household, against about 0.46 observed at `T` (42 for 92 households); under the anchored rule it only drives the increments after `T` |
 
 ## 15. Out of scope
 

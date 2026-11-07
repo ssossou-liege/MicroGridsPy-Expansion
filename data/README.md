@@ -8,9 +8,9 @@ from, and what produces it.
 |---|---|---|---|
 | `demand/household_customers.csv` | Operator customer roster | 141 sampled households: code, socio-economic type (HH1–HH3), site, connection date | ✅ |
 | `demand/customer_info.parquet` | Operator customer database | Customer attributes for the two reference sites | ✅ |
-| `demand/archive_customers.csv` | Written by `demand/build_connection_curves.py --census`, from the meter archive and the operator's field census of both villages, received on 7 November 2026 | The customers of the meter archive the roster does not list: code, site, type, household category, connection month (that of the first reading) and the source of the type (`census`, or `profile` where the census gives none). Read by the offline build of the connection curves only, for its extended record; nothing the generation runs opens it. The census itself holds personal data and stays outside the repository; only its code and type columns are read | ✅ |
-| `demand/gbo_meter_readings.parquet` | Built by `demand/build_meter_archive.py` from the operator's monthly exports | Quarter-hourly per-customer power readings, Gbowele | ✅ |
-| `demand/sam_meter_readings.parquet` | Built by `demand/build_meter_archive.py` from the operator's monthly exports | Quarter-hourly per-customer power readings, Samionta | ✅ |
+| `demand/archive_customers.csv` | Written by `demand/build_connection_curves.py --census`, from the meter archive and the operator's field census of both villages, received on 7 November 2026 | The customers of the meter archive the roster does not list: code, site, type, household category, connection month (that of the first reading) and the source of the type (`census`, or `profile` where the census gives none). Read by the offline builds only: the connection curves, for the extended record the tables hold, and the meter archive, whose census codes it stands in for when the workbooks are not given; nothing the generation runs opens it. The census itself holds personal data and stays outside the repository; only its code and type columns are read | ✅ |
+| `demand/gbo_meter_readings.parquet` | Built by `demand/build_meter_archive.py` from the operator's monthly exports, rebuilt on 7 November 2026 with each reading given to the code that held the meter when it was taken | Quarter-hourly per-customer power readings, Gbowele | ✅ |
+| `demand/sam_meter_readings.parquet` | Built by `demand/build_meter_archive.py` from the operator's monthly exports, rebuilt on 7 November 2026 as above | Quarter-hourly per-customer power readings, Samionta | ✅ |
 | `ramp_params/reference/*.csv` | Produced by `src/microgrid_expansion/demand/` | Monthly household features, behavioural cluster assignments, per-site monthly cluster summaries, global cluster profiles, and the hierarchical mixture probabilities | ✅ |
 | `ramp_params/reference/cluster_params.csv` | RAMP calibration on the same meter data | Appliance parameters (power, count, functioning time, use windows, duty cycle) for each of the 4 behavioural clusters | ✅ |
 | `irradiance/samionta_weather_hourly_2016_2025.csv` | ERA5-Land via the Copernicus Climate Data Store | Hourly irradiance, 2 m air temperature and 10 m wind, Samionta (7.0955 N, 2.2446 E), 2016–2025 | ✅ |
@@ -28,12 +28,20 @@ from, and what produces it.
 ## Reproducibility
 
 The meter archive both of them read is itself regenerated from the operator's monthly
-exports, which live outside this repository and are therefore named on the command line:
+exports, which live outside this repository and are therefore named on the command line,
+with the operator's field census, of which only the code column is read:
 
 ```bash
 python -m microgrid_expansion.demand.build_meter_archive \
-    --exports <directory of monthly exports> --meters <the operator's register of meters>
+    --exports <directory of monthly exports> --meters <the operator's register of meters> \
+    --census Samionta=<workbook> --census Gbowele=<workbook>
 ```
+
+A reading belongs to the code that held the meter when it was taken: a code readable once
+its spaces are removed is that code, a test code is nobody's, and only an unreadable code
+is recovered through the register's owner of the meter. A code the roster or the census
+knows is a customer whatever the type of its meter; the register's types exclude the
+others.
 
 It reports, before writing, how much of the archive it replaces comes back unchanged, and
 `--verify` writes nothing at all. The exports timestamp each reading with a UTC offset and

@@ -1018,11 +1018,13 @@ their measured mean day and its day-to-day spread, since a mill that runs hard t
 three is not a mill running steadily at two thirds. The number of enterprises in a month is
 \begin{equation}
   U(a) \sim \operatorname{Poisson}\Big(\Phi_\gamma\big(\band(a)\big)
-  \sum_{c\neq\mathrm{inactive}} X_c(a)\Big),
+  \sum_{k\in\mathcal{K}} N_k(a)\Big),
 \end{equation}
-an intensity referred to the connected households, measured at the reference villages and
-conditioned on the village's maturity and on the growth trajectory, the classes being then
-allocated multinomially from the trajectory's own mix. Enterprises thereby follow the
+an intensity referred to the connected households, the base it was measured on at the
+reference villages, and conditioned on the village's maturity and on the growth trajectory,
+the classes being then allocated multinomially from the trajectory's own mix. (The model in
+which the whole census is connected at once referred it to the households outside the
+inactive state, $\sum_{c\neq\mathrm{inactive}} X_c(a)$, and keeps that reading.) Enterprises thereby follow the
 connected households: an enterprise appears beside existing supply, and a ratio taken over
 dwellings not yet connected would not transfer. A surveyed count or roster of enterprises
 replaces the expectation or the draw.
@@ -1043,9 +1045,13 @@ network, while its own supply is drawn from the busbar beside it and carries no 
 \end{equation}
 The share is $F^{\mathrm{net}}=0.13$, measured on the distribution meters of Gbowele. A later
 measurement at both villages, in October 2026, found an unexplained gap of eighteen to
-nineteen per cent between what the plants delivered and what the metered loads account for,
-and a residual that does not follow the hourly load; both the value and the proportional
-form are therefore under review.
+nineteen per cent between what the plants delivered and what the metered loads account for;
+net of the street lighting, which the model counts as a load, it is about thirteen per cent
+at Samionta and eleven at Gbowele, which bears the value out. Its form does not: the loss
+measured is flat over the day, about 0.3~kW at Gbowele and uncorrelated with the load, and
+Samionta's residual, which mixes the loss with other uses, is flat too, at about 0.6~kW. The
+proportional form is kept, and the form of the loss is left to the design of the
+distribution network.
 
 \paragraph{An existing village.} A brownfield site starts from its record: the households
 connected by the record's last month $a^{\mathrm{obs}}$, $N^{\mathrm{obs}}_k$ of each
@@ -1109,9 +1115,11 @@ decision: one plant, operated under every regime.
 
 A node is charged $\Delta_n$ years of operation on one year of data, and which year of its
 span that is matters once households connect progressively, the first year of a span being
-its least demanding. The data are those of the span's first year or, as an option, of its
-last; only the demand differs between the two, the yield, the temperature and the prices
-being the milestone's in either case.
+its least demanding. The data are those of the span's last year, the most demanding one of a
+village still connecting and the one the plant really has to carry; those of its first year
+are kept as an option, under which deferring capacity is worth more than it is. Only the
+demand differs between the two, the yield, the temperature and the prices being the
+milestone's in either case.
 
 Revealing the regime at the first milestone is an assumption, and it is stated as one: five
 years of operation show how many households a village connects, how their consumption grows
@@ -1185,6 +1193,12 @@ planner ultimately needs. This section shows that one can certify global optimal
 the sizing \emph{for the fixed rule-based controller}, without encoding the controller as
 constraints, by using the cost-optimal dispatch problem as a rigorous lower bound and the
 forward simulation of the controller as an upper bound.
+
+The single certified year is the year whose demand the root of the tree carries, so that the
+proven plant and the tree's year-0 plant answer about the same households: the last year of
+the root's span, year four of the plan, for a village still connecting. A new site,
+energised in the plan's first month, is then forty-eight months old; a village with a plant
+and a record is four years older than the age its record gives the plan's first month.
 
 \subsection{Two operating cost functions}
 

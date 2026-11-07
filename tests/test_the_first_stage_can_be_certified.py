@@ -28,10 +28,20 @@ from microgrid_expansion.tree import build_tree
 
 @pytest.fixture(scope="module")
 def tiny():
-    """Three nodes and two representative days: the shape, not the size, is what is tested."""
-    cfg = ModelConfig(stage_years=(0, 5), branching=(1, 2), n_mc_paths=20, n_rep_days=2)
+    """Three nodes and two representative days: the shape, not the size, is what is tested.
+
+    Drawn as the stored trees were, set explicitly: the whole census, twelve months old,
+    nested as a fan on the milestones' own years.
+    """
+    from microgrid_expansion.scenarios import space_from_settings
+
+    cfg = ModelConfig(stage_years=(0, 5), branching=(1, 2), n_mc_paths=20, n_rep_days=2,
+                      tree_mode="fan", node_year="first", centre_features=False,
+                      maturity_months=12)
     settings = default_settings()
-    tree = build_tree(sample_scenario_paths(cfg), cfg)
+    settings.connection.mode = "census"
+    tree = build_tree(sample_scenario_paths(cfg, space_from_settings(settings), settings),
+                      cfg)
     rep = {n: reduce_to_rep_days(_NodeInstance(tree.node_data[n], settings), cfg.n_rep_days)
            for n in tree.nodes}
     lattice = Lattice.around(_NodeInstance(tree.node_data[0], settings), settings,

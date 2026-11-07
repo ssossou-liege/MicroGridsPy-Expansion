@@ -215,10 +215,17 @@ def test_the_observed_productive_users_are_held_on_the_record(monkeypatch) -> No
         held = observed.productive[-1]
         units = generator._observed_units(calibration, name, held)
         own = {"Samionta": "slow", "Gbowele": "fast"}[name]
-        # The village's own mix is the share of its own enterprises, so the split of its
-        # whole count is exact, not rounded.
+        # The record holds customers the activity survey never reached, so its count need
+        # not be the count the mix was measured on: the split keeps the total and each
+        # class stays within one of its share.
         assert sum(units.values()) == held
-        assert np.allclose(calibration.mix[own] * held, pd.Series(units), atol=1e-4), name
+        assert (abs(pd.Series(units) - calibration.mix[own] * held) < 1.0).all(), name
+        # On the enterprises the mix was measured on, the split is that state exactly.
+        profiled = next(n for n in range(1, 500)
+                        if np.allclose(calibration.mix[own] * n,
+                                       np.round(calibration.mix[own] * n), atol=1e-4))
+        exact = generator._observed_units(calibration, name, profiled)
+        assert np.allclose(calibration.mix[own] * profiled, pd.Series(exact), atol=1e-4)
 
     _quiet_generator(monkeypatch)
     means = []
@@ -293,6 +300,8 @@ def test_a_brownfield_run_starts_from_the_roster_and_a_new_site_from_nothing() -
     from microgrid_expansion.settings import default_settings, reference_plant
 
     settings = default_settings()
+    assert settings.connection.mode == "progressive", "the shipped connection"
+    settings.connection.mode = "census"
     assert conn.plan(get_site("Samionta"), settings).schedule("low").is_whole_census
     settings.connection.mode = "progressive"
     new = conn.plan(get_site("Samionta"), settings)
@@ -304,7 +313,7 @@ def test_a_brownfield_run_starts_from_the_roster_and_a_new_site_from_nothing() -
     assert standing.year0_age == observed.year0_age(settings.installed.base_year)
     stock = standing.schedule("low").connected(observed.last_age)
     assert {k: stock[k] for k in observed.categories} \
-        == dict(zip(observed.categories, observed.stock[-1]))
+        == dict(zip(observed.categories, observed.connected(observed.last_age)))
 
 
 # ---------------------------------------------------------------- the calibration
@@ -400,6 +409,117 @@ def test_a_silent_meter_leaves_the_stock(rebuilt) -> None:
         assert stock[-1] == len(held) - int(gone.sum())
 
 
+def test_the_tables_hold_the_extended_record(rebuilt) -> None:
+    from microgrid_expansion.demand import build_connection_curves as build
+
+    _, observed, status, _ = rebuilt
+    assert build.DEFAULT_RECORD == "extended"
+    unlisted = set(build.load_archive_customers().customer_code)
+    for name in REFERENCE_SITES:
+        end = build.meter_summary(name)[2]
+        assert conn.curve_row(name, "estimate").last_month \
+            == str(build.last_complete_month(end)), name
+    held = build.record_customers(status, "extended")
+    assert unlisted & set(held.customer_code), "the archive's own customers are left out"
+    # What the record feeds is the stock, and the profile's types move it by little.
+    for row in build.profile_bound(status).itertuples():
+        assert row.most_moved == max(row.profiled_households, row.profiled_others)
+        assert row.most_moved <= 0.05 * row.households, row.site_name
+
+
+def test_the_census_type_column_is_believed_before_its_category(tmp_path) -> None:
+    from microgrid_expansion.demand import build_connection_curves as build
+
+    code, (kind, category) = build.CENSUS_CODE_COLUMN["Gbowele"], build.CENSUS_TYPE_COLUMNS
+    assert kind.startswith("Type")
+    sheet = pd.DataFrame({code: ["0001GBO", "0002GBO", "0003GBO", "0004GBO", "nobody"],
+                          kind: ["HH1", None, "SME", "?", "HH2"],
+                          category: ["HH2", "HH3", "HH1", None, "HH2"]})
+    path = tmp_path / "census.xlsx"
+    sheet.to_excel(path, sheet_name=build.CENSUS_SHEET, index=False)
+    typed = build.read_census(path, "Gbowele")[0].set_index("customer_code").census_type
+    assert typed.dropna().to_dict() == {"0001GBO": "HH1", "0002GBO": "HH3",
+                                        "0003GBO": "PUE"}
+    assert pd.isna(typed["0004GBO"]), "a type the census does not use leaves it untyped"
+
+
+def test_a_reading_belongs_to_the_code_that_held_the_meter() -> None:
+    from microgrid_expansion.demand.build_meter_archive import FROM_UTC, harmonise
+
+    stamp = lambda h: pd.Timestamp("2026-01-01") + pd.Timedelta(hours=h)
+    rows = [  # (hour, code as recorded, meter)
+        (0, "test1", "M1"), (1, "TEST 3", "M1"),      # a bench meter's code: no one's
+        (2, " 0074GBO", "M2"),                       # readable: the code at the time
+        (3, "", "M3"), (4, "GBO", "M3"),             # unreadable: the meter's owner
+        (5, "0193GBO", "BENCH"), (6, "", "BENCH"),   # a known customer on a bench meter
+        (7, "0999GBO", "BENCH"), (9, "", "PLANT"),   # nobody known on one
+        (8, "0005GBO", "M3"), (8, "", "M3"),         # a recovery never displaces a record
+    ]
+    frame = pd.DataFrame({"timestamp": [stamp(h) for h, _, _ in rows],
+                          "code_as_recorded": [c for _, c, _ in rows],
+                          "power_W": [float(i) for i in range(len(rows))],
+                          "meter_serial": [m for _, _, m in rows]})
+    owners = {"M1": "0074GBO", "M2": "0173GBO", "M3": "0005GBO", "BENCH": "0193GBO"}
+    built = harmonise([frame], "GBO", owners, {"BENCH", "PLANT"}, frozenset({"0193GBO"}))
+    got = {(t - FROM_UTC).hour: (c, p) for t, c, p in
+           zip(built.timestamp, built.customer_code, built.power_W)}
+    # The recorded reading of hour 8 is the tenth row, the recovered one the eleventh.
+    assert got == {2: ("0074GBO", 2.0), 3: ("0005GBO", 3.0), 4: ("0005GBO", 4.0),
+                   5: ("0193GBO", 5.0), 6: ("0193GBO", 6.0), 8: ("0005GBO", 9.0)}
+
+
+def test_the_archive_holds_the_corrected_codes(rebuilt) -> None:
+    _, _, status, _ = rebuilt
+    rows = status.set_index("customer_code")
+    # Recorded under "test1" in 2025, 0074GBO's own code starts in December 2025.
+    assert rows.at["0074GBO", "connection_month"] == "2025-12"
+    # A productive user of the roster recording on a bench meter is a customer.
+    assert rows.at["0193GBO", "status"] == "recording"
+    assert rows.at["0193GBO", "customer_type"] == "PUE"
+    # The customers who now hold the meters of the test period no longer inherit their
+    # months under a test code: each record starts with its own customer.
+    for code in ("0074GBO", "0079GBO", "0169GBO", "0187GBO", "0190GBO", "0205GBO"):
+        first = pd.Period(rows.at[code, "first_reading_month"], freq="M")
+        assert first >= pd.Period(rows.at[code, "connection_month"], freq="M") - 1, code
+
+
+def test_the_templates_declare_the_churches_their_record_holds(rebuilt) -> None:
+    """A plan for a reference village carries its places of worship as the record has them."""
+    from microgrid_expansion.demand import build_connection_curves as build
+    from microgrid_expansion.demand.uses import CommunityCalibration
+    from microgrid_expansion.settings import reference_plant
+
+    _, _, status, _ = rebuilt
+    held = build.record_customers(status, build.DEFAULT_RECORD)
+    assert "place_of_worship" in CommunityCalibration.load().profiles.index
+    for name in REFERENCE_SITES:
+        last = pd.Period(conn.curve_row(name, "estimate").last_month, freq="M")
+        churches = held[(held.site_name == name) & (held.customer_type == "CHU")]
+        on_grid = churches[churches.departure_month.map(
+            lambda m: not m or pd.Period(m, freq="M") > last)]
+        assert (get_site(name).community_mix or {}).get("place_of_worship") == len(on_grid)
+        # Connected before the plan's year 0, so there from its first month.
+        first = pd.Period(f"{reference_plant(name).base_year}-01", freq="M")
+        assert (on_grid.connection_month.map(lambda m: pd.Period(m, freq="M")) < first).all()
+
+
+def test_the_active_households_are_counted_over_the_observed_ones(rebuilt) -> None:
+    from microgrid_expansion.demand import build_connection_curves as build
+
+    _, _, status, _ = rebuilt
+    roster = build.load_roster()
+    for name in REFERENCE_SITES:
+        row = build.active_check(status, roster, build.DEFAULT_RECORD, name)
+        # A household without any reading in the month leaves both sides.
+        assert row["expected_observed"] <= row["expected"]
+        assert row["unobserved"] < row["households"]
+        assert row["within"] == (abs(row["metered"] - row["expected_observed"])
+                                 <= 2.0 * row["sd_observed"])
+        assert row["within"], (name, row)                     # S2-A5 on the shipped record
+        if row["unobserved"] == 0:
+            assert row["expected"] == pytest.approx(row["expected_observed"])
+
+
 # --------------------------------------------------------------------- the keys
 def test_the_pool_key_covers_what_decides_the_pool() -> None:
     from microgrid_expansion.scenarios.demand_paths import _pool_key
@@ -414,7 +534,7 @@ def test_the_pool_key_covers_what_decides_the_pool() -> None:
                               tuple(r if a < 5 else (r[0] + 1, *r[1:])
                                     for a, r in enumerate(schedule.stock)))
     assert _pool_key(site, "central", 12, 2025, 0, more) != key, "one household more"
-    edited = dataclasses.replace(site, community_mix={"place_of_worship": 2})
+    edited = dataclasses.replace(site, community_mix={"place_of_worship": 3})
     assert _pool_key(edited, "central", 12, 2025, 0, schedule) != key, "the description"
     assert _pool_key(site, "central", 12, 2024, 0, schedule) != key, "the year"
     assert _pool_key(site, "central", 12, 2025, 1, schedule) != key, "the seed"
@@ -445,9 +565,9 @@ def test_the_connection_draw_leaves_the_stream_alone() -> None:
     from microgrid_expansion.scenarios.uncertainty_space import DemandAxis, UncertaintySpace
 
     cfg = ModelConfig(n_mc_paths=40, seed=3)
-    census = mc_sampler.sample_paths(cfg, UncertaintySpace())
-    drawn = mc_sampler.sample_paths(
-        cfg, UncertaintySpace(demand=DemandAxis(connection_mode="progressive")))
+    census = mc_sampler.sample_paths(
+        cfg, UncertaintySpace(demand=DemandAxis(connection_mode="census")))
+    drawn = mc_sampler.sample_paths(cfg, UncertaintySpace())
     paired = mc_sampler.sample_paths(
         cfg, UncertaintySpace(demand=DemandAxis(connection_mode="progressive",
                                                 connection_pairing="paired")))
@@ -489,6 +609,40 @@ def test_connection_settings_round_trip(tmp_path) -> None:
     wrong.connection.weights = ConnectionWeights(0.5, 0.5, 0.5)
     with pytest.raises(ValueError, match="sum to one"):
         wrong.validate()
+
+
+def test_the_defaults_are_the_progressive_model() -> None:
+    """Switched together, so that no default runs half of one model and half of another."""
+    from microgrid_expansion.config import ModelConfig
+    from microgrid_expansion.scenarios.uncertainty_space import UncertaintySpace
+    from microgrid_expansion.settings import default_settings
+
+    settings, cfg = default_settings(), ModelConfig()
+    assert settings.connection.mode == UncertaintySpace().demand.connection_mode \
+        == "progressive"
+    assert (cfg.tree_mode, cfg.node_year, cfg.centre_features) == ("persistent", "last",
+                                                                   True)
+    assert cfg.maturity_months == settings.maturity_months == 0, "a site being energised"
+    with pytest.raises(ValueError, match="'both' is not built"):
+        ModelConfig(node_year="both").validate()
+
+
+def test_the_certified_year_is_the_root_s() -> None:
+    import inspect
+
+    from microgrid_expansion.config import ModelConfig
+    from microgrid_expansion.exact import certify
+    from microgrid_expansion.ui import engine
+
+    # The root's span is the plan's years 0 to 4: its first year, or its last.
+    assert certify.certified_year(0, "first") == (0, 0)
+    assert certify.certified_year(0, "last") == (4, 48)
+    assert certify.certified_year(31) == (4, 31 + 48), "the default is the node year's"
+    assert certify.certified_year(7, "last") == (ModelConfig().demand_year(0),
+                                                 7 + 12 * ModelConfig().demand_year(0))
+    # Both callers take it from the same place.
+    for function in (certify.main, engine.size_site):
+        assert "certified_year(" in inspect.getsource(function)
 
 
 def test_the_network_loss_has_a_provenance() -> None:

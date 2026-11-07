@@ -138,7 +138,7 @@ def _persistent(paths: list[ScenarioPath], cfg: ModelConfig) -> ScenarioTree:
     not, each weighted by its share. No connected node then has an unconnected child.
     """
     stage_years = list(cfg.stage_years)
-    fan = list(cfg.regime_fan)
+    fan = list(cfg.fan())
     own_period = cfg.root_period == "root"
     table = _reduce.regime_table(paths, stage_years)
     regimes = _reduce.reduce_regimes(table, cfg.regime_branches)

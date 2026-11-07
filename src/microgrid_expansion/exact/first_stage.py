@@ -802,7 +802,7 @@ def main(argv: list[str] | None = None) -> int:
             "node_year": cfg.node_year,
             # The persistent tree's shape; ``branching`` above shapes the fan.
             "regime_branches": cfg.regime_branches,
-            "regime_fan": list(cfg.regime_fan),
+            "regime_fan": list(cfg.fan()),
             "root_period": cfg.root_period,
             "reduction_error": {str(k): round(float(v), 4)
                                 for k, v in tree.reduction_error.items()},

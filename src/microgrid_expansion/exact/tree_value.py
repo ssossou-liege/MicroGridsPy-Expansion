@@ -98,9 +98,10 @@ def _mean_value_space(settings: ProjectSettings):
 
     The classical mean-value problem is not "the central trajectory with everything else
     still random": it is the one future in which no uncertainty is uncertain. Each axis is
-    therefore made degenerate -- the growth trajectory, the cost future, the resource
-    pathway and the policy target -- and the grid is left as the settings describe it,
-    since a line that is already in is not an uncertainty to collapse.
+    therefore made degenerate -- the growth trajectory, the connection trajectory, the cost
+    future, the resource pathway and the policy target -- and the grid is left as the
+    settings describe it, since a line that is already in is not an uncertainty to collapse.
+    Under the whole census the connection draws nothing, and its weights are not read.
     """
     space = space_from_settings(settings)
     middle = lambda values: len(values) // 2                      # noqa: E731
@@ -111,7 +112,8 @@ def _mean_value_space(settings: ProjectSettings):
     policy = replace(space.policy, probabilities=tuple(
         1.0 if i == middle(space.policy.penetration_levels) else 0.0
         for i in range(len(space.policy.penetration_levels))))
-    demand = replace(space.demand, trajectory_probabilities=(0.0, 1.0, 0.0))
+    demand = replace(space.demand, trajectory_probabilities=(0.0, 1.0, 0.0),
+                     connection_probabilities=(0.0, 1.0, 0.0))
     economic = replace(space.economic, scenario_probabilities=(0.0, 1.0, 0.0))
     return replace(space, demand=demand, economic=economic, resource=resource,
                    policy=policy)

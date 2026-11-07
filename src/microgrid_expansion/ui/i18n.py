@@ -1004,20 +1004,18 @@ STRINGS: dict[str, dict[str, str]] = {
                                 "fr": "Trajectoire de raccordement de l'année certifiée"},
     "f.connection_trajectory.hint": {
         "en": "How many of the census's households are on the grid in the year that is "
-              "certified, and how fast they joined. Low follows the reference village that "
-              "connected a fifth of its households, high the one that has connected three "
-              "fifths and is still rising, central lies between them; a village with a plant "
-              "and its own record is bracketed by that record. It applies once the "
-              "connection is progressive. Until then every household of the census is "
-              "connected from the first month, and this changes nothing.",
+              "certified, the last before the plan's first milestone, and how fast they "
+              "joined. Low follows the reference village that connected a fifth of its "
+              "households, high the one that has connected three fifths and is still "
+              "rising, central lies between them; a village with a plant and its own record "
+              "is bracketed by that record.",
         "fr": "Combien de ménages du recensement sont raccordés pendant l'année certifiée, "
-              "et à quel rythme ils l'ont été. La trajectoire basse suit le village de "
-              "référence qui a raccordé le cinquième de ses ménages, la haute celui qui en "
+              "la dernière avant le premier jalon du plan, et à quel rythme ils l'ont été. "
+              "La trajectoire basse suit le village de référence qui a raccordé le "
+              "cinquième de ses ménages, la haute celui qui en "
               "a raccordé les trois cinquièmes et continue de croître, la centrale se tient "
               "entre les deux ; un village qui a déjà sa centrale et son propre relevé est "
-              "encadré par ce relevé. Elle s'applique quand le raccordement est progressif. "
-              "D'ici là, tous les ménages du recensement sont raccordés dès le premier mois, "
-              "et ce choix ne change rien."},
+              "encadré par ce relevé."},
     "f.maturity": {"en": "Age of the connection", "fr": "Ancienneté du raccordement"},
     "f.maturity.hint": {
         "en": "Zero for a new site; twelve for a grid in service for a year.",

@@ -21,13 +21,32 @@ from microgrid_expansion.config import ModelConfig
 from microgrid_expansion.exact.tree_value import Case, TRAJECTORY_WEIGHTS, derive, run_case
 
 TINY = dict(stage_years=(0, 5), branching=(1, 2), n_mc_paths=20, n_rep_days=2)
+#: The tree and the village the stored trees were drawn with, set explicitly. The defaults
+#: now connect households progressively, hold each regime along a persistent path and read
+#: a node's demand at the end of its span; what these tests hold does not depend on that.
+STORED = dict(tree_mode="fan", node_year="first", centre_features=False, maturity_months=12)
+
+
+def _census(settings):
+    """A project with the whole census connected at village month 0, as before."""
+    settings.connection.mode = "census"
+    return settings
 
 
 @pytest.fixture(scope="module")
 def free_and_held():
     """One small tree, costed with its root free and then held at a smaller plant."""
-    cfg = ModelConfig(**TINY)
+    from microgrid_expansion.exact import tree_value
+
+    cfg = ModelConfig(**TINY, **STORED)
     cfg.site = "Samionta"
+    weighted = tree_value._settings_with
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(tree_value, "_settings_with", lambda w: _census(weighted(w)))
+        return _free_and_held(cfg)
+
+
+def _free_and_held(cfg):
     free = run_case(Case(name="free", weights=TRAJECTORY_WEIGHTS["thirds"]), cfg,
                     verbose=False)
     root = dict(free["programme"]["root"])
@@ -194,10 +213,11 @@ def test_the_chains_reassemble_into_the_tree_they_were_carved_from() -> None:
     from microgrid_expansion.timedomain import reduce_to_rep_days
     from microgrid_expansion.tree import build_tree
 
-    cfg = ModelConfig(**TINY)
+    cfg = ModelConfig(**TINY, **STORED)
     cfg.site = "Samionta"
-    settings = default_settings()
-    tree = build_tree(sample_scenario_paths(cfg, space_from_settings(settings)), cfg)
+    settings = _census(default_settings())
+    tree = build_tree(sample_scenario_paths(cfg, space_from_settings(settings), settings),
+                      cfg)
     rep = {n: reduce_to_rep_days(_NodeInstance(tree.node_data[n], settings), cfg.n_rep_days)
            for n in tree.nodes}
 

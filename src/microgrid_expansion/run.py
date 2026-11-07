@@ -153,8 +153,8 @@ def _configuration(args) -> tuple[ModelConfig, "ProjectSettings"]:
                       horizon_years=settings.economics.horizon_years,
                       discount_rate=settings.economics.discount_rate,
                       network_loss_fraction=args.network_loss,
-                      tree_mode=getattr(args, "tree_mode", "fan"),
-                      node_year=getattr(args, "node_year", "first"))
+                      tree_mode=getattr(args, "tree_mode", ModelConfig.tree_mode),
+                      node_year=getattr(args, "node_year", ModelConfig.node_year))
     cfg.validate()
     return cfg, settings
 
@@ -190,10 +190,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--node-year", default=defaults.node_year,
                         choices=["first", "last"],
                         help="the year of its span whose demand a node carries")
+    parser.add_argument("--out", type=Path, default=RESULTS_DIR,
+                        help="directory the summary is written to")
     args = parser.parse_args(argv)
 
     cfg, settings = _configuration(args)
-    run(cfg, settings=settings)
+    run(cfg, out_dir=args.out, settings=settings)
     return 0
 
 

@@ -116,7 +116,7 @@ def test_a_single_regime_tree_is_the_fan_tree() -> None:
     # The fan with its features centred, as the persistent tree always has them: one regime
     # is one cost future, whose prices do not vary, and the two scalings differ exactly there.
     fan = build_tree(paths, ModelConfig(stage_years=(0, 5, 10), branching=(1, 2, 2),
-                                        centre_features=True))
+                                        tree_mode="fan", centre_features=True))
     held = build_tree(paths, _persistent(stage_years=(0, 5, 10), regime_fan=(1, 2, 2),
                                          root_period="root"))
     assert held.nodes == fan.nodes
@@ -147,7 +147,7 @@ def test_moving_the_root_period_below_it_keeps_the_programme_value() -> None:
     paths = _ensemble(n=30, stage_years=(0, 5), connections=("census",),
                       growths=("central",), costs=("central",))
     fan_cfg = ModelConfig(stage_years=(0, 5), branching=(1, 2), n_rep_days=2,
-                          centre_features=True)
+                          tree_mode="fan", centre_features=True)
     values = []
     for cfg in (fan_cfg, _persistent(stage_years=(0, 5), regime_fan=(1, 2))):
         tree = build_tree(paths, cfg)
@@ -254,7 +254,7 @@ def test_a_flat_channel_does_not_decide_the_medoid() -> None:
 def test_the_distortion_report_is_complete() -> None:
     """Five measures in both nestings, on one ensemble, and none lost in the persistent one."""
     paths = _ensemble(n=120)
-    fan = build_tree(paths, ModelConfig(n_rep_days=2))
+    fan = build_tree(paths, ModelConfig(n_rep_days=2, tree_mode="fan"))
     held = build_tree(paths, _persistent())
     measures = ("stage", "regime", "coverage", "plausibility", "persistence_violations")
     for tree in (fan, held):
@@ -297,7 +297,7 @@ def test_the_last_year_moves_only_the_demand(monkeypatch) -> None:
     runs = {}
     for year in ("first", "last"):
         cfg = ModelConfig(stage_years=(0, 5, 10), branching=(1, 2, 2), n_mc_paths=3,
-                          node_year=year, horizon_years=25)
+                          node_year=year, horizon_years=25, maturity_months=12)
         runs[year] = assemble.sample_scenario_paths(cfg)
     spans = {0: 5, 5: 5, 10: 15}
     for first, last in zip(runs["first"], runs["last"]):

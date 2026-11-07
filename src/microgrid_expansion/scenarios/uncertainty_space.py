@@ -43,9 +43,10 @@ class DemandAxis:
     #: ``independent`` draws it apart from the growth trajectory; ``paired`` takes each
     #: reference village's connection with its own growth, and draws nothing.
     connection_pairing: str = "independent"
+    #: ``progressive`` draws the connection trajectory, as the project's default does;
     #: ``census`` holds a single trajectory, the whole census at village month 0, and
     #: draws nothing either.
-    connection_mode: str = "census"
+    connection_mode: str = "progressive"
 
 
 @dataclass

@@ -796,15 +796,16 @@ class InfrastructureSpec:
                "the energy injected; the operator's own energy balance gives 15 to 16 % over "
                "a longer window. Samionta has no feeder meter and carries Gbowele's figure",
         verified=False,
-        note="the level is consistent with October 2026 and the form is not settled. The "
-             "unexplained gap of that month, 18.2 % at Samionta and 19.1 % at Gbowele, "
-             "includes the street lighting, which the model already counts as a load, and "
-             "at Gbowele the plant's own supply; net of them it is about (516 - 181) / 2 533 "
-             "kWh injected at Samionta, close to 13 %, and (402 - 140) / 2 338 on Gbowele's "
-             "distribution side, close to 11 %. What remains open is the form: at Gbowele "
-             "the distribution-side gap is roughly flat across the hours of the day rather "
-             "than proportional to the load, so a share of the injection may not be the "
-             "right shape for it"))
+        note="the level is consistent with October 2026 and the form is not the measured "
+             "one. The unexplained gap of that month, 18.2 % at Samionta and 19.1 % at "
+             "Gbowele, includes the street lighting, which the model already counts as a "
+             "load, and at Gbowele the plant's own supply; net of them it is about "
+             "(516 - 181) / 2 533 kWh injected at Samionta, close to 13 %, and "
+             "(402 - 140) / 2 338 on Gbowele's distribution side, close to 11 %. The loss "
+             "measured is flat over the day, about 0.3 kW at Gbowele and uncorrelated with "
+             "the load; Samionta's residual, which mixes the loss with other uses, is flat "
+             "too, at about 0.6 kW. The share of the injection is kept, and the form is left "
+             "to the work on the distribution network"))
 
     provenance: Provenance = field(default_factory=lambda: Provenance(
         source="", verified=False,
@@ -1000,11 +1001,10 @@ class ConnectionSettings:
     the households joining in monthly cohorts that each age on their own clock.
     """
 
-    #: ``census`` connects the whole census at village month 0, the model before
-    #: progressive connection; ``progressive`` follows the fitted curves. It stays at
-    #: ``census`` until the stored results are recomputed under the other, so that the
-    #: change of default and the recomputation are one step.
-    mode: str = "census"
+    #: ``progressive`` follows the fitted curves; ``census`` connects the whole census at
+    #: village month 0, the model before progressive connection, kept to reproduce what was
+    #: computed under it.
+    mode: str = "progressive"
     #: Trajectory of the single certified year.
     trajectory: str = "central"
     weights: ConnectionWeights = field(default_factory=ConnectionWeights)
@@ -1019,14 +1019,15 @@ class ConnectionSettings:
     brownfield_bracket: str = "own"
     provenance: Provenance = field(default_factory=lambda: Provenance(
         source="logistic fit of the connected household stock in the operator's customer "
-               "roster, Samionta from June 2023 and Gbowele from June 2024 to May 2026 "
-               "(demand/build_connection_curves.py, "
+               "roster and the meter archive, Samionta from June 2023 and Gbowele from "
+               "June 2024 to October 2026 (demand/build_connection_curves.py, "
                "data/ramp_params/reference/connection_curves.csv)",
         verified=False,
-        note="Samionta's plateau is identified, 49 households (s.e. 3.0, optimistic for a "
-             "cumulative series); Gbowele's is not, and the high trajectory reads it as "
-             "at least the 92 households connected. Two villages bracket a third: the "
-             "spread between them is carried, the within-site errors are not drawn"))
+        note="Samionta's plateau is identified, 49 households (s.e. 1.9, optimistic for a "
+             "cumulative series); Gbowele's is not: 96 households are connected and its "
+             "record rejects any plateau below 124, which the high trajectory reads as its "
+             "plateau. Two villages bracket a third: the spread between them is carried, "
+             "the within-site errors are not drawn"))
 
 
 @dataclass
@@ -1165,7 +1166,9 @@ class ProjectSettings:
     site: str = "Samionta"
     year: int = 2025
     demand_trajectory: str = "central"
-    maturity_months: int = 12
+    #: The village age at the plan's year 0: zero for a site being energised. A village with
+    #: a plant and a record derives its age from the record instead.
+    maturity_months: int = 0
     seed: int = 0
 
     #: What the tree is drawn over. ``demand_trajectory`` above is a different question: it

@@ -2,7 +2,10 @@
 
 *Design specification, written 2026-11-06 (session 1 of the series). Session 2 implemented
 sections 4 to 7 and 10, and session 3 section 9, both on 2026-11-07; section 9.7 records how
-section 9 was built, and section 12 what each session measured. Section 8 spans both.*
+section 9 was built, and section 12 what each session measured. Section 8 spans both.
+Session 4, the same day, closed the record (section 4.7), applied the author's decisions on
+the points of section 14 and switched the defaults together (section 15); session 4 bis
+recomputes the results.*
 
 Decisions D1 to D3 (section 2) are the author's and are not reopened here. Every other choice
 is settled in this document. The few that are the author's to confirm are marked
@@ -118,8 +121,8 @@ month `u` holds `n_k(u) = N_k(u) - N_k(u - 1)` households, with `N_k(-1) = 0`.
 
 The instant limit `r = inf` gives `l(a) = 1` for `a >= m` and 0 before. The schedule
 `(s, r, m) = (1, inf, 0)` connects every household at village month 0, which is the model as
-it stands: it is kept as the degenerate case of I4 and as the shipped default until session 4
-(section 4.6).
+it stood: it is kept as the degenerate case of I4, and it was the shipped default until
+session 4 made progressive connection the default (section 4.6).
 
 ### 4.2 Estimating it from the meter records
 
@@ -149,6 +152,8 @@ Procedure, in a new offline module `demand/build_connection_curves.py`:
    complete month the roster covers. Report `T`, the origin month and the village ages they
    imply in November 2026, beside the ages since energisation the audit used (33 and 25
    months). The archive was found to end on 1 June 2026; the session confirms the month.
+   *As shipped since session 4:* the tables hold the extended record of section 4.7, whose
+   `T` is October 2026, the archive's last complete month.
 2. Least squares of `N(a) = K * l(a)` over `(K, r, m)`, with `N(T) <= K <= H` (the site's
    census of households) and `r > 0`. Report the estimates and their standard errors from the
    Jacobian, stating that a cumulative series is serially correlated and that these errors
@@ -262,9 +267,9 @@ class ConnectionWeights:
 
 @dataclass
 class ConnectionSettings:
-    #: "census" connects the whole census at village month 0, the model before progressive
-    #: connection; "progressive" follows the fitted curves.
-    mode: str = "census"
+    #: "progressive" follows the fitted curves; "census" connects the whole census at
+    #: village month 0, the model before progressive connection.
+    mode: str = "progressive"
     #: Trajectory of the single certified year.
     trajectory: str = "central"
     weights: ConnectionWeights = field(default_factory=ConnectionWeights)
@@ -276,10 +281,11 @@ class ConnectionSettings:
 ProjectSettings.connection: ConnectionSettings
 ```
 
-`mode` stays `"census"` until session 4 changes it, so that sessions 2 and 3 move no stored
-result and every existing test keeps passing; the change of default and the recomputation
-belong together. `validate()` refuses unknown names and weights that do not sum to one, and
-`from_dict` round-trips the block.
+`mode` stayed `"census"` through sessions 2 and 3, so that they moved no stored result and
+every existing test kept passing. Session 4 changed it to `"progressive"` together with the
+tree's defaults (section 15), and session 4 bis recomputes the results; the tests that pin
+the stored results set `"census"` explicitly. `validate()` refuses unknown names and weights
+that do not sum to one, and `from_dict` round-trips the block.
 
 ### 4.7 The record, the silent meters and the census (decisions A to C)
 
@@ -294,8 +300,9 @@ chooses:
 - `extended`: the roster and every customer of the meter archive the roster does not list,
   up to the archive's last complete month, October 2026. Such a customer is connected in the
   month of its first reading. Its type comes from the operator's field census, received on
-  7 November 2026: its category column first, its type column where that is empty, read as a household
-  of that category (HH1 to HH3), a productive user (SME) or a church (CHU). Where the census
+  7 November 2026: its type column first and its category column where that is empty (session 4;
+  the category column was read first before), read as a household of that category (HH1 to
+  HH3), a productive user (SME) or a church (CHU). Where the census
   gives no type, it is read off the consumption by a documented rule
   (`build_connection_curves.classify_meter`): a meter drawing at least 35 % of its energy
   between 07:00 and 18:00, or 1.5 kWh a day or more, is a productive user; one drawing at
@@ -312,8 +319,91 @@ rule on these descriptors does much better: a nearest-centroid classifier on the
 shape reaches 70 % in cross-validation, against 69 % for calling every customer a household.
 The census differs from the roster for 67.6 % of the 204 (its category column calls HH2 most of
 the roster's HH1 households and all its HH3), and for 28 % by its type column alone. Both are
-above the 5 % the author set for the extended record, so **the shipped tables hold the roster
-record**, and the extended one is a sensitivity, written on request.
+above the 5 % the author set for the extended record, so the tables of sessions 2 bis and 3
+held the roster record.
+
+**The record shipped since session 4 is the extended one** (section 14, point 11). The 5 %
+test measured the wrong thing. What the record feeds is the connected stock, not the types,
+and the codes the profile types can move the stock at `T` by at most 4 households of the 96
+Gbowele has on its grid, and by 1 of Samionta's 49 (`build_connection_curves.profile_bound`;
+a test holds the bound under a twentieth of the stock). The roster, meanwhile, ends five months
+before the meters do, and Gbowele connects in campaigns: 16 households and 28 productive users
+in November and December 2025, 8 households in April 2026 and 35 in May. Between June and
+October the meters show 6 more households, 4 of them in October, and 3 that left on a failed
+meter; with 0074GBO, connected in December 2025 and absent from the roster, Gbowele has 93
+households on its grid at the end of May and 96 at the end of October, against the roster's
+92 in May. The census is
+read type column first: its category column follows a taxonomy of its own for the household
+tiers (it puts 78 of the roster's 128 HH1 in HH2), and read that way it differs from the roster
+for 27.9 % of the 204 customers rather than 67.6 %. The profile types only what the census
+leaves untyped; the change of column moves one code, 0074GBO, from HH2 to HH1.
+
+Two figures given when this was decided do not hold, and the decision does not rest on them.
+The roster record's own bracket puts Gbowele at 93, 101 and 105 households in October 2026
+(village age 28 months), and the meters count 96, within it, not 123: 123 was the lower end of
+Gbowele's plateau interval under the extended record before the corrections below (124 after
+them), read as the stock. Nor did about thirty households connect in October; four did. What
+the extended record changes is Gbowele's bracket: its plateau's lower bound rises from 92
+households to 124, the logistic reading the campaign of May 2026 as the middle of a rise that
+the five slow months after it do not undo (section 14, point 20). The roster record stays a
+sensitivity, `build_connection_curves --record roster`.
+
+**The archive, corrected (session 4) [decision 3].** A reading belongs to the code that held
+the meter when it was taken, and a reading under a test code belongs to no customer. The
+archive keeps neither the meter serial nor the code as the export recorded it, and the
+readings of 0193GBO had been dropped when it was built, so it could not be corrected in place:
+it was rebuilt from the operator's exports by `build_meter_archive`, whose rules changed three
+ways. A code readable once its spaces are removed is that code, before the register's owner of
+the meter (the register is written after the fact); a test code ("test1" to "test11") is
+nobody's; and a code the roster or the field census knows is a customer whatever the type of
+its meter, the exclusion by type staying for the codes neither knows. Under the old rules the
+rebuild reproduces the archive to the reading, so the differences are the corrections alone:
+
+- *0074GBO.* Its readings of 2025 were recorded under "test1" on the meter it holds today, and
+  given to it through the register, hence a connection month of January 2025. Its readings
+  from 17 December 2025 to 11 May 2026, recorded as " 0074GBO" on the meter 0173GBO holds
+  today (the two exchanged meters on 11 May 2026), had gone to 0173GBO and been lost under its
+  own. It is now connected in December 2025, its first month under its own code, with 5 721
+  readings more, and 0173GBO loses 90 quarter-hours that were 0074GBO's.
+- *Five more customers of Gbowele* held a meter of the test period and inherited its months
+  under a test code: 0079GBO, 0169GBO, 0187GBO, 0190GBO and 0205GBO, each with a first reading in
+  January 2025. They are roster customers, whose connection month is the roster's, so the stock
+  does not move; their first readings now fall in their own months.
+- *Samionta.* A meter recorded "0048SAM " from June 2024 to February 2025 and "0097SAM" since,
+  and the register gives it to the second: eight months of 0048SAM were 0097SAM's. Both are
+  roster customers, and nothing in the stock moves.
+- *0193GBO*, a productive user of the roster whose meter the register types as a bench meter,
+  comes back with its 29 259 readings since December 2025: Gbowele's productive users at `T`
+  rise from 43 to 44. *0004SAM*, a place of worship, recovers three weeks of July 2024 on the
+  meter that later served the plant room.
+
+In the stock and the curves this moves one household's month: Samionta's curves and stock are
+unchanged, and at Gbowele the stock from January to November 2025 is one lower, the plateau's
+lower bound goes from 123 to 124 households, the rate at the census from 0.1135 to 0.1156 a
+month and that of the lower bound from 0.1311 to 0.1329. The archive is read at generation as
+well, and the calibration chain of `data/README.md` was run again on it: the segmentation loses
+nine household-months and gains eight, all before their household's connection (0169GBO and
+0187GBO under a test code, 0048SAM's recovered months), and one label, 0173GBO in May 2026, moves
+from archetype 1 to inactive. Archetype 1 is measured on 1 256 household-months rather than
+1 258, its mean peak at 40.7 W rather than 41.2; the mixture law moves in the 4-6 band only, the
+inactive share of HH1 going from 2.15 to 2.40 %; Gbowele's productive mix counts 43 enterprises
+rather than 42; and the exploratory clustering, a table for inspection, renumbers two of its
+clusters. The scaling factors of `archetype_scaling.csv` were not fitted again: their own fit
+leaves residuals of about 8 % on the energy and 10 % on the peak, and fitting them again would
+add Monte-Carlo noise of that order for a shift of 1.3 %. The community profiles read another
+archive, which already leaves the recovered codes out, and do not move.
+
+Not corrected, because the rule does not reach them: readings with an empty code before the
+owner's own code first appears on the meter. At Samionta those are the households' own trial
+period, August to December 2023, on the meters they kept, and dropping them would remove
+72 000 readings of real consumption. At Gbowele two meters recorded an empty code from the
+morning of 15 January 2025, when the eleven test meters were installed, until their owners'
+codes appeared: 0204GBO's, in December 2025, and 0023GBO's, in February 2025. They are most
+likely two more meters of the test bench, and 0204GBO is a household of the register, whose
+five months of 2025 before its connection, all at zero, enter the segmentation (not the
+mixture law, which starts at the connection); 0037GBO and 0154GBO carry
+months of empty codes before their roster dates around the commissioning of the plant. These
+are a question for the operator (section 14, point 19).
 
 **Silent meters [decision B].** A meter whose last reading, a zero included, falls three
 months or more before the end of the archive has failed. According to the operator a failed
@@ -345,6 +435,14 @@ definition of the inactive state (`build_monthly_household_clusters`: `total_kWh
 the stock, the active count is a sum of independent draws, which sets the standard deviation.
 As a sensitivity, the households whose failed meter was not replaced are kept in the stock and
 counted inactive on the meters.
+
+*Decided (session 4, section 14, point 12).* A household with no reading at all in month `T`
+is not observed, and it leaves both sides of the test: the mixture law was estimated on months
+with readings, so a month without any is not an observation of the inactive state. This reading
+was chosen after the result was seen, the criterion as first worded having failed on the
+households without a reading and on them alone. The other reading, those households counted
+inactive, is kept as a reported sensitivity (`active_check` returns both, `within` and
+`within_counted_inactive`).
 
 ## 5. Cohort ageing in the demand generator (session 2)
 
@@ -421,9 +519,13 @@ only, so a schedule with fewer connected households makes every simulated year c
   divides a count among the classes by the village's own measured mix, by largest remainders;
   that mix is the share of the village's own metered enterprises in each class, so at `T` the
   split is the observed state in whole numbers (14 at Samionta, 42 at Gbowele under the roster
-  record). It is the simplest form that reproduces the observed state at `T` exactly: nothing
-  is drawn on the record, and beyond it the observed users stay and only the rule's
-  increment is drawn, never negative. A site that declares its own enterprises
+  record). Under the extended record shipped since session 4 the record holds 16 and 44,
+  customers of the archive the roster does not list among them, while the mix rests on the 14
+  and 43 enterprises of the roster metered over the last year: the split keeps the total and
+  puts each class within one of its share. It is
+  the simplest form that reproduces the observed count at `T` exactly: nothing is drawn on the
+  record, and beyond it the observed users stay and only the rule's increment is drawn, never
+  negative. A site that declares its own enterprises
   (`productive_units` or `productive_mix`) keeps its declaration instead.
 
 Measured against the meters (S2-A6), counting customers of type productive user with more
@@ -502,13 +604,25 @@ much of the village is there.
 | C. The settled village | the first year in which 95 % of the plateau is connected and every cohort is in the 25+ band | the typical year of most of the horizon, a natural base for the tariff | years away under a slow trajectory; the year nothing is decided for |
 | D. The observed year | brownfield only: the year starting at the plan's year 0 from the observed state | the real village | brownfield only |
 
-Default **B**. While the tree's convention is the first year of a span (today), B is A for a
-new site and D for a brownfield one, so nothing moves until that convention does; under the
-convention recommended in section 9.3 it becomes the plan's year 4. Command line:
-`certify --connection {low,central,high}`, defaulting to `settings.connection.trajectory`; the
-summary JSON records the connection trajectory, the village age and the connected stock by
-category. `--brownfield` also switches the demand to the observed state of section 4.5, which is
-the run the real Samionta still lacks: 41 months, a few dozen households, its own plant.
+Default **B**. While the tree's convention is the first year of a span, B is A for a new site
+and D for a brownfield one; under the convention of section 9.3 it is the plan's year 4.
+Command line: `certify --connection {low,central,high}`, defaulting to
+`settings.connection.trajectory`; the summary JSON records the connection trajectory, the
+village age and the connected stock by category. `--brownfield` also switches the demand to
+the observed state of section 4.5, which is the run the real Samionta still lacks: 41 months,
+a few dozen households, its own plant.
+
+*As built (session 4).* `exact/certify.py` reads the node year: `certified_year(year0_age,
+node_year)` returns the plan year the certified year is, `ModelConfig.demand_year(0)`, and the
+village age at its first month, the year-0 age plus twelve months a year. Under the default
+`node_year = "last"` that is the plan's year 4, and the village age 48 months for a new site
+(year-0 age 0) or the derived year-0 age plus 48 for a village with its record.
+`certify --node-year first` certifies the plan's year 0, options A and D. The summary records,
+under `connection`, the node year, the plan year, the village age of the certified year, the
+year-0 age and whether it was derived, and the connected stock by category in the first and
+the last month of the year; `--out` writes it elsewhere than `results/`, and a brownfield run
+carries `_brownfield` in its name. The interface's certificate (`ui/engine.size_site`) takes
+its year from the same function.
 
 ## 9. Persistent scenario tree (session 3)
 
@@ -578,7 +692,7 @@ sub-problems. Default **`last`** for the session-4 runs, the conservative choice
 that the tree is worth something, with `first` kept to reproduce today and `both` measured once
 on Samionta in session 4 to state the bias. It moves the demand only: the climate series exist
 at the milestone years, and prices are the milestone's. Field `ModelConfig.node_year`, default
-`first` until session 4.
+`first` until session 4 and `last` since. `both` is not built (section 14, point 18).
 
 ### 9.4 The root's own period [decision 6]
 
@@ -645,7 +759,10 @@ nodes today), and a tree relaxation took about 6.6 minutes a box at 46 nodes.
 **[decision 7]** Default R = 9 with no fan, which keeps the programme the size it is: nine
 regimes are exactly the regimes of `pairing = "paired"`, or nine medoids of the 27 independent
 ones. Fields: `ModelConfig.tree_mode` (`"fan"` or `"persistent"`, default `"fan"` until session
-4), `ModelConfig.regime_branches = 9` and `ModelConfig.regime_fan = (1, 1, 1, 1, 1)`, root first.
+4 and `"persistent"` since), `ModelConfig.regime_branches = 9` and `ModelConfig.regime_fan`,
+root first. Since session 4 `regime_fan` defaults to `None`, one child at every milestone of
+the calendar, so that the default tree accepts any stage calendar; on the five milestones it is
+`(1, 1, 1, 1, 1)`, and `ModelConfig.fan()` returns the tuple.
 
 ### 9.7 As built (session 3)
 
@@ -694,8 +811,9 @@ stays the default.
   plausibility came out zero. `_scaled` now centres the features and sets to zero a channel
   whose spread is below a billionth of its magnitude. The persistent builder, the regime
   features and the distortion always use it. The fan uses it only under
-  `ModelConfig.centre_features = True`; the default stays `False`, so that the fan and its
-  objective are those of the stored results (section 14, point 15).
+  `ModelConfig.centre_features = True`; the default stayed `False` through session 3, so that
+  the fan and its objective were those of the stored results, and is `True` since session 4
+  (section 14, point 15).
 - **Regime features** are the unscaled stage features of section 9.2, grid channel included,
   averaged over a regime's paths, concatenated over stages 1 to S-1, then centred and scaled
   across regimes. The k-medoids is weighted by regime mass.
@@ -714,7 +832,7 @@ stays the default.
   years, which changes how the programme is indexed, for a bias `"first"` and `"last"`
   bracket. Session 4 decides whether it is needed. `exact/certify.py` does not read
   `node_year`, so option B of section 8 stays the first year of the span until session 4 makes it
-  follow.
+  follow. *Session 4:* it reads it (section 8), and `both` stays refused.
 - **Distortion (9.5), on one scale.** Every distance of `tree.distortion` is taken in the stage
   features of the whole ensemble, scaled by their spread across it, so that the two trees are
   measured with one ruler. `tree.reduction_error` keeps its meaning, the error of each reduction
@@ -770,6 +888,16 @@ load is still inside the gap. And the form: a share of the injection (today) or 
 share. The measured gap does not follow the hourly load, and under progressive connection a
 share shrinks with the demand where a constant would not.
 
+**Decided (session 4).** The loss stays 13 % of the energy injected, proportional. The 18 to
+19 % gap of October 2026 included the street lighting; net of it, the gaps are about 13 % at
+Samionta and 11 % at Gbowele, so the level holds and the 19 % sensitivity of section 15 is
+dropped. The loss measured is flat over the day: about 0.3 kW at Gbowele, uncorrelated with the
+load, and Samionta's residual, which mixes the loss with other uses, is flat too, about 0.6 kW.
+Its form is left to the work on the distribution network, which will model the conductors
+themselves. `network_loss_provenance` says so and stays unverified, the form being the
+measured one's opposite: a share shrinks with the demand of a village still connecting, where
+the measured loss does not.
+
 ## 11. Tests: properties, not snapshots
 
 Session 2:
@@ -816,6 +944,30 @@ operating-only node the programme's value is the fan's. Four tests were added:
 fan that branches at the root) and `test_the_tree_has_the_size_section_9_6_gives`, on four
 rows of the table of section 9.6. Every ensemble there is synthetic; the file runs in about
 twenty seconds.
+
+Session 4, in `tests/test_progressive_connection.py`:
+
+| Test | Property |
+|---|---|
+| `test_the_tables_hold_the_extended_record` | the curves end at the archive's last complete month at both villages, the archive's own customers enter the record, and the profile's types can move the stock at `T` by no more than a twentieth of it |
+| `test_the_census_type_column_is_believed_before_its_category` | on a synthetic workbook, the type column decides, the category column fills its blanks, and a type the census does not use leaves the code untyped |
+| `test_a_reading_belongs_to_the_code_that_held_the_meter` | on synthetic exports: a test code is nobody's, a code readable once its spaces are removed is that code before the meter's owner, an unreadable one goes to the owner, a known code is a customer on a bench meter and an unknown one is not, and a recovered reading never displaces a recorded one |
+| `test_the_archive_holds_the_corrected_codes` | 0074GBO connects in December 2025, 0193GBO records as a productive user, and the six customers who inherited a test meter's months start with their own |
+| `test_the_templates_declare_the_churches_their_record_holds` | each template declares as many places of worship as its record holds on the grid at `T`, all connected before the plan's year 0 |
+| `test_the_active_households_are_counted_over_the_observed_ones` | S2-A5 holds on the shipped record at both villages, over the households with a reading in `T` |
+| `test_the_defaults_are_the_progressive_model` | the settings, the uncertainty space and the configuration switched together, and `both` is refused |
+| `test_the_certified_year_is_the_root_s` | the certified year is the plan's year 0 under `first` and year 4 under `last`, the village age twelve months a year older, and the command line and the interface take it from one function |
+
+Two tests were rewritten for the extended record: the brownfield state is compared net of
+the record's departures, and the split of the observed productive users keeps its total and
+puts each class within one of its share. The tests that draw trees or simulate the template
+villages set the stored settings explicitly (`connection.mode = "census"`, `tree_mode =
+"fan"`, `node_year = "first"`, `centre_features = False`, `maturity_months = 12`), so that they
+keep holding what they held, on the census pools: `test_layer4_tree.py`,
+`test_the_first_stage_can_be_certified.py`, `test_the_plant_already_built_is_not_bought_again.py`,
+`test_the_project_reaches_every_calculation.py`, `test_the_tree_is_worth_what_it_costs_to_ignore.py`
+and `test_the_tree_says_what_futures_it_weighs.py`; the fans of `test_persistent_tree.py`
+name their mode.
 
 ## 12. Acceptance criteria
 
@@ -959,6 +1111,116 @@ scaling moves only the fan's year 0, where every price is the same: its later me
 unchanged, and its root moves from path 0, the first drawn, to path 733 under the census and
 781 under progressive connection, which are also the persistent root's.
 
+Session 4 (2026-11-07) is done when the record is closed, the author's decisions applied and
+the defaults switched, and the runs of session 4 bis can be planned: the record below, the
+reduced runs after it. Nothing in `results/` was written.
+
+**The record shipped**, extended, after the corrections of section 4.7:
+
+| Village | Origin | `T` | Village age at `T` | Households on the grid at `T` | Productive users at `T` | Plateau interval at 95 % | Identified |
+|---|---|---|---|---|---|---|---|
+| Samionta | June 2023 | October 2026 | 40 months | 49 | 16 | 49 to 53 | yes |
+| Gbowele | June 2024 | October 2026 | 28 months | 96 | 44 | 124 to 159 | no |
+
+The curves (`connection_curves.csv`), plateau in households, rate per month, midpoint in
+months of village age:
+
+| Village | Estimate | Profile lower bound | Profile upper bound | Census |
+|---|---|---|---|---|
+| Samionta | 49.0 (s.e. 1.9), 0.131, 13.2 | 49, 0.131, 13.2 | 53, 0.110, 15.0 | 231, 0.040, 68.5 |
+| Gbowele | 159 at its bound, 0.116, 24.3 | 124, 0.133, 20.2 | 159, 0.116, 24.3 | 159, 0.116, 24.3 |
+
+Samionta's curves are those of session 2 bis; at Gbowele the lower bound rose from 92
+households on the roster record to 124 (section 14, point 20). The bracket of a new site
+(section 4.3) is therefore `low` at a share of 0.212, `high` at 0.780 and `central` at 0.496,
+against 0.212, 0.579 and 0.395 on the roster record, and a village with its own record
+follows its own bracket: Samionta 49, 49 and 53 households, Gbowele 124, 141.5 and 159.
+
+**S2-A4**, the connected stock of a new site with each village's census at village ages 12,
+24, 36, 48, 60 and 120 months (48 is the certified year under `last`), the high plateau at
+its default, the profile lower bound:
+
+| Census | `low` | `central` | `high` |
+|---|---|---|---|
+| Samionta, 231 | 23, 39, 47, 48, 49, 49 | 40, 83, 106, 113, 114, 115 | 45, 112, 161, 176, 179, 180 |
+| Gbowele, 159 | 15, 27, 32, 33, 33, 33 | 28, 57, 73, 77, 78, 78 | 31, 77, 110, 121, 124, 125 |
+
+With the census as the high plateau (decision 1's sensitivity), `central` reaches 136 and
+`high` 217 households at Samionta at 48 months, and 93 and 149 at Gbowele. The curves keep
+their order at every age: none crosses another. A village with its own record, from its
+record: Samionta 44 households in January 2026, the plan's year 0 (village age 31), and 48,
+48 and 48 at 36 months, 49, 49 and 53 at 60; Gbowele 50 in January 2026 (age 19), and 113, 120
+and 126 at 36 months, 124, 140 and 157 at 60.
+
+**S2-A5**, in October 2026, over the households connected before it began, net of
+departures:
+
+| Village | Households | Without a reading in `T` | Expected active over the observed (s.d.) | Metered | Within 2 s.d. | Counted inactive instead: expected (s.d.), within | And the failed meters kept: households, expected (s.d.), within |
+|---|---|---|---|---|---|---|---|
+| Samionta | 48 | 0 | 46.2 (1.3) | 46 | yes | 46.2 (1.3), yes | 49, 47.2 (1.3), yes |
+| Gbowele | 92 | 4 | 84.3 (1.9) | 84 | yes | 88.1 (1.9), no | 95, 91.0 (1.9), no |
+
+The criterion holds at both villages under the reading decided (section 4.7); counted
+inactive, the four Gbowele households silent since late August or early September fail it,
+as in session 2 bis.
+
+**S2-A6**, in October 2026, each village under its own growth trajectory: metered 16 at
+Samionta and 44 at Gbowele; anchored on the record 16 and 44; the rule alone, per connected
+household, 11.4 and 60.8, and per active household 11.0 and 58.0. 0193GBO is the one more at
+Gbowele than in session 2 bis.
+
+**What decisions 2 and 3 changed.** Decision 2 changed the type of one code, 0074GBO, from
+HH2 to HH1, which moves one household between categories at Gbowele and nothing in the total.
+Decision 3 moved 0074GBO's connection from January to December 2025, which lowers Gbowele's
+stock by one from January to November 2025 and raises the lower bound of its plateau from 123
+to 124 households, the rate at the census from 0.1135 to 0.1156 a month and that at the lower
+bound from 0.1311 to 0.1329; S2-A5 at Gbowele moves from 84.4 to 84.3 expected over the
+observed, and S2-A6 from 43 to 44 with 0193GBO. Nothing moves at Samionta. Before either,
+the extended record of session 2 bis already had 96 households at Gbowele and 49 at
+Samionta on the grid at `T`.
+
+**Reduced runs under the new defaults** (2026-11-07, Gurobi, sixteen cores, each run alone on
+the machine, written outside `results/`):
+
+| Run | What it is | What it returns | Time |
+|---|---|---|---|
+| `certify --site Samionta` | the greenfield bench at Samionta's census, central connection | plan year 4, village age 48 months (0 at year 0), 113 households in the first month and 114 in the last; 26.0 kW of array on the battery's bus and 19.0 kW on the load's, 115 kWh, 20.0 kW of conversion, the 8 kW set, at 4 262 $/yr, proven, 5.5 % above the cost-optimal bound | 79 s, of which 16 s of certification |
+| `certify --site Samionta --brownfield` | its own plant and record, the central trajectory of its own bracket | plan year 4, village age 79 months (31 at year 0, from the record), 49 households; the standing plant itself (25.5 kW of array in whole modules, 95 kWh, 47.5 kW, 16 kW), nothing added, at 2 057 $/yr, proven | 28 s |
+| `certify --site Gbowele --brownfield` | the same at Gbowele | plan year 4, village age 67 months (19 at year 0), 140 households; 42.2 kW of array on the battery's bus and 12.8 kW on the load's, 150 kWh, 32.5 kW, 16 kW, against the standing 22.45 kWp, 40 kWh and 24 kW, at 4 341 $/yr, proven, 5.9 % | 67 s |
+| `run --mc-paths 100 --rep-days 4` | the persistent tree, Samionta greenfield | 46 nodes, 9 leaves, 26 regimes reduced to 9, no path violating persistence; programme bound 57 223 $ in 12 s, descent from 72 821 to 66 534 $ in 68 s; year-0 plant 35.0 kW and 21.0 kW of array, 135 kWh, 27.5 kW, 8 kW; price of the heuristic 16.3 % | 133 s |
+| `first_stage --mc-paths 100 --rep-days 4 --max-programmes 8 --max-seconds 1200` | the same tree | the same year-0 plant at 66 534 $ against a lower bound of 57 809 $, a gap of 13.1 % with no plant unresolved; 8 boxes, one infeasible, none pruned by the costless bound (17 505 $) | 457 s: tree 24 s, incumbent 118 s, programmes 315 s |
+
+Three remarks. The tree's year-0 plant is larger than the single certified year's: the root's
+span is operated under each of the nine regimes, and the high connection trajectory has 176
+households at 48 months where the certified year has the central one's 113. The brownfield
+certificate of Samionta reports a price of the heuristic of 18 $/yr and 1 835 %: the relative
+figure is read against the cost the dispatch can move, net of the standing plant's annuity,
+which is about a dollar a year when nothing is bought, and only the absolute figure means
+something there (a display defect older than this session). Gurobi warns of 1 537 unknown
+variables in the bounds section of each tree programme: the flows of the root, which operates
+nothing and enters no constraint (section 9.7), and which the modelling layer still bounds.
+
+**For session 4 bis**, with the stored settings (1 000 paths, 64 days, first stage at most 40
+programmes and four hours):
+
+- *Pools.* The 45 progressive pools of Samionta's greenfield tree (village ages 48 to 288
+  months) are in the cache, built in 37.5 minutes on twelve processes together with the six
+  census pools the tests read: about 180 s a pool on the low trajectory, 430 s on the central,
+  640 s on the high and 900 s for the whole census, four simulated years each. They stay valid
+  as long as nothing the demand fingerprint covers changes. Every other tree needs its own
+  45, which on twelve processes take about 12 minutes for Samionta brownfield (some 50
+  households), 35 for Gbowele brownfield (124 to 159), 30 for `first` against `last`, 30 for
+  the census plateau of decision 1 (30 pools) and 35 for 171 households at Gbowele.
+- *A single certified year*: half a minute to two minutes, the simulated year included; the
+  runs above are already at full settings.
+- *`run`*: drawing 1 000 paths from cached pools took 326 s in session 3, and the incumbent of
+  the stored first-stage run, programme and descent at 64 days, 320 s: a quarter of an hour
+  or so with the reduction to representative days.
+- *`first_stage`*: the stored run, a fan of 46 nodes at 64 days, took 2.2 hours, of which 66
+  minutes for the tree and 59 for 40 programmes, 88 s each; the reduced run here spends 39 s
+  a programme at 4 days. Expect 1.5 to 2.5 hours for each first-stage certificate within its
+  four-hour budget, for each village and each case.
+
 ## 13. Files each session touches
 
 Session 2, from the files read in session 1:
@@ -1023,7 +1285,36 @@ Noticed while reading, for whichever session next touches the file:
   session 3.
 - `demand/growth.py`: `main()` prints a French heading.
 - Neither template village declares a place of worship (`community_mix`), whereas two churches
-  are metered at each. It matters for the brownfield runs of session 4.
+  are metered at each. It matters for the brownfield runs of session 4. *Done in session 4.*
+
+Session 4:
+
+- `demand/build_meter_archive.py`: the code that held the meter, test codes, known customers on
+  any meter, `--census`; `data/demand/{sam,gbo}_meter_readings.parquet` rebuilt from the exports;
+- the calibration chain run again on the archive: `archetype_profiles.csv`,
+  `archetype_hourly_shapes.csv`, `mixture_by_maturity.csv`,
+  `mixture_probabilities_type_month.csv`, `pue_class_mix.csv`, `pue_class_profiles.csv` and the
+  tables of the segmentation kept for inspection; `archetype_scaling.csv`,
+  `community_class_profiles.csv` and `pue_connection_intensity.csv` unchanged;
+- `demand/build_connection_curves.py`: the extended record by default, the census's type column
+  first, `profile_bound`, the S2-A5 reading over the observed households; the three tables
+  and `data/demand/archive_customers.csv` rebuilt; `data/README.md`;
+- `sites.py`: two places of worship at each template;
+- `settings.py`: `connection.mode = "progressive"`, `maturity_months = 0`, the provenance of the
+  connection curves and of the network loss;
+- `config.py`: `tree_mode = "persistent"`, `node_year = "last"`, `centre_features = True`,
+  `maturity_months = 0`, `regime_fan = None` and `ModelConfig.fan()`;
+  `scenarios/uncertainty_space.py`: `DemandAxis.connection_mode = "progressive"`;
+  `tree/build_tree.py` and `exact/first_stage.py` read `fan()`;
+- `exact/certify.py`: `certified_year`, `--node-year`, `--out`, the summary fields and the
+  `_brownfield` suffix; `ui/engine.py`: the interface's certificate on the same year, and
+  `ui/i18n.py` and `ui/schema.py`: the hint of the connection trajectory, which no longer says
+  it changes nothing;
+  `run.py`: `--out`, and the defaults of the configuration rather than of the command line's
+  own; `exact/tree_value.py`: the mean-value problem also fixes the connection trajectory;
+- `docs/formulation/model.tex`: the node year, the base of the productive intensity, the network
+  loss and the certified year;
+- `tests/`: the session-4 tests of section 11 and the stored settings where tests pin them.
 
 ## 14. Points left to the author
 
@@ -1036,7 +1327,7 @@ Noticed while reading, for whichever session next touches the file:
 | 5 | Year a tree node stands for (9.3) | last year of its span, from session 4 |
 | 6 | The root's own period operated under every regime (9.4) | yes, through operating-only nodes |
 | 7 | Tree shape (9.6) | nine regimes, no fan: 46 nodes |
-| 8 | Base and form of the network loss (10) | 13 % kept; settled in session 4 |
+| 8 | Base and form of the network loss (10) | 13 % of the injection, proportional, kept (session 4); the form is left to the work on the distribution network |
 | 9 | Growth beyond 24 months (15) | maturity bands unchanged in sessions 2 and 3 |
 
 **The author's choices (2026-11-07).** Points 1 to 9 stand at their defaults. An extra
@@ -1048,27 +1339,40 @@ Left open by the revision, for session 4 unless the author settles them sooner:
 
 | | Question | State |
 |---|---|---|
-| 10 | The census of households. The operator's field census counts 171 households at Gbowele (HH1 144, HH2 16, HH3 11) against the 159 (143, 5, 11) of `sites.py`, and 230 at Samionta against 231 | `sites.py` unchanged, so that no stored result moves; the bound `H` stays 159. With `H` = 171, Gbowele's plateau is still not identified: interval 92 to 171 on the roster record (127 to 171 on the extended one), the census variant at `r` = 0.094 per month and a midpoint at 28.0 months |
-| 11 | Which record the tables hold | the roster record, both typing sources of the extended one exceeding 5 % (section 4.7); a fresh roster, or the field team's types for the seven profile-typed codes, would allow the extended record |
-| 12 | A month without any reading in S2-A5 | counted inactive in the criterion as worded; read as no observation, both villages pass (section 12) |
-| 13 | Meters silent for less than three months | four Gbowele households connected in May 2026 have recorded nothing since late August or early September 2026; by the next export they are failed meters or not |
-| 14 | The productive intensity beyond the record | at Gbowele the rule expects about 0.63 productive users per connected household, against about 0.46 observed at `T` (42 for 92 households); under the anchored rule it only drives the increments after `T` |
+| 10 | The census of households. The operator's field census counts 171 households at Gbowele (HH1 144, HH2 16, HH3 11) against the 159 (143, 5, 11) of `sites.py`, and 230 at Samionta against 231 | **Decided (session 4):** `sites.py` keeps 159 at Gbowele, and 171 is a sensitivity for session 4 bis. With `H` = 171, Gbowele's plateau was not identified on either record in session 2 bis (92 to 171 on the roster record, 127 to 171 on the extended one) |
+| 11 | Which record the tables hold | **Decided (session 4):** the extended record, `T` = October 2026 (section 4.7); the roster record is a sensitivity |
+| 12 | A month without any reading in S2-A5 | **Decided (session 4):** a household without any reading in `T` is not observed and leaves both sides; chosen after the result was seen, the other reading reported as a sensitivity (sections 4.7 and 12) |
+| 13 | Meters silent for less than three months | **Unchanged (session 4):** the four Gbowele households silent for less than three months (0133, 0146, 0196 and 0198GBO) stay in the stock. All four are among the seven roster customers absent from the field census, with 0007, 0137 and 0158GBO, and the question is now put to the operator |
+| 14 | The productive intensity beyond the record | **Unchanged (session 4), for session 4 bis:** at Gbowele the rule expects about 0.63 productive users per connected household, against 44 for 96 households, about 0.46, observed at `T` on the extended record; under the anchored rule it only drives the increments after `T` |
 
 Left open by session 3, for session 4:
 
 | | Question | State |
 |---|---|---|
-| 15 | The fan's feature scaling | `ModelConfig.centre_features = False`, so that the fan and its objective stay those of the stored results, whose root is the first path drawn rather than the medoid of year 0 (section 9.7). Recommended: `True`, with the other defaults, whenever the fan is drawn again |
-| 16 | The stored first-stage certificates | computed with a costless bound whose capital term was charged at the root's prices (section 9.7); to be re-run with the corrected bound |
-| 17 | The certified year under `node_year = "last"` | `exact/certify.py` does not read `node_year`; option B of section 8 then has to follow the root's year, which becomes year 4 |
-| 18 | `node_year = "both"` | refused as built (section 9.7); session 4 decides whether to measure it |
+| 15 | The fan's feature scaling | **Decided (session 4):** `ModelConfig.centre_features = True` by default; `False` reproduces the stored fans, whose root is the first path drawn rather than the medoid of year 0 (section 9.7) |
+| 16 | The stored first-stage certificates | computed with a costless bound whose capital term was charged at the root's prices (section 9.7); **re-run in session 4 bis** |
+| 17 | The certified year under `node_year = "last"` | **Built (session 4):** `exact/certify.py` reads `node_year`, and the certified year is the root's, the plan's year 4 under `last` (section 8) |
+| 18 | `node_year = "both"` | **Decided (session 4):** stays refused; session 4 bis measures `first` against `last` instead |
+
+Left open by session 4:
+
+| | Question | State |
+|---|---|---|
+| 19 | Empty codes before an owner's own code | not corrected (section 4.7): two Gbowele meters recorded an empty code from the morning the test meters were installed, 15 January 2025, until 0204GBO's code appeared in December 2025 and 0023GBO's in February 2025, and are most likely bench meters; 0037GBO and 0154GBO carry months of empty codes before their roster dates. 0204GBO is a household of the register, whose five months at zero before its connection enter the segmentation. A question for the operator |
+| 20 | Gbowele's high plateau under the extended record | the plateau's lower bound is 124 households of 159 (share 0.78), against 92 on the roster record, because the logistic reads the campaign of May 2026 as the middle of a rise; it is the high trajectory of a new site and the low end of Gbowele's own bracket (section 12). The census variant stays the sensitivity of decision 1 |
+| 21 | The scaling factors | `archetype_scaling.csv` was not fitted again on the corrected archive (section 4.7); a refit belongs with the next change to the appliance calibration |
 
 ## 15. Out of scope
 
-- **Session 4**: change the defaults of `connection.mode`, `tree_mode` and `node_year` together;
-  set `maturity_months = 0` for greenfield runs; recompute the greenfield test bench and the two
-  real villages as brownfield; decide whether `both` is to be built and measured against `last`
-  (point 18); run the sensitivities of decisions 1 and 8 (census plateau, a 19 % loss).
+- **Session 4** changed the defaults together: `connection.mode = "progressive"`, `tree_mode =
+  "persistent"`, `node_year = "last"`, `centre_features = True` (point 15) and `maturity_months =
+  0`, a site with its own record keeping the age derived from it. `both` stays unbuilt
+  (point 18).
+- **Session 4 bis** recomputes the greenfield test bench and the two real villages as
+  brownfield under those defaults, re-runs the first-stage certificates (point 16), measures
+  `first` against `last` (point 18) and runs the sensitivities: the census plateau (decision 1),
+  171 households at Gbowele (point 10) and the roster record (point 11). The 19 % loss
+  sensitivity is dropped: it came from a gap that included the street lighting (section 10).
 - **Growth beyond 24 months [decision 9].** Cohort ageing keeps the community's demand moving
   while households keep connecting, but each household still stops growing in the 25+ band,
   because no record runs much past two years: Gbowele's ends at 25 months and the fast trajectory

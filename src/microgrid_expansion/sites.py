@@ -128,6 +128,12 @@ class Site:
 #: metered separately at each, so it is counted as the calibrated class and carries no
 #: figure here. The street lighting is not metered anywhere, so it is given as the lamps
 #: that light and their rating.
+#:
+#: Each village has two places of worship on its grid, metered and drawing at the end of the
+#: record: 0004SAM and 0007SAM, and 0150GBO and 0153GBO, Gbowele's third, 0056GBO, having a
+#: meter that failed in May 2026. They are declared, and drawn with the shape the meters give
+#: the class, so that a plan for either village carries them; both were connected well
+#: before the plan's year 0, so they are there from its first month, as the record has them.
 SAMIONTA = Site(
     name="Samionta",
     census={"HH1": 231, "HH2": 0, "HH3": 0},
@@ -135,6 +141,7 @@ SAMIONTA = Site(
     longitude=2.244630,
     irradiance_file="samionta_weather_hourly_2016_2025.csv",
     meter_file="sam_meter_readings.parquet",
+    community_mix={"place_of_worship": 2},
     self_mix={"powerhouse": 1, "public_lighting": 1},
 )
 
@@ -145,6 +152,7 @@ GBOWELE = Site(
     longitude=2.20,
     irradiance_file="gbowele_weather_hourly_2016_2025.csv",
     meter_file="gbo_meter_readings.parquet",
+    community_mix={"place_of_worship": 2},
     self_mix={"powerhouse": 1, "public_lighting": 1},
 )
 

@@ -27,10 +27,21 @@ from microgrid_expansion.scenarios.uncertainty_space import DemandAxis, space_fr
 from microgrid_expansion.settings import default_settings
 
 SMALL = dict(stage_years=(0, 5), branching=(1, 2), n_mc_paths=60, n_rep_days=2)
+#: The tree and the village the stored trees were drawn with, set explicitly. The defaults
+#: now connect households progressively, hold each regime along a persistent path and read
+#: a node's demand at the end of its span; what these tests hold does not depend on that.
+STORED = dict(tree_mode="fan", node_year="first", centre_features=False, maturity_months=12)
+
+
+def _census():
+    """The project with the whole census connected at village month 0, as before."""
+    settings = default_settings()
+    settings.connection.mode = "census"
+    return settings
 
 
 def _settings(slow: float, central: float, fast: float):
-    settings = default_settings()
+    settings = _census()
     settings.trajectory_weights.slow = slow
     settings.trajectory_weights.central = central
     settings.trajectory_weights.fast = fast
@@ -39,8 +50,8 @@ def _settings(slow: float, central: float, fast: float):
 
 def _drawn(settings, seed: int = 0) -> Counter:
     """What each path's growth trajectory came out as."""
-    cfg = ModelConfig(seed=seed, **SMALL)
-    paths = sample_scenario_paths(cfg, space_from_settings(settings))
+    cfg = ModelConfig(seed=seed, **SMALL, **STORED)
+    paths = sample_scenario_paths(cfg, space_from_settings(settings), settings)
     return Counter(path.draws[0].trajectory for path in paths)
 
 
@@ -67,16 +78,18 @@ def test_the_default_draws_exactly_what_the_untold_thirds_drew() -> None:
     computed before would have to be recomputed to be comparable, and the reason would be
     bookkeeping rather than anything about the villages.
     """
-    space = space_from_settings(default_settings())
+    space = space_from_settings(_census())
     stated = [p.draws[0].trajectory
-              for p in sample_scenario_paths(ModelConfig(seed=0, **SMALL), space)]
+              for p in sample_scenario_paths(ModelConfig(seed=0, **SMALL, **STORED), space,
+                                             _census())]
     # The same space with the demand axis as it was: carrying no probabilities at all,
     # which is what every caller handed the sampler before the weights existed. Only that
     # axis is changed, because the grid axis consumes randomness of its own and swapping
     # the whole space would compare two different draws rather than two weightings.
     untold = [p.draws[0].trajectory
-              for p in sample_scenario_paths(ModelConfig(seed=0, **SMALL),
-                                             replace(space, demand=DemandAxis()))]
+              for p in sample_scenario_paths(ModelConfig(seed=0, **SMALL, **STORED),
+                                             replace(space, demand=DemandAxis(
+                                                 connection_mode="census")), _census())]
     assert stated == untold, "the stated thirds draw a different tree from the untold ones"
 
 
@@ -110,14 +123,14 @@ def test_the_prices_reach_the_sampler_too() -> None:
     """
     from dataclasses import replace as _replace
 
-    settings = default_settings()
-    dearer = default_settings()
+    settings = _census()
+    dearer = _census()
     dearer.photovoltaic = _replace(dearer.photovoltaic,
                                    cost_usd_kw=3.0 * settings.photovoltaic.cost_usd_kw)
     dearer.battery = _replace(dearer.battery,
                               cost_usd_kwh=3.0 * settings.battery.cost_usd_kwh)
 
-    cfg = ModelConfig(seed=0, **SMALL)
+    cfg = ModelConfig(seed=0, **SMALL, **STORED)
     base = sample_scenario_paths(cfg, space_from_settings(settings), settings)
     moved = sample_scenario_paths(cfg, space_from_settings(dearer), dearer)
 
@@ -154,7 +167,7 @@ def test_the_cost_futures_are_named_by_the_project_not_by_the_sampler() -> None:
     assert cost_scenarios(settings) == COST_SCENARIOS, (
         "the declared futures no longer come in the order the weights are given in")
 
-    renamed = default_settings()
+    renamed = _census()
     for trajectory in renamed.cost_trajectories.values():
         trajectory.early = {f"{k}_case": v for k, v in trajectory.early.items()}
         trajectory.late = {f"{k}_case": v for k, v in trajectory.late.items()}
@@ -163,7 +176,7 @@ def test_the_cost_futures_are_named_by_the_project_not_by_the_sampler() -> None:
                               settings=renamed) in cost_scenarios(renamed)
 
     # End to end: the sampler must cost a tree under the project it was given.
-    cfg = ModelConfig(seed=0, **SMALL)
+    cfg = ModelConfig(seed=0, **SMALL, **STORED)
     paths = sample_scenario_paths(cfg, space_from_settings(renamed), renamed)
     assert {path.draws[0].costs["scenario"] for path in paths} <= set(
         cost_scenarios(renamed))

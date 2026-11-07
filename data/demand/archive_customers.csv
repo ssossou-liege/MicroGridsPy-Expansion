@@ -3,7 +3,7 @@ customer_code,site_name,customer_type,category,connection_month,source
 0268SAM,Samionta,HH,HH1,2026-10,profile
 0269SAM,Samionta,PUE,,2026-10,profile
 0067GBO,Gbowele,HH,HH2,2026-06,census
-0074GBO,Gbowele,HH,HH2,2025-01,census
+0074GBO,Gbowele,HH,HH1,2025-12,census
 0207GBO,Gbowele,HH,HH1,2026-09,census
 0208GBO,Gbowele,HH,HH1,2026-10,profile
 0209GBO,Gbowele,HH,HH1,2026-10,profile

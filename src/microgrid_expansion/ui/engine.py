@@ -36,7 +36,7 @@ def size_site(job: Job, overrides: dict[str, Any],
     village grows slowly" study rather than the decision.
     """
     from ..demand.connection import plan as connection_plan
-    from ..exact.certify import Lattice, certify_exhaustive
+    from ..exact.certify import Lattice, certified_year, certify_exhaustive
     from ..instances import build_site_year
     from ..resource.yield_model import module_from
     from ..sites import get_site
@@ -49,10 +49,13 @@ def size_site(job: Job, overrides: dict[str, Any],
     # The households on the grid in the certified year, as ``certify`` builds them: the
     # whole census under the shipped connection, the chosen trajectory's stock under the
     # progressive one, and for a village with a plant and a record, that record, with the
-    # village's age at year 0 derived from it rather than taken from the form.
+    # village's age at year 0 derived from it rather than taken from the form. The year is
+    # the one the tree's root carries, as ``certify`` takes it.
     connection = connection_plan(get_site(settings.site), settings)
-    maturity = (settings.maturity_months if connection.year0_age is None
-                else connection.year0_age)
+    year0_age = (settings.maturity_months if connection.year0_age is None
+                 else connection.year0_age)
+    plan_year, maturity = certified_year(year0_age,
+                                         horizon_years=settings.economics.horizon_years)
     instance = build_site_year(
         settings.site, settings.year, trajectory=certified_on,
         maturity_months=maturity,
@@ -104,7 +107,9 @@ def size_site(job: Job, overrides: dict[str, Any],
         "connection": {"mode": connection.mode,
                        "trajectory": (None if connection.mode == "census"
                                       else settings.connection.trajectory),
+                       "plan_year": plan_year,
                        "village_age_months": maturity,
+                       "year0_village_age_months": year0_age,
                        "village_age_derived": connection.year0_age is not None},
         "currency": _currency(settings),
         "finance": finance.to_dict(),

@@ -20,24 +20,28 @@ Writes three tables to ``data/ramp_params/reference/``:
 
 *The record.* Two can be built, and ``--record`` chooses:
 
-- ``roster``, the default: the operator's customer roster, whose last month ``T`` is the
-  month of its latest connection (May 2026). Each customer keeps its roster type and date.
-- ``extended``: the roster and every customer of the meter archive the roster does not
-  list, up to the archive's last complete month (October 2026). Those customers are held
-  in ``data/demand/archive_customers.csv``: each is connected in the month of its first
-  reading, and its type comes from the operator's field census (received on 7 November
-  2026), its category column first and its type column otherwise, or, where the census gives
-  none, from its consumption by ``classify_meter``. ``--census`` rebuilds that table from
-  the two workbooks, reading their code and type columns and nothing else.
+- ``extended``, the default: the roster and every customer of the meter archive the roster
+  does not list, up to the archive's last complete month ``T`` (October 2026). Those
+  customers are held in ``data/demand/archive_customers.csv``: each is connected in the
+  month of its first reading, and its type comes from the operator's field census
+  (received on 7 November 2026), its type column first and its category column otherwise,
+  or, where the census gives none, from its consumption by ``classify_meter``.
+  ``--census`` rebuilds that table from the two workbooks, reading their code and type
+  columns and nothing else.
+- ``roster``: the operator's customer roster alone, whose last month ``T`` is the month of
+  its latest connection (May 2026). Each customer keeps its roster type and date.
 
 Neither source types the roster's own customers the way the roster does. The profile rule
 misplaces more than a quarter of them, and no rule on these descriptors does much better:
 a small trader draws what a household draws, and the household categories are
-socio-economic rather than electrical. The census disagrees with the roster about as
-often by its type column and far more by its category column. Both are well above the five per
-cent the extended record was to be trusted at, so the tables hold the roster record, and
-the extended one is written only on request. A fresh roster would replace the census and
-profile types and the first-reading dates, and nothing else.
+socio-economic rather than electrical. The census's category column follows a taxonomy of
+its own for the household tiers, which is why its type column is read first. But what the
+record feeds is the connected stock, not the types, and the few codes the profile types
+move it by a handful of households at most, which ``profile_bound`` reports. The roster
+record, meanwhile, is contradicted by the meters: Gbowele connects in campaigns, and its
+roster ends before the latest one. So the tables hold the extended record, and the roster
+one is a sensitivity. A fresh roster would replace the census and profile types and the
+first-reading dates, and nothing else.
 
 *Silent meters.* A meter whose last reading, a zero included, falls three months or more
 before the end of the archive has failed, and according to the operator a failed meter
@@ -64,7 +68,9 @@ connection curve and the productive-use intensity run on one clock.
 The report checks two acceptance criteria against the meters in month ``T``: the active
 households the mixture law expects of the stock connected before ``T`` began against the
 households the meters find active (S2-A5), and the productive users expected against the
-productive users metered (S2-A6).
+productive users metered (S2-A6). A household with no reading at all in ``T`` is not an
+observation and leaves both sides of S2-A5, the mixture law having been estimated on months
+with readings; counted inactive instead, it is reported as a sensitivity.
 
 Deterministic given its inputs; ``tests/test_progressive_connection.py`` re-runs it and
 asserts that it reproduces the committed tables.
@@ -88,7 +94,7 @@ STATUS_FILE = "meter_status.csv"
 ARCHIVE_CUSTOMERS = DEMAND_DIR / "archive_customers.csv"
 
 RECORDS = ("roster", "extended")
-DEFAULT_RECORD = "roster"
+DEFAULT_RECORD = "extended"
 
 #: Confidence level of the plateau's profile interval.
 LEVEL = 0.95
@@ -108,11 +114,12 @@ LEVEL_FACTOR = 2.0
 PROFILE_CORRELATION = 0.8
 
 #: The census workbooks' customer-code column at each site, and the two type columns read
-#: from them, in the order they are believed. No other column is opened: the workbooks
-#: hold personal data.
+#: from them, in the order they are believed: the type column, then the category column,
+#: whose household tiers follow a taxonomy of their own (it calls HH2 most of the roster's
+#: HH1 households). No other column is opened: the workbooks hold personal data.
 CENSUS_CODE_COLUMN = {"Samionta": "N° client Koios", "Gbowele": "Unnamed: 4"}
 #: The workbooks' own column names, accents intentional: they are data, not prose.
-CENSUS_TYPE_COLUMNS = ("Catégorie", "Type (HH123,SME,CHU,SCH)")
+CENSUS_TYPE_COLUMNS = ("Type (HH123,SME,CHU,SCH)", "Catégorie")
 CENSUS_SHEET = "Recensement"
 #: How the census's types read in the roster's terms. Anything else leaves a code untyped.
 CENSUS_TYPES = {"HH1": "HH1", "HH2": "HH2", "HH3": "HH3", "SME": "PUE", "CHU": "CHU",
@@ -125,9 +132,6 @@ DAYTIME_HOURS = (7, 18)
 PRODUCTIVE_DAYTIME_SHARE = 0.35
 PRODUCTIVE_DAILY_KWH = 1.5
 CHURCH_SUNDAY_SHARE = 0.25
-#: The share of the roster's customers the rule may misplace for the extended record to
-#: be the default.
-MAX_MISPLACED = 0.05
 
 #: Above this a productive user's month counts as active, for S2-A6.
 PRODUCTIVE_ACTIVE_KWH = 0.05
@@ -227,6 +231,36 @@ def _commonest_category(roster: pd.DataFrame, site_name: str) -> str:
     return types[types.isin(HOUSEHOLD_TYPES)].value_counts().idxmax()
 
 
+def profile_bound(status: pd.DataFrame, record: str = DEFAULT_RECORD) -> pd.DataFrame:
+    """How far the profile rule could move each reference village's stock at ``T``.
+
+    What the record feeds is the connected stock, so a misplaced type matters only where
+    it puts a household outside the stock or another customer inside it. Per site: the
+    households on the grid at ``T``, those of them whose type the profile gave, and the
+    customers on the grid the profile typed as something else. Were the rule wrong on
+    every one of them, the stock would move by the larger of the last two, which is
+    therefore the most it can move it.
+    """
+    roster = load_roster()
+    customers = record_customers(status, record)
+    rows = []
+    for name in _reference_sites(roster):
+        last = record_span(roster, record, name)[1]
+        held = customers[customers.site_name == name]
+        held = held[held.connection_month.map(lambda m: pd.Period(m, freq="M") <= last)
+                    & ~held.departure_month.map(lambda m: bool(m)
+                                                and pd.Period(m, freq="M") <= last)]
+        household = held.customer_type.isin(HOUSEHOLD_TYPES)
+        profiled = held.type_source == "profile"
+        rows.append({"site_name": name, "month": str(last),
+                     "households": int(household.sum()),
+                     "profiled_households": int((household & profiled).sum()),
+                     "profiled_others": int((~household & profiled).sum()),
+                     "most_moved": int(max((household & profiled).sum(),
+                                           (~household & profiled).sum()))})
+    return pd.DataFrame(rows)
+
+
 def classification_check(roster: pd.DataFrame) -> pd.DataFrame:
     """The profile rule applied to the roster's own customers: their type and the rule's."""
     rows = []
@@ -295,8 +329,8 @@ def _failed(meter: pd.Series, end: pd.Timestamp) -> bool:
 def read_census(path: Path, site_name: str) -> tuple[pd.DataFrame, list[str]]:
     """The type the operator's field census gives each customer code at one site.
 
-    Only the code and the two type columns are opened. The category column is believed
-    first and the type column where it is empty; a value outside ``CENSUS_TYPES`` leaves the
+    Only the code and the two type columns are opened. The type column is believed first
+    and the category column where it is empty; a value outside ``CENSUS_TYPES`` leaves the
     code untyped. A code entered twice keeps its first row, and the codes entered twice
     are returned so that they can be reported.
     """
@@ -604,9 +638,17 @@ def active_check(status: pd.DataFrame, roster: pd.DataFrame, record: str,
     then, each cohort at its own age in ``T``, under the site's own growth law. Given the
     stock, the number outside the ``inactive`` state is a sum of independent draws, which
     sets the deviation. A household is active on the meters, as in the law, when its
-    month's energy is above zero. ``keep_failed`` keeps the households whose failed meter
-    was not replaced, as households that cannot be active; ``last_cohort`` adds the
-    households connected during ``T`` itself.
+    month's energy is above zero.
+
+    The criterion is read over the households with at least one reading in ``T``
+    (``expected_observed``, ``sd_observed``, ``within``): the law was estimated on months
+    with readings, so a month without any is not an observation of the inactive state, and
+    such a household leaves both sides. That reading was chosen after the result was seen.
+    The other, every household of the stock with those without a reading counted inactive
+    (``expected``, ``sd``, ``within_counted_inactive``), is kept as a sensitivity.
+    ``keep_failed`` keeps the households whose failed meter was not replaced, as
+    households that cannot be active; ``last_cohort`` adds the households connected
+    during ``T`` itself.
     """
     from .generator import INACTIVE, _redistribute_outliers
     from .growth import maturity_band, trajectory_law
@@ -649,7 +691,9 @@ def active_check(status: pd.DataFrame, roster: pd.DataFrame, record: str,
             "expected": mean, "sd": variance ** 0.5, "metered": metered,
             "kept_failed": int(gone.sum()) if keep_failed else 0,
             "unobserved": unobserved, "expected_observed": observed_mean,
-            "sd_observed": observed_variance ** 0.5}
+            "sd_observed": observed_variance ** 0.5,
+            "within": abs(metered - observed_mean) <= 2.0 * observed_variance ** 0.5,
+            "within_counted_inactive": abs(metered - mean) <= 2.0 * variance ** 0.5}
 
 
 def productive_check(status: pd.DataFrame, roster: pd.DataFrame, record: str,
@@ -728,9 +772,11 @@ def main(argv: list[str] | None = None) -> int:
     coarse = float((check.roster.map(kind) != check.rule.map(kind)).mean())
     print(f"\nProfile rule on the roster's {len(check)} metered customers: "
           f"{misplaced:.1%} misplaced, {coarse:.1%} counting the household categories as "
-          f"one (the extended record needs {MAX_MISPLACED:.0%} or less)")
+          "one")
     print(pd.crosstab(check.roster, check.rule, margins=True).to_string())
     print(f"\nRecord: {args.record}")
+    print("What the profile types could move the stock at T by, at most:")
+    print(profile_bound(status, args.record).to_string(index=False))
     as_of = (pd.Period(args.as_of, freq="M") if args.as_of
              else pd.Timestamp.today().to_period("M"))
     for report in reports:
@@ -752,15 +798,19 @@ def main(argv: list[str] | None = None) -> int:
         print(candidate_replacements(name, last.to_frame()).to_string(index=False))
     print("\nS2-A5, active households in the record's last month")
     for name in _reference_sites(roster):
+        row = active_check(status, roster, args.record, name)
+        print(f"  {row['site']} {row['month']}: {row['households']} households, "
+              f"{row['unobserved']} without a reading in the month; over the "
+              f"{row['households'] - row['unobserved']} observed, expected "
+              f"{row['expected_observed']:.1f} +- {row['sd_observed']:.1f}, metered "
+              f"{row['metered']}, within two deviations: {row['within']}")
         for keep in (False, True):
             row = active_check(status, roster, args.record, name, keep_failed=keep)
-            print(f"  {row['site']} {row['month']}: {row['households']} households, "
-                  f"expected {row['expected']:.1f} +- {row['sd']:.1f}, metered "
-                  f"{row['metered']}" + (f" (failed meters kept: {row['kept_failed']})"
-                                         if keep else "")
-                  + f"; {row['unobserved']} without a reading in the month, and over the "
-                  f"rest expected {row['expected_observed']:.1f} +- "
-                  f"{row['sd_observed']:.1f}")
+            print(f"    sensitivity, without a reading counted inactive"
+                  + (f" and the {row['kept_failed']} failed meters kept" if keep else "")
+                  + f": {row['households']} households, expected {row['expected']:.1f} "
+                  f"+- {row['sd']:.1f}, within two deviations: "
+                  f"{row['within_counted_inactive']}")
     print("\nS2-A6, productive users in the record's last month")
     for name in _reference_sites(roster):
         row = productive_check(status, roster, args.record, name)

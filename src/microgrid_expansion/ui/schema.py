@@ -156,10 +156,8 @@ BALANCE: tuple[Field, ...] = (
 WHAT_IF: tuple[Field, ...] = (
     Field("demand_trajectory", "Certify a single trajectory instead", kind="choice",
           choices=("slow", "central", "fast"), key="f.trajectory"),
-    # How many households are on the grid in the certified year. It moves nothing while the
-    # whole census is connected from the first month, which stays the shipped connection
-    # until the progressive one becomes the default; the hint says so rather than letting
-    # a reader believe the answer changed.
+    # How many households are on the grid in the certified year, under the progressive
+    # connection that is the default. Under the whole census it would move nothing.
     Field("connection.trajectory", "Connection trajectory of the certified year",
           kind="choice", choices=("low", "central", "high"),
           key="f.connection_trajectory"),

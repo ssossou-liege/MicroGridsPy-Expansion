@@ -86,12 +86,19 @@ def test_a_programme_refuses_two_discount_rates() -> None:
 
 def test_the_tree_records_the_rate_it_discounted_at() -> None:
     """A tree is evidence; what it was discounted at travels with it."""
-    from microgrid_expansion.scenarios import sample_scenario_paths
+    from microgrid_expansion.scenarios import sample_scenario_paths, space_from_settings
     from microgrid_expansion.tree import build_tree
 
+    # The tree and the village the stored trees were drawn with, set explicitly: what this
+    # holds does not depend on the defaults, and the census pools are the ones on hand.
     cfg = ModelConfig(site="Samionta", n_mc_paths=4, stage_years=(0, 5),
-                      branching=(1, 2), n_rep_days=2, seed=0, discount_rate=0.11)
-    tree = build_tree(sample_scenario_paths(cfg), cfg)
+                      branching=(1, 2), n_rep_days=2, seed=0, discount_rate=0.11,
+                      tree_mode="fan", node_year="first", centre_features=False,
+                      maturity_months=12)
+    settings = default_settings()
+    settings.connection.mode = "census"
+    tree = build_tree(sample_scenario_paths(cfg, space_from_settings(settings), settings),
+                      cfg)
     assert tree.discount_rate == pytest.approx(0.11)
     assert tree.disc[max(tree.nodes)] == pytest.approx(1.11 ** -5)
 

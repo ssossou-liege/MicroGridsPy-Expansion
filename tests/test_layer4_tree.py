@@ -43,9 +43,19 @@ def small_tree():
     from microgrid_expansion.scenarios import sample_scenario_paths
     from microgrid_expansion.tree import build_tree
 
+    from microgrid_expansion.scenarios import space_from_settings
+    from microgrid_expansion.settings import default_settings
+
+    # The tree and the village the stored trees were drawn with, set explicitly: the whole
+    # census, twelve months old, nested as a fan on the milestones' own years. What these
+    # tests hold is the shape of a tree, not the default it is drawn under.
     cfg = ModelConfig(site="Samionta", n_mc_paths=8, stage_years=(0, 5),
-                      branching=(1, 2), n_rep_days=365, seed=0)
-    return cfg, build_tree(sample_scenario_paths(cfg), cfg)
+                      branching=(1, 2), n_rep_days=365, seed=0, tree_mode="fan",
+                      node_year="first", centre_features=False, maturity_months=12)
+    settings = default_settings()
+    settings.connection.mode = "census"
+    return cfg, build_tree(sample_scenario_paths(cfg, space_from_settings(settings),
+                                                 settings), cfg)
 
 
 def test_the_tree_loses_no_probability(small_tree):

@@ -342,11 +342,18 @@ def test_the_programme_still_minorises_the_rule_over_a_brownfield_tree() -> None
     from microgrid_expansion.timedomain import reduce_to_rep_days
     from microgrid_expansion.tree import build_tree
 
+    from microgrid_expansion.scenarios import space_from_settings
+
     settings = default_settings()
     settings.installed = reference_plant("Samionta")
+    # The tree the stored results were drawn on, set explicitly: the whole census, twelve
+    # months old, as a fan on the milestones' own years. What is held here is the floor.
     cfg = ModelConfig(site="Samionta", n_mc_paths=8, stage_years=(0, 5),
-                      branching=(1, 2), n_rep_days=365, seed=0)
-    tree = build_tree(sample_scenario_paths(cfg), cfg)
+                      branching=(1, 2), n_rep_days=365, seed=0, tree_mode="fan",
+                      node_year="first", centre_features=False, maturity_months=12)
+    stored = default_settings()
+    stored.connection.mode = "census"
+    tree = build_tree(sample_scenario_paths(cfg, space_from_settings(stored), stored), cfg)
     rep = {n: reduce_to_rep_days(_NodeInstance(tree.node_data[n], settings), 365)
            for n in tree.nodes}
     programme = build_model(tree, rep, cfg, architecture="dc", settings=settings)

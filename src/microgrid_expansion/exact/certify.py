@@ -1180,10 +1180,31 @@ def _best_cost_optimal(instance, lattice, near, economics, battery, generator,
     return solved.capacities, solved.value
 
 
+def certified_year(year0_age: int, node_year: str | None = None,
+                   horizon_years: int | None = None) -> tuple[int, int]:
+    """The plan year the single certified year is, and the village age at its first month.
+
+    The root's year: the year whose demand the root of the tree carries, so that the proven
+    plant and the tree's year-0 plant answer about the same year. Under ``node_year =
+    "first"`` it is the plan's year 0; under ``"last"``, the default, the last year of the
+    root's span, which a village still connecting reaches with the most households the
+    year-0 plant has to serve before the next milestone. The command line and the interface
+    both take it from here.
+    """
+    defaults = config.ModelConfig
+    cfg = config.ModelConfig(
+        node_year=defaults.node_year if node_year is None else node_year,
+        horizon_years=defaults.horizon_years if horizon_years is None else horizon_years)
+    cfg.validate()
+    plan_year = cfg.demand_year(0)
+    return plan_year, int(year0_age) + 12 * plan_year
+
+
 def main(argv: list[str] | None = None) -> int:
     """Certify the sizing of one site and record the result."""
     import argparse
     import json
+    from pathlib import Path
 
     from ..paths import RESULTS_DIR
 
@@ -1192,11 +1213,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--year", type=int, default=2025)
     parser.add_argument("--trajectory", default="central",
                         choices=["slow", "central", "fast"])
-    parser.add_argument("--maturity-months", type=int, default=12,
-                        help="village age at the first month of the year: whole months "
-                             "since the first connection. A brownfield site with its own "
-                             "record derives it from the roster under progressive "
-                             "connection, and this is then not read")
+    parser.add_argument("--maturity-months", type=int, default=None,
+                        help="village age at the plan's year 0: whole months since the "
+                             "first connection; defaults to the project's, zero for a site "
+                             "being energised. A brownfield site with its own record "
+                             "derives it from the record under progressive connection, and "
+                             "this is then not read")
+    parser.add_argument("--node-year", default=config.ModelConfig.node_year,
+                        choices=["first", "last"],
+                        help="which year of the root's span is certified: the plan's year "
+                             "0, or the span's last year, whose demand the tree's root "
+                             "carries by default")
+    parser.add_argument("--out", type=Path, default=RESULTS_DIR,
+                        help="directory the certificate is written to")
     parser.add_argument("--connection", default=None, choices=["low", "central", "high"],
                         help="connection trajectory of the year; defaults to the project "
                              "setting, and has no effect while the project connects the "
@@ -1251,26 +1280,33 @@ def main(argv: list[str] | None = None) -> int:
 
     # Who is on the grid in the year certified. Under the whole census every household, as
     # old as the village; under progressive connection the trajectory's stock, and for a
-    # brownfield site with its own record the roster up to its last month, from the age the
-    # roster gives the plan's first January rather than the one declared.
+    # brownfield site with its own record the record up to its last month, from the age the
+    # record gives the plan's first January rather than the one declared. The year is the
+    # root's: under the default node year, the last of the root's span.
     from ..demand.connection import plan as connection_plan
     from ..sites import get_site
 
     connection = connection_plan(get_site(args.site), settings, brownfield=args.brownfield)
     schedule = connection.schedule(settings.connection.trajectory)
-    if connection.year0_age is not None:
-        args.maturity_months = connection.year0_age
+    year0_age = (connection.year0_age if connection.year0_age is not None
+                 else settings.maturity_months if args.maturity_months is None
+                 else args.maturity_months)
+    plan_year, village_age = certified_year(year0_age, args.node_year,
+                                            settings.economics.horizon_years)
     instance = build_site_year(
         args.site, args.year, trajectory=args.trajectory,
-        maturity_months=args.maturity_months,
+        maturity_months=village_age,
         network_loss_fraction=settings.infrastructure.network_loss_fraction,
         module=module_from(settings.photovoltaic),
         chemistry=settings.battery.chemistry,
         connection=schedule)
-    print(f"{args.site} {args.year} -- trajectory {args.trajectory}, "
-          f"village age {args.maturity_months} months, connection "
+    print(f"{args.site} {args.year} -- trajectory {args.trajectory}, plan year {plan_year} "
+          f"({args.node_year} of the root's span), village age {village_age} months "
+          f"({year0_age} at year 0"
+          + (", from the record" if connection.year0_age is not None else "") + "), "
+          f"connection "
           f"{connection.mode if connection.mode == 'census' else settings.connection.trajectory}"
-          f" ({sum(schedule.connected(args.maturity_months).values())} households "
+          f" ({sum(schedule.connected(village_age).values())} households "
           "connected in the first month)")
     print(f"solver   : {settings.solver.name}")
     print("coupling : divided array -- the split between the two buses is searched over")
@@ -1410,19 +1446,24 @@ def main(argv: list[str] | None = None) -> int:
         "irr_without_salvage": priced.finance.irr_without_salvage,
     }
 
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    args.out.mkdir(parents=True, exist_ok=True)
     record = {
         "site": args.site, "year": args.year, "trajectory": args.trajectory,
-        "maturity_months": args.maturity_months,
+        "maturity_months": village_age,
+        "brownfield": bool(args.brownfield),
         # Which households the year was built on: it decides the demand, so the plant.
         "connection": {
             "mode": connection.mode,
             "trajectory": (None if connection.mode == "census"
                            else settings.connection.trajectory),
-            "village_age_months": args.maturity_months,
+            # The year certified: the root's, a year of the plan counted from its year 0.
+            "node_year": args.node_year,
+            "plan_year": plan_year,
+            "village_age_months": village_age,
+            "year0_village_age_months": year0_age,
             "village_age_derived": connection.year0_age is not None,
-            "connected_first_month": schedule.connected(args.maturity_months),
-            "connected_last_month": schedule.connected(args.maturity_months + 11)},
+            "connected_first_month": schedule.connected(village_age),
+            "connected_last_month": schedule.connected(village_age + 11)},
         "voll_usd_kwh": settings.economics.value_of_lost_load_usd_kwh,
         "design": {"pv_kw": result.design.pv_kw, "battery_kwh": result.design.battery_kwh,
                    "pv_ac_kw": result.design.pv_ac_kw,
@@ -1452,13 +1493,15 @@ def main(argv: list[str] | None = None) -> int:
         record["architecture_runner_up"] = ranked[1][0]
         record["architecture_margin_usd_yr"] = ranked[1][1].z_rule - result.z_rule
     stem = (f"summary_certification_{args.site.lower()}_{args.trajectory}_{architecture}"
-            f"_m{args.maturity_months}"
+            f"_m{village_age}"
             f"_voll{settings.economics.value_of_lost_load_usd_kwh:g}")
-    # Appended only under progressive connection, so a whole-census certificate keeps the
-    # name it always had.
+    # Appended only under progressive connection, or for an extension of a standing plant,
+    # so a whole-census certificate on bare ground keeps the name it always had.
     if connection.mode != "census":
         stem += f"_c{settings.connection.trajectory}"
-    path = RESULTS_DIR / f"{stem}.json"
+    if args.brownfield:
+        stem += "_brownfield"
+    path = args.out / f"{stem}.json"
     path.write_text(json.dumps(record, indent=2))
     print(f"\nwritten {path}")
     return 0

@@ -8,19 +8,25 @@ from ..tree.tree_model import ScenarioTree
 
 
 def write_report(plans: dict, kpis: list[dict], expected: dict, tree: ScenarioTree,
-                 out_dir: Path, stem: str = "summary_tree") -> Path:
+                 out_dir: Path, stem: str = "summary_tree",
+                 node_year: str | None = None) -> Path:
     """Record the plan, its indicators and how much the tree compressed.
 
     The reduction error travels with the result rather than in a log: a tree is a
     compression, and a compression whose distortion is not reported invites the reader to
-    treat it as exact.
+    treat it as exact. So do the nesting and the year each node stands for, which decide
+    what the tree is a compression of.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     record = {
         "nodes": len(tree.nodes),
         "leaves": len(tree.leaves),
+        "operating_nodes": sum(1 for n in tree.nodes if tree.operates(n)),
         "stages": sorted(set(tree.stage.values())),
+        "tree_mode": tree.tree_mode,
+        "node_year": node_year,
         "reduction_error": tree.reduction_error,
+        "distortion": tree.distortion,
         "expected": expected,
         "root_plan": {
             # Both halves of the field. Reporting only the one on the battery's bus made a

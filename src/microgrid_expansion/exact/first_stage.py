@@ -159,16 +159,21 @@ class FreeBound:
 
     The capital term. Every descendant holds at least what the root holds, and annualised
     capital is increasing in every capacity, so the plan's capital is at least the box's
-    cheapest corner charged at every node. That is the whole horizon weight, not one year,
-    which is why this bites so much harder here than on a single year.
+    cheapest corner charged at every node, each at its own prices. That is the whole horizon
+    weight, not one year, which is why this bites so much harder here than on a single year.
+    The prices are the nodes' own because the programme's are: charged at the root's at
+    every node, as this first was, the term exceeded what the programme charges wherever
+    the prices fall, which every cost future of the shipped settings has them do.
 
     The energy term. At the root the capacity *is* the root's, and the array cannot deliver
     more than its yield. Storage moves energy and loses a little doing so, so it cannot
     raise that ceiling. Whatever the array cannot cover must come from the generating set,
     at no less than the catalogue's most efficient marginal litre, or go unserved at the
     value of lost load -- and the set cannot produce more than its rating for every hour of
-    the year. Applied at the root alone: the descendants may add capacity, so nothing can be
-    asserted about what they will have to burn.
+    the year. Applied at the root alone, and at the nodes that hold the root's plant and add
+    nothing to it, which below a persistent root operate the root's span in its place: the
+    other descendants may add capacity, so nothing can be asserted about what they will
+    have to burn.
 
     Both terms are minimised over the box exactly, and not at a corner. Corners were the
     first way this was written and they are both loose and easy to get wrong: the array
@@ -181,11 +186,16 @@ class FreeBound:
     149 927 dollars for the corner that overstated, 6 219 for the corners taken one term at
     a time, and 22 554 for the least over the box, against a programme that finds 96 027.
     The last is three and a half times the strength of the second at twelve microseconds a
-    box, which is still nothing beside the solver call it saves.
+    box, which is still nothing beside the solver call it saves. All three were read at the
+    root's prices, before the capital was charged at each node's own.
     """
 
     weights: TreeWeights
-    unit_costs: tuple[float, float, float, float, float]   # pv, batt, inv, gen, pv_ac
+    #: Annual cost of a unit of each capacity, pv, batt, inv, gen, pv_ac, averaged over the
+    #: nodes with their weights in the objective: the programme charges a node's capacity at
+    #: that node's own prices, and the prices fall along the horizon, so the root's prices
+    #: charged at every node would overstate it.
+    unit_costs: tuple[float, float, float, float, float]
     lattice: Lattice
     demand_kwh: float
     yield_kwh_per_kw: float
@@ -193,6 +203,10 @@ class FreeBound:
     fuel_usd_kwh: float
     voll_usd_kwh: float
     hours: float = 8760.0
+    #: The other nodes that stand on the root's plant alone, as ``(weight, demand_kwh,
+    #: yield_kwh_per_kw)``: the operating-only nodes below a persistent root, which operate
+    #: the root's span while the root operates none of it. Empty on a fan.
+    held: tuple[tuple[float, float, float], ...] = ()
 
     def capital(self, n_pv: int, n_batt: int, n_inv: int, n_pv_ac: int,
                 generator_kw: float) -> float:
@@ -203,13 +217,28 @@ class FreeBound:
                 + a_inv * n_inv * self.lattice.inv_unit_kw
                 + a_gen * generator_kw)
 
-    def root_operating(self, n_pv: int, n_pv_ac: int, generator_kw: float) -> float:
-        """Least the root node can spend running, given the array and the set it holds."""
+    def root_operating(self, n_pv: int, n_pv_ac: int, generator_kw: float,
+                       demand_kwh: float | None = None,
+                       yield_kwh_per_kw: float | None = None) -> float:
+        """Least the root node can spend running, given the array and the set it holds.
+
+        Or any other year operated on the root's plant alone, given that year's demand and
+        yield.
+        """
+        demand = self.demand_kwh if demand_kwh is None else demand_kwh
+        yield_ = self.yield_kwh_per_kw if yield_kwh_per_kw is None else yield_kwh_per_kw
         array_kwh = (self.round_trip * (n_pv + n_pv_ac)
-                     * self.lattice.pv_unit_kw * self.yield_kwh_per_kw)
-        residual = max(0.0, self.demand_kwh - array_kwh)
+                     * self.lattice.pv_unit_kw * yield_)
+        residual = max(0.0, demand - array_kwh)
         from_set = min(residual, generator_kw * self.hours)
         return self.fuel_usd_kwh * from_set + self.voll_usd_kwh * (residual - from_set)
+
+    def operating(self, n_pv: int, n_pv_ac: int, generator_kw: float) -> float:
+        """Least the nodes standing on the root's plant alone spend running, weighted."""
+        return (self.weights.root * self.root_operating(n_pv, n_pv_ac, generator_kw)
+                + sum(weight * self.root_operating(n_pv, n_pv_ac, generator_kw,
+                                                   demand, yield_)
+                      for weight, demand, yield_ in self.held))
 
     def _array_capital(self, box: RootBox, total: int) -> float:
         """Least the box can pay to hold ``total`` modules, split between the two buses.
@@ -248,10 +277,14 @@ class FreeBound:
         room_on_the_cheap_bus = (box.n_pv[1] - box.n_pv[0] if a_pv <= a_pv_ac
                                  else box.n_pv_ac[1] - box.n_pv_ac[0])
         breaks = [float(floor), float(ceiling), float(floor + room_on_the_cheap_bus)]
-        per_module = self.round_trip * self.lattice.pv_unit_kw * self.yield_kwh_per_kw
-        if per_module > 0:
-            breaks.append(self.demand_kwh / per_module)
-            breaks.append((self.demand_kwh - rating * self.hours) / per_module)
+        # Each year standing on the root's plant has its own two breakpoints, and the sum of
+        # their running costs is piecewise linear on all of them together.
+        for demand, yield_ in ((self.demand_kwh, self.yield_kwh_per_kw),
+                               *((d, y) for _, d, y in self.held)):
+            per_module = self.round_trip * self.lattice.pv_unit_kw * yield_
+            if per_module > 0:
+                breaks.append(demand / per_module)
+                breaks.append((demand - rating * self.hours) / per_module)
         totals = set()
         for value in breaks:
             for side in (math.floor(value), math.ceil(value)):
@@ -265,7 +298,7 @@ class FreeBound:
         fixed = self.weights.total * (settled_capital + a_gen * rating)
         return min(fixed
                    + self.weights.total * self._array_capital(box, total)
-                   + self.weights.root * self.root_operating(total, 0, rating)
+                   + self.operating(total, 0, rating)
                    for total in self._totals_worth_trying(box, rating))
 
     def of(self, box: RootBox) -> float:
@@ -333,7 +366,10 @@ class FirstStageCertificate:
 
 def free_bound_for(tree: ScenarioTree, rep: dict[int, RepDays], lattice: Lattice,
                    settings: ProjectSettings, architecture: str) -> FreeBound:
-    """Assemble the costless bound from the root node's own year."""
+    """Assemble the costless bound from the root's own year and the nodes' prices.
+
+    The years of the nodes that hold the root's plant alone enter beside the root's.
+    """
     from ..model.economics import annualised_unit_costs
     from .lower_bound import fuel_minorant
     from .simulator import GeneratorModel
@@ -343,6 +379,28 @@ def free_bound_for(tree: ScenarioTree, rep: dict[int, RepDays], lattice: Lattice
     day_weight = days.weight[:, None]
     demand_kwh = float((days.demand * day_weight).sum())
     yield_kwh = float((days.specific_yield * day_weight).sum())
+    weights = TreeWeights.of(tree)
+
+    # The operating-only nodes below a persistent root hold its plant and nothing else, so
+    # the argument the root's own year makes applies to each of them, at its own weight.
+    held, stack = [], list(tree.children[root])
+    while stack:
+        node = stack.pop()
+        if tree.invests_at(node):
+            continue
+        own = rep[node].weight[:, None]
+        held.append((node, weights.per_node[node],
+                     float((rep[node].demand * own).sum()),
+                     float((rep[node].specific_yield * own).sum())))
+        stack.extend(tree.children[node])
+
+    # Each node's capacity is charged at that node's prices, which fall along the horizon;
+    # the root's prices at every node would charge more than the programme does.
+    annuities = {n: annualised_unit_costs(tree.node_data[n].costs, architecture, settings)
+                 for n in tree.nodes}
+    unit_costs = tuple(
+        sum(weights.per_node[n] * annuities[n][k] for n in tree.nodes) / weights.total
+        for k in range(5))
 
     # The catalogue's most efficient marginal litre, not the unit the plan happens to buy:
     # a bound must minorise whichever it picks.
@@ -353,9 +411,8 @@ def free_bound_for(tree: ScenarioTree, rep: dict[int, RepDays], lattice: Lattice
         slopes.append(slope)
 
     return FreeBound(
-        weights=TreeWeights.of(tree),
-        unit_costs=annualised_unit_costs(tree.node_data[root].costs, architecture,
-                                         settings),
+        weights=weights,
+        unit_costs=unit_costs,
         lattice=lattice,
         demand_kwh=demand_kwh,
         yield_kwh_per_kw=yield_kwh,
@@ -364,6 +421,7 @@ def free_bound_for(tree: ScenarioTree, rep: dict[int, RepDays], lattice: Lattice
         fuel_usd_kwh=price * min(slopes),
         voll_usd_kwh=settings.economics.value_of_lost_load_usd_kwh,
         hours=float(days.weight.sum()) * 24.0,
+        held=tuple((w, d, y) for _, w, d, y in sorted(held)),
     )
 
 
@@ -644,6 +702,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--branching", type=int, nargs="+",
                         default=list(defaults.branching))
     parser.add_argument("--seed", type=int, default=defaults.seed)
+    parser.add_argument("--tree-mode", default=defaults.tree_mode,
+                        choices=["fan", "persistent"],
+                        help="nest the stage medoids as a fan, or branch over regimes and "
+                             "hold each one along its paths")
+    parser.add_argument("--node-year", default=defaults.node_year,
+                        choices=["first", "last"],
+                        help="the year of its span whose demand a node carries")
     parser.add_argument("--solver", default=defaults.solver)
     parser.add_argument("--mip-gap", type=float, default=None,
                         help="relative gap the solver may stop each programme at, instead "
@@ -661,7 +726,8 @@ def main(argv: list[str] | None = None) -> int:
                       stage_years=tuple(args.stage_years),
                       branching=tuple(args.branching),
                       horizon_years=settings.economics.horizon_years,
-                      discount_rate=settings.economics.discount_rate)
+                      discount_rate=settings.economics.discount_rate,
+                      tree_mode=args.tree_mode, node_year=args.node_year)
     cfg.validate()
     options = solver_options_for(cfg.solver, args.mip_gap, args.nodefile_gb)
 
@@ -731,8 +797,16 @@ def main(argv: list[str] | None = None) -> int:
         },
         "tree": {
             "nodes": len(tree.nodes), "leaves": len(tree.leaves),
+            "operating_nodes": sum(1 for n in tree.nodes if tree.operates(n)),
+            "tree_mode": tree.tree_mode,
+            "node_year": cfg.node_year,
+            # The persistent tree's shape; ``branching`` above shapes the fan.
+            "regime_branches": cfg.regime_branches,
+            "regime_fan": list(cfg.regime_fan),
+            "root_period": cfg.root_period,
             "reduction_error": {str(k): round(float(v), 4)
                                 for k, v in tree.reduction_error.items()},
+            "distortion": tree.distortion,
         },
         "incumbent": {
             "z_rule_usd": z_rule,

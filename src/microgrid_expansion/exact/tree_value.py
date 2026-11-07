@@ -148,6 +148,9 @@ def _chain_of(tree: ScenarioTree, leaf: int) -> tuple[ScenarioTree, dict[int, in
         leaves=[renumbered[leaf]],
         node_data={renumbered[n]: tree.node_data[n] for n in path},
         reduction_error=dict(tree.reduction_error),
+        tree_mode=tree.tree_mode,
+        # An operating-only node holds the root's plant on the chain as on the tree.
+        invests={renumbered[n]: False for n in path if not tree.invests_at(n)},
     )
     return chain, renumbered
 

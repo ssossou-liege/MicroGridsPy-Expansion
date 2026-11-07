@@ -2,8 +2,9 @@
 
 The physics is the one layer L3 established and validated, transposed from a single year to
 the tree: sources split by destination, the hybrid inverter carrying what the coupling
-architecture makes it carry, and the storage recursion closed within each representative
-day because the days are not consecutive.
+architecture makes it carry, and the storage recursion chained across the node's
+representative days, opening where the controller opens and left free at the end of the
+year.
 
 Only one encoding of the operating layer appears here, and it is the *cost-optimal* one.
 An earlier design offered a second, "rule-faithful", which added the night-reserve floor and
@@ -62,6 +63,11 @@ def add_dispatch_constraints(m: linopy.Model, v: dict, c: Coords, cfg: ModelConf
 
     for n in c.node:
         node = int(n)
+        if float(c.n_years[node]) <= 0.0:
+            # A node that stands for no operating year has no operation to constrain: the
+            # root of a persistent tree, whose span the nodes below it operate. Its flows
+            # are left in no constraint and at no cost, so they rest at zero.
+            continue
         cap_pv, cap_batt, cap_inv, cap_gen, cap_pv_ac = capacity(
             v, c, node, cfg, installed)
         block = data[node]

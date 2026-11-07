@@ -107,6 +107,10 @@ def add_objective(m: linopy.Model, v: dict, c: Coords, cfg: ModelConfig, data: d
         block = data[node]
         weight = float(c.prob[node]) * float(c.disc[node])
         years = float(c.n_years[node])
+        if years <= 0.0:
+            # A persistent root stands for no year: its plant is charged at the nodes that
+            # operate its span, each holding it and each carrying its regime's mass.
+            continue
         # What the plan buys, not what the plant is: the array, the storage and the
         # conversion already standing were bought years ago and are not bought again. On
         # bare ground the two coincide, which is why every figure computed before this is

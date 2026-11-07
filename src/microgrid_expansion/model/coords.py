@@ -45,6 +45,9 @@ class Coords:
     disc: pd.Series
     n_years: pd.Series
     hour_weight: np.ndarray  # days each hour stands for
+    #: Nodes that hold their parent's plant and buy nothing: the operating-only nodes below
+    #: a persistent root. Empty on a fan, where every node may invest.
+    holds_parent: frozenset = frozenset()
 
 
 def build_coords(
@@ -65,4 +68,6 @@ def build_coords(
         disc=pd.Series(tree.disc),
         n_years=pd.Series(tree.n_years),
         hour_weight=np.repeat(days.weight, 24),
+        holds_parent=frozenset(int(n) for n in nodes
+                               if not getattr(tree, "invests_at", lambda _: True)(int(n))),
     )

@@ -27,6 +27,15 @@ class NodeData:
     #: certifiable against the demand the tree actually put under it, and a certificate
     #: needs to name the trajectory it was built from rather than infer it from a series.
     trajectory: str = "central"
+    #: The rest of the path's regime, named for the same reason: the connection trajectory
+    #: (``census`` under the whole census) and the cost future. With ``trajectory`` they
+    #: let persistence be checked on the tree itself rather than trusted to its builder.
+    connection: str = "census"
+    cost_scenario: str = "central"
+    #: Households connected in the first month of the year the demand stands for, every
+    #: category together, and the village age of that month.
+    connected_households: int = 0
+    village_age_months: int = 0
 
 
 @dataclass
@@ -38,7 +47,8 @@ class ScenarioTree:
     nodes : list[int]
         Node identifiers; ``0`` is the root.
     stage : dict[int, int]
-        Stage (milestone index) of each node.
+        Stage (milestone index) of each node. In a persistent tree the operating-only nodes
+        below the root stand at stage 0 beside it.
     parent : dict[int, int | None]
         Parent node id (``None`` for the root).
     children : dict[int, list[int]]
@@ -48,7 +58,8 @@ class ScenarioTree:
     disc : dict[int, float]
         Discount factor delta_n applied to costs at the node.
     n_years : dict[int, int]
-        Operating-years weight Delta_n the node represents.
+        Operating-years weight Delta_n the node represents; zero at a persistent root whose
+        span is operated by the nodes below it.
     leaves : list[int]
         Leaf nodes (complete scenarios); their probabilities sum to 1.
     node_data : dict[int, NodeData]
@@ -72,6 +83,22 @@ class ScenarioTree:
     #: same rate, and a consumer handed a tree and a settings object cannot otherwise tell
     #: whether the two agree. ``None`` on a tree assembled by hand, which claims nothing.
     discount_rate: float | None = None
+    #: How the tree was nested, ``fan`` or ``persistent`` (``ModelConfig.tree_mode``).
+    tree_mode: str = "fan"
+    #: Nodes that may add capacity. A node absent from it invests, which is every node of
+    #: a fan; a node mapped to ``False`` holds its parent's plant and buys nothing, which is
+    #: what the operating-only nodes below a persistent root are.
+    invests: dict[int, bool] = field(default_factory=dict)
+    #: The five measures of what the reduction lost (``tree.reduce.distortion``).
+    distortion: dict = field(default_factory=dict)
+
+    def invests_at(self, node: int) -> bool:
+        """Whether the plan may add capacity at ``node``."""
+        return bool(self.invests.get(node, True))
+
+    def operates(self, node: int) -> bool:
+        """Whether ``node`` stands for any operating year; a persistent root may not."""
+        return self.n_years[node] > 0
 
     def ancestors(self, node: int) -> list[int]:
         """Return the chain from the root to ``node`` inclusive."""

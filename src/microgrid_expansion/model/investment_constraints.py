@@ -73,6 +73,16 @@ def add_investment_constraints(m: linopy.Model, v: dict, c: Coords,
                 m.add_constraints(v["z_ge"].sel(node=root, gsize=k) == 0,
                                   name=f"root_no_gen_{k}")
 
+    # A node that holds its parent's plant buys nothing and keeps the parent's generating
+    # set. These are the operating-only nodes below a persistent root: the year-0 plant run
+    # under one regime, not a second decision taken in year 0 once the regime is known.
+    for n in sorted(c.holds_parent):
+        parent = int(c.parent[n])
+        for module in ("b_pv", "b_batt", "b_inv", "b_pv_ac"):
+            m.add_constraints(v[module].sel(node=n) == 0, name=f"holds_{module}_{n}")
+        m.add_constraints(v["z_ge"].sel(node=n) - v["z_ge"].sel(node=parent) == 0,
+                          name=f"holds_gen_{n}")
+
     for n in c.node:
         parent = c.parent[int(n)]
         # The whole plant, not only what the plan adds: a converter has to admit the array

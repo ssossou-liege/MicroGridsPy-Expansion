@@ -34,6 +34,10 @@ class AxisDraw:
     grid_connected: bool = False
     #: Connection trajectory, held over the path; ``census`` under the whole census.
     connection: str = "census"
+    #: Village age, in months, of the year whose demand the stage carries (``node_year``).
+    village_age_months: int = 0
+    #: Households connected in that year's first month, every category together.
+    connected_households: int = 0
 
 
 @dataclass
@@ -88,24 +92,35 @@ def sample_scenario_paths(
     # A site with its own record in a brownfield run starts from its derived age.
     base_maturity = (connection.year0_age if connection.year0_age is not None
                      else getattr(cfg, "maturity_months", 12))
+    # The year of each milestone's span whose demand the node carries. Under ``last`` the
+    # village is aged to the end of the span, and nothing else moves: the climate series
+    # exist at the milestones, the prices are the milestone's, and the stream of draws is
+    # the same, the demand consuming one draw whatever age it is read at.
+    demand_years = [cfg.demand_year(k) for k in range(len(cfg.stage_years))]
     resolved: list[ScenarioPath] = []
     for pid, raw in enumerate(raw_paths):
         draws, demand, pv_unit, t_amb = [], {}, {}, {}
-        for stage in raw:
+        for index, stage in enumerate(raw):
             y = stage["stage_year"]
             costs = cost_paths.stage_costs(space.economic, y, rng,
                                            scenario=stage["cost_scenario"],
                                            settings=settings)
+            schedule = connection.schedule(stage.get("connection", "census"))
+            age = base_maturity + 12 * demand_years[index]
             draws.append(AxisDraw(y, stage["resource"], stage["policy"], costs,
                                   trajectory=stage["trajectory"],
                                   cost_scenario=stage["cost_scenario"],
                                   grid_connected=bool(stage.get("grid_connected", False)),
-                                  connection=stage.get("connection", "census")))
+                                  connection=stage.get("connection", "census"),
+                                  village_age_months=int(age),
+                                  connected_households=int(
+                                      sum(schedule.connected(age).values()))))
             demand[y] = demand_paths.simulate_stage_demand(
-                space.demand, y, rng, site=site, trajectory=stage["trajectory"],
+                space.demand, demand_years[index], rng, site=site,
+                trajectory=stage["trajectory"],
                 base_maturity_months=base_maturity,
                 network_loss_fraction=getattr(cfg, "network_loss_fraction", 0.0),
-                connection=connection.schedule(stage.get("connection", "census")))
+                connection=schedule)
             pv_unit[y], t_amb[y] = pv_paths.simulate_stage_pv(
                 stage["resource"], y, site=site, rng=rng, module=module)
         resolved.append(ScenarioPath(pid, draws, demand, pv_unit, t_amb))

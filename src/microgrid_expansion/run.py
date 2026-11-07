@@ -72,9 +72,10 @@ def run(cfg: ModelConfig, out_dir: Path = RESULTS_DIR, verbose: bool = True,
     tree = build_tree(paths, cfg)
     tree.check_probabilities()
     if verbose:
-        print(f"tree: {len(tree.nodes)} nodes, {len(tree.leaves)} leaves, "
-              f"distortion per stage "
-              + ", ".join(f"{y}:{e:.3f}" for y, e in tree.reduction_error.items()),
+        print(f"tree: {tree.tree_mode}, node year {cfg.node_year}, {len(tree.nodes)} nodes, "
+              f"{len(tree.leaves)} leaves, distortion per stage "
+              + ", ".join(f"{y}:{e:.3f}" for y, e in tree.reduction_error.items())
+              + f", {tree.distortion.get('persistence_violations')} paths not persistent",
               flush=True)
 
     rep = {n: reduce_to_rep_days(_NodeInstance(tree.node_data[n], settings),
@@ -119,7 +120,7 @@ def run(cfg: ModelConfig, out_dir: Path = RESULTS_DIR, verbose: bool = True,
         "cost_of_the_programme_plan_usd": certificate.improved_from,
     })
     written = write_report(plans, kpis, expected, tree, out_dir,
-                           stem=f"summary_tree_{cfg.site.lower()}")
+                           stem=f"summary_tree_{cfg.site.lower()}", node_year=cfg.node_year)
     if verbose:
         root = plans[0]
         array = f"{root.pv_kw:.1f} kW"
@@ -151,7 +152,9 @@ def _configuration(args) -> tuple[ModelConfig, "ProjectSettings"]:
                       branching=tuple(args.branching),
                       horizon_years=settings.economics.horizon_years,
                       discount_rate=settings.economics.discount_rate,
-                      network_loss_fraction=args.network_loss)
+                      network_loss_fraction=args.network_loss,
+                      tree_mode=getattr(args, "tree_mode", "fan"),
+                      node_year=getattr(args, "node_year", "first"))
     cfg.validate()
     return cfg, settings
 
@@ -180,6 +183,13 @@ def main(argv: list[str] | None = None) -> int:
                         default=defaults.network_loss_fraction,
                         help="share of the energy injected that the distribution network "
                              "consumes; it decides the demand every node is sized for")
+    parser.add_argument("--tree-mode", default=defaults.tree_mode,
+                        choices=["fan", "persistent"],
+                        help="nest the stage medoids as a fan, or branch over regimes and "
+                             "hold each one along its paths")
+    parser.add_argument("--node-year", default=defaults.node_year,
+                        choices=["first", "last"],
+                        help="the year of its span whose demand a node carries")
     args = parser.parse_args(argv)
 
     cfg, settings = _configuration(args)

@@ -87,6 +87,41 @@ class ModelConfig:
     n_mc_paths: int = 1000               # Monte-Carlo paths drawn before reduction
     branching: tuple[int, ...] = (1, 3, 2, 2, 2)  # children per stage (root first)
     seed: int = 0
+    # How the reduced outcomes are nested. ``fan`` reduces each stage over the whole
+    # ensemble and gives every node of a stage the same children, which is the tree every
+    # stored result was drawn on; along one of its paths the growth trajectory and the cost
+    # future can change from one milestone to the next. ``persistent`` branches over regimes
+    # -- the connection trajectory, the growth trajectory and the cost future of a path --
+    # at the first milestone after the root and holds each regime below its branch.
+    # ``branching`` shapes the fan; ``regime_branches``, ``regime_fan`` and ``root_period``
+    # shape the persistent tree.
+    tree_mode: str = "fan"
+    # Regime branches below the root. When the ensemble holds more regimes, they are reduced
+    # to this many medoid regimes, each carrying the mass of its cluster.
+    regime_branches: int = 9
+    # Children per stage within a regime, root first. Ones throughout: climate and the
+    # year-to-year variability then enter through each regime's medoid outcome, and the
+    # programme keeps the forty-six nodes of the fan.
+    regime_fan: tuple[int, ...] = (1, 1, 1, 1, 1)
+    # Who operates the root's span in a persistent tree. ``regimes``: one node per regime
+    # branch, holding the root's plant and investing nothing, so the year-0 plant is
+    # operated under every regime it may meet; the root then invests and does not operate.
+    # ``root``: the root operates it on the medoid of the whole ensemble, as in the fan.
+    root_period: str = "regimes"
+    # Centre the stage features before scaling them, and set a channel that does not vary to
+    # zero (``tree.reduce._scaled``). Without it a constant channel -- the prices at year 0,
+    # where every cost future starts from the same ones -- is divided by a spread of pure
+    # rounding, and the distances the medoids are chosen by all come out zero: the fan's
+    # root is then the first path drawn, not the medoid of year 0. Off for the fan, which
+    # every stored result was drawn with, until session 4 recomputes them; the persistent
+    # tree always centres, since within one cost future the prices are constant at every
+    # stage and none of its medoids would otherwise be one.
+    centre_features: bool = False
+    # The year of its span whose demand a node carries. ``first`` is the milestone's own
+    # year, which every stored result used; ``last`` is the span's last year, the most
+    # demanding one of a village still connecting. Only the demand moves: the yield, the
+    # temperature and the prices remain the milestone's.
+    node_year: str = "first"
 
     # --- Time-domain reduction ---
     # Sixty-four days, which is what produced every stored tree result: 777 538 columns
@@ -154,6 +189,18 @@ class ModelConfig:
     # sized for different demands.
     network_loss_fraction: float = NETWORK_LOSS_FRACTION
 
+    def spans(self) -> tuple[int, ...]:
+        """Operating years each milestone stands for: to the next one, or to the horizon."""
+        years = list(self.stage_years)
+        return tuple(max(int((years[k + 1] if k + 1 < len(years)
+                              else int(self.horizon_years)) - year), 1)
+                     for k, year in enumerate(years))
+
+    def demand_year(self, stage: int) -> int:
+        """The year of a milestone's span whose demand its node carries (``node_year``)."""
+        year = int(self.stage_years[stage])
+        return year if self.node_year == "first" else year + self.spans()[stage] - 1
+
     def validate(self) -> None:
         """Check internal consistency (stage count vs branching, etc.)."""
         if len(self.branching) != len(self.stage_years):
@@ -165,6 +212,28 @@ class ModelConfig:
                              "node; branching starts after it")
         if self.n_rep_days < 1:
             raise ValueError("a node needs at least one representative day")
+        if self.tree_mode not in ("fan", "persistent"):
+            raise ValueError(f"tree_mode is 'fan' or 'persistent', not {self.tree_mode!r}")
+        if self.node_year == "both":
+            # Two operating years per node would change how the programme is indexed, for a
+            # bias that ``first`` and ``last`` already bracket.
+            raise ValueError(
+                "node_year 'both' is not built: it would give every node two operating "
+                "years, which changes how the programme is indexed, and 'first' and "
+                "'last' already bracket the bias it would measure; run both of those")
+        if self.node_year not in ("first", "last"):
+            raise ValueError(f"node_year is 'first' or 'last', not {self.node_year!r}")
+        if self.tree_mode == "persistent":
+            if len(self.regime_fan) != len(self.stage_years):
+                raise ValueError("regime_fan must have one entry per stage in stage_years")
+            if self.regime_fan[0] != 1:
+                raise ValueError("the first stage is the here-and-now decision and holds "
+                                 "one node; a regime's fan starts after it")
+            if min(self.regime_fan) < 1 or self.regime_branches < 1:
+                raise ValueError("a regime needs at least one branch and one child a stage")
+            if self.root_period not in ("regimes", "root"):
+                raise ValueError(
+                    f"root_period is 'regimes' or 'root', not {self.root_period!r}")
 
 
 def crf(r: float = DISCOUNT_RATE, n: int = PROJECT_YEARS) -> float:

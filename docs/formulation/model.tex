@@ -409,7 +409,8 @@ and are introduced there.
   value, $B_n=(1+I)^{-\mathrm{yr}(n)}$ where $\mathrm{yr}(n)$ is the calendar year of
   $\mathrm{stage}(n)$.
   \item[$\Delta_n$] Number of operating years that node $n$ represents, i.e.\ the span
-  between its stage and the next milestone.
+  between its stage and the next milestone. The root of a persistent tree stands for none,
+  $\Delta_{n_0}=0$: its span is operated by the nodes below it (Section~\ref{sec:tree}).
   \item[$C^{g}_0$] Existing installed capacity of technology $g$ already on site at
   commissioning (brownfield initial condition); zero for a greenfield project. For the
   generator it is the rating $K^{\mathrm{ge}}_{s_0}$ of the unit standing.
@@ -493,7 +494,10 @@ state,
   \label{eq:ge-monotone}
 \end{align}
 where~\eqref{eq:ge-monotone} restricts the generator to upgrades (its rating never
-decreases along the tree). The parent state of the root encodes the initial condition,
+decreases along the tree). A node that holds its parent's plant, which the operating-only
+nodes below a persistent root do (Section~\ref{sec:tree}), adds nothing to it:
+$b^{g}_n=0$ for the modular technologies and $z^{\mathrm{ge}}_{n,s}=z^{\mathrm{ge}}_{\pa(n),s}$
+for every size. The parent state of the root encodes the initial condition,
 $\mathrm{cap}^{g}_{\pa(n_0)}=C^{g}_0$ for the modular technologies and
 $\mathrm{cap}^{\mathrm{ge}}_{\pa(n_0)}=K^{\mathrm{ge}}_{s_0}$ for the incumbent generator
 (all zero for a greenfield project; Section~\ref{sec:brownfield}). Because every scenario
@@ -1091,6 +1095,23 @@ variability branch freely within the regime. The arrival of the grid is absorbin
 node the line has reached, every node is connected. The path probability $P_n$ is the
 product of the conditional branch probabilities along the path. A two-stage program is
 recovered as the special case of a tree with a single decision node at the first stage.
+
+The root's own span is operated under every regime. The regime is revealed at the first
+milestone, but the year-0 plant runs the years before it under whichever regime is true, and
+a root holding one year of data, the medoid of the whole ensemble, would never see the
+spread of the span in which a new village connects most of its households. The root
+therefore carries the investment and no operation, $\Delta_{n_0}=0$, and below it sits one
+operating-only node per regime branch, at the root's milestone and for the root's span, with
+the branch's probability, the medoid of that regime's own outcomes at year~0, and the root's
+plant, to which it adds nothing (Section~\ref{sec:capacity}). The first-milestone nodes of
+the regime hang below it. In node-indexed form this is the two-stage structure of the year-0
+decision: one plant, operated under every regime.
+
+A node is charged $\Delta_n$ years of operation on one year of data, and which year of its
+span that is matters once households connect progressively, the first year of a span being
+its least demanding. The data are those of the span's first year or, as an option, of its
+last; only the demand differs between the two, the yield, the temperature and the prices
+being the milestone's in either case.
 
 Revealing the regime at the first milestone is an assumption, and it is stated as one: five
 years of operation show how many households a village connects, how their consumption grows

@@ -1,8 +1,8 @@
 # Progressive connection and persistent scenario trees
 
-*Design specification, written 2026-11-06 (session 1 of the series). Nothing in it is
-implemented yet. Session 2 implements sections 4 to 7 and 10; session 3 implements section 9;
-section 8 spans both.*
+*Design specification, written 2026-11-06 (session 1 of the series). Session 2 implemented
+sections 4 to 7 and 10, and session 3 section 9, both on 2026-11-07; section 9.7 records how
+section 9 was built, and section 12 what each session measured. Section 8 spans both.*
 
 Decisions D1 to D3 (section 2) are the author's and are not reopened here. Every other choice
 is settled in this document. The few that are the author's to confirm are marked
@@ -647,6 +647,91 @@ regimes are exactly the regimes of `pairing = "paired"`, or nine medoids of the 
 ones. Fields: `ModelConfig.tree_mode` (`"fan"` or `"persistent"`, default `"fan"` until session
 4), `ModelConfig.regime_branches = 9` and `ModelConfig.regime_fan = (1, 1, 1, 1, 1)`, root first.
 
+### 9.7 As built (session 3)
+
+Session 3 built sections 9.1 to 9.6 as written, with decisions 1, 5, 6 and 7 at their defaults,
+and settled the following points the text left open. None of them moves the fan tree, which
+stays the default.
+
+- **The root's period is a field.** `ModelConfig.root_period` is `"regimes"` (decision 6, the
+  default under `tree_mode = "persistent"`) or `"root"`, the alternative, in which the root
+  operates its span on the medoid of the whole ensemble and the regime branches hang directly
+  below it. It is read only by the persistent builder. The operating-only nodes stand at stage
+  0, beside the root, with the root's discount factor and span; the root's span is then
+  `n_years = 0`, and `ScenarioTree.operates(n)` is `n_years[n] > 0`.
+- **A root that operates nothing has no operating block.** `model/dispatch_constraints.py` and
+  `model/economics.py` skip a node with `n_years = 0`: its flows are in no constraint and at no
+  cost, so they rest at zero, and its capital is charged at the operating-only nodes, which hold
+  its plant. `model/investment_constraints.py` fixes `b_pv`, `b_batt`, `b_inv` and `b_pv_ac` at
+  zero at a node that does not invest (`ScenarioTree.invests`, absent meaning true) and sets its
+  generator binaries equal to its parent's.
+- **The descent.** `exact/tree_certify._monotone` sets a node that does not invest to its
+  parent's plant, and such a node is never a coordinate of the search. The controller is still
+  simulated at the root, at zero weight, so that every node has a trace.
+- **`exact/first_stage.py` is not wholly unaffected.** Its boxes are in root coordinates and need
+  nothing. Its costless bound was affected twice. The energy term was weighted by the root's
+  operating weight, which is zero at a persistent root; it now sums over the root and every node
+  that holds the root's plant alone, each with its own year (`FreeBound.held`), which on a fan is
+  the root alone, as before. And the capital term was wrong on every tree: it charged the box's
+  cheapest corner at the root's prices with the whole tree's weight, whereas the programme charges
+  a node's capacity at that node's prices, and every cost future of the shipped settings has
+  them fall (the array at 0.47 to 0.82 of its year-0 price by year 20). The term exceeded what
+  the programme charges, so the bound could prune the optimum. It now uses the node annuities
+  averaged with the tree's weights. The first-stage certificates stored in `results/` were
+  computed with the overstated term and are not re-run here.
+- **A flat channel chose the medoids (a defect older than this session).** `tree.reduce`
+  scaled each feature channel by its spread and replaced a spread of zero by one. A channel
+  that does not vary has a spread of zero in exact arithmetic and of a few units of rounding in
+  floating point, depending on its value and on how many outcomes there are: thirty prices of
+  151.2 $/kW give 2.8e-14. Divided by that, the channel became a constant of order 1e15, and
+  `timedomain.kmedoids.pairwise_distances`, which computes the distances in their expanded form,
+  lost every other channel to cancellation: all distances came out zero, and the medoid was the
+  first outcome of the list. Two places meet such channels. At year 0 every cost future starts
+  from the same prices, so the fan's root has been the first path drawn rather than the medoid
+  of year 0, in every stored tree. Within one regime the cost future is fixed, so the prices
+  are flat at every stage, and the first version of the persistent builder took the first path
+  of each regime at every milestone: its tree paths were Monte-Carlo paths, and its
+  plausibility came out zero. `_scaled` now centres the features and sets to zero a channel
+  whose spread is below a billionth of its magnitude. The persistent builder, the regime
+  features and the distortion always use it. The fan uses it only under
+  `ModelConfig.centre_features = True`; the default stays `False`, so that the fan and its
+  objective are those of the stored results (section 14, point 15).
+- **Regime features** are the unscaled stage features of section 9.2, grid channel included,
+  averaged over a regime's paths, concatenated over stages 1 to S-1, then centred and scaled
+  across regimes. The k-medoids is weighted by regime mass.
+- **The grid split (9.2, step 5)** is made whenever the grid state differs between paths at some
+  milestone, which is what `arrival_uncertain` produces. An unconnected parent with a fan of `f`
+  receives `max(1, round(f s))` children from the arrivals and `max(1, f - round(f s))` from the
+  rest, `s` being the arrivals' share. A grid present at year 0 on some paths and not others is
+  refused: the root's span cannot be split on it.
+- **`NodeData`** carries `connection`, `cost_scenario`, `connected_households` (the stock, all
+  categories together, in the first month of the year the demand stands for) and
+  `village_age_months` (that month's village age); `AxisDraw` carries the last two.
+- **`node_year`** takes `"first"` and `"last"`. The demand of a node under `"last"` is read at
+  village age `base + 12 * (y + D - 1)`; the yield, the temperature and the prices stay the
+  milestone's, and the stream of draws is unchanged, since the demand consumes one draw whatever
+  age it is read at. `"both"` is refused with a message: it would give every node two operating
+  years, which changes how the programme is indexed, for a bias `"first"` and `"last"`
+  bracket. Session 4 decides whether it is needed. `exact/certify.py` does not read
+  `node_year`, so option B of section 8 stays the first year of the span until session 4 makes it
+  follow.
+- **Distortion (9.5), on one scale.** Every distance of `tree.distortion` is taken in the stage
+  features of the whole ensemble, scaled by their spread across it, so that the two trees are
+  measured with one ruler. `tree.reduction_error` keeps its meaning, the error of each reduction
+  in its own scale: for a persistent tree, the within-regime errors weighted by branch mass, whose
+  scale is a regime's own and therefore narrower. The two are not comparable; the distortion is.
+  - `stage[y]`: each path to the nearest operating node of its branch at `y`, averaged over the
+    paths, which weights each regime by its mass. On a fan it equals `reduction_error`.
+  - `regime`: the mass-weighted distance from each regime to the nearest regime the tree *holds*,
+    one that some path keeps from the first milestone on. On a persistent tree that is the
+    representative, and the measure is the one section 9.5 defines. A fan that holds no regime
+    along any path has none, and reports `None`.
+  - `persistence_violations` counts the root-to-leaf paths with a violation, and
+    `violations_by_kind` splits them. The stock is compared over the operating nodes only: the
+    root of a persistent tree carries the medoid of the whole ensemble, which belongs to no
+    regime, and operates nothing. Under `root_period = "root"` the root operates, and a fall from
+    it to a low regime is counted.
+
 ## 10. The network-loss parameter (session 2)
 
 State today:
@@ -721,6 +806,17 @@ Session 3:
 | `test_the_distortion_report_is_complete` | the five measures exist in both tree modes, and the persistence violations are zero in persistent mode |
 | `test_the_last_year_moves_only_the_demand` | (decision 5) under `last`, a node's demand is the year of village age `base + 12 * (y + D - 1)`, while its yield, temperature and prices are the milestone's |
 
+As built (`tests/test_persistent_tree.py`), the single-regime property is two tests: with
+`root_period = "root"` the persistent builder gives the fan's tree, node for node, and
+`test_moving_the_root_period_below_it_keeps_the_programme_value` checks that with the
+operating-only node the programme's value is the fan's. Four tests were added:
+`test_a_flat_channel_does_not_decide_the_medoid` (section 9.7),
+`test_a_tree_of_every_regime_has_no_regime_distortion`,
+`test_the_tree_shapes_are_refused_when_they_do_not_fit` (an unknown mode or year, `"both"`, a
+fan that branches at the root) and `test_the_tree_has_the_size_section_9_6_gives`, on four
+rows of the table of section 9.6. Every ensemble there is synthetic; the file runs in about
+twenty seconds.
+
 ## 12. Acceptance criteria
 
 Session 2 is done when:
@@ -787,6 +883,82 @@ Session 3 is done when:
   reduced ensemble suffices), and `first_stage` returns a root plant and a gap.
 - **S3-A5.** The five distortion measures are reported for both trees on the same ensemble.
 
+Results (2026-11-07), on Samionta, seed 0, both trees drawn from one ensemble each time; the
+fan is the shipped one (`centre_features = False`), and "fan, centred" is the same fan with the
+corrected scaling of section 9.7, for what session 4 will see.
+
+**S3-A1.** The fourteen tests of `tests/test_persistent_tree.py` pass in about fifteen seconds.
+The fan and its objective were compared with the code of commit 9855f67, run on the same cache:
+on the default ensemble (1 000 paths, five milestones, branching (1, 3, 2, 2, 2), eight
+representative days) and on two milestones (100 paths, four days), the nodes, parents,
+probabilities, discount factors, operating years, reduction errors, every node's arrays,
+costs, pathway, policy, grid state and trajectory, the objective (78 171.102 $ and
+106 578.771 $) and the root plant are identical bit for bit. The full suite, in `mgpy_dev`: 468 passed and 1 skipped, in 8 min 17 s, every pool it reads having been built beforehand.
+
+**S3-A2.** The pools: session 2 bis invalidated them, and the five-milestone ensembles need
+fifteen under the whole census and forty-five under progressive connection (three growth
+trajectories, three connection trajectories, five village ages). They were built in parallel
+before the ensembles were drawn: the nine census pools of 132, 192 and 252 months in 944 s on
+nine processes (those of 12 and 72 months were already cached), and the forty-five progressive
+pools in 1 598 s on eleven, about 300 to 570 s each. Drawing 1 000 paths from cached pools then
+takes 326 s, so both ensembles were drawn at the default size, 1 000 paths;
+`connection.mode = "progressive"` was set in memory for that run only.
+
+| Ensemble | Regimes | Fan: paths violating, of 24 | of which the stock falls / the regime changes / the grid leaves | Persistent: paths violating, of 9 |
+|---|---|---|---|---|
+| default, whole census | 9 | 24 | 0 / 24 / 0 | 0 |
+| progressive connection | 27 | 23 | 8 / 23 / 0 | 0 |
+
+Under the whole census the stock is 231 at every node, so only the regime can change, and it
+does on every path of the fan: no path of it keeps one regime. Under progressive connection the
+connected stock falls along a third of the fan's paths, the village losing households between
+two milestones.
+
+**S3-A3.** Both persistent trees have 46 nodes, of which 45 operate, and 9 leaves: nine regimes
+of independent growth and cost draws under the census, each its own branch, and twenty-seven
+under progressive connection reduced to nine, as section 9.6 gives for R = 9 and no fan. The
+fan has 46 nodes, all operating, and 24 leaves.
+
+**S3-A4.** `python -m microgrid_expansion.exact.first_stage --tree-mode persistent --mc-paths
+200 --rep-days 4 --max-programmes 20 --max-seconds 2400`, its record written outside `results/`.
+The persistent tree, 46 nodes of which 45 operate, was drawn in 52 s from cached pools. Under
+the divided array, the project's first coupling, and Gurobi, the programme gives a bound of
+82 773 $, and the descent takes the programme's plan from 106 353 $ to 94 484 $ in 17 809
+evaluations and 86 s, the operating-only nodes held at the root's plant throughout. The search
+over the first stage then solved its 20 programmes in 945 s without a proof. The year-0 plant
+is 45.5 kW of array on the battery's bus and 34.5 kW on the load's, 195 kWh of storage, 35 kW of
+conversion and the 8 kW set, at 94 484 $ against a lower bound of 83 561 $: a gap of 10 922 $,
+11.56 %, with no plant unresolved. The costless bound, 19 170 $ over the whole lattice, pruned
+no box; four boxes were infeasible, their converters unable to admit their arrays. The run took
+1 149 s. The gap is mostly the price of the heuristic itself, the anticipative programme lying
+12.4 % below the descent, and it closes with more programmes rather than with another tree.
+A first run, made before the flat-channel defect of section 9.7 was found, drew its tree from
+the first path of each regime and was stopped.
+
+**S3-A5.** The five measures, each distance in the stage features of the whole ensemble,
+centred and scaled by their spread across it (section 9.7):
+
+| Measure | Census: fan | fan, centred | persistent | Progressive: fan | fan, centred | persistent |
+|---|---|---|---|---|---|---|
+| `stage[0]` | 2.207 | 2.082 | 0.969 | 2.427 | 2.132 | 1.699 |
+| `stage[5]` | 1.946 | 1.946 | 1.156 | 2.087 | 2.087 | 1.883 |
+| `stage[10]` | 2.277 | 2.277 | 1.117 | 2.373 | 2.373 | 1.752 |
+| `stage[15]` | 2.314 | 2.314 | 1.119 | 2.415 | 2.415 | 1.793 |
+| `stage[20]` | 2.321 | 2.321 | 1.120 | 2.445 | 2.445 | 1.785 |
+| `regime` | none held | none held | 0.000 | 7.260 (1 held) | 7.260 (1 held) | 2.657 |
+| `coverage` | 5.178 | 5.119 | 2.661 | 5.454 | 5.324 | 4.128 |
+| `plausibility` | 3.448 | 3.416 | 1.315 | 4.192 | 4.157 | 1.898 |
+| `persistence_violations` | 24 of 24 | 24 of 24 | 0 of 9 | 23 of 24 | 23 of 24 | 0 of 9 |
+
+Three readings. The persistent tree is closer to the ensemble on every measure, with nine
+paths against twenty-four. Coverage was expected to favour the fan (section 9.5), and it does
+not: two or three medoids a milestone stand for at most three of the nine or twenty-seven
+regimes there, whereas each persistent path is one regime throughout, so a sampled path finds a
+nearer tree path among the nine than among the twenty-four combinations. And the corrected
+scaling moves only the fan's year 0, where every price is the same: its later medoids are
+unchanged, and its root moves from path 0, the first drawn, to path 733 under the census and
+781 under progressive connection, which are also the persistent root's.
+
 ## 13. Files each session touches
 
 Session 2, from the files read in session 1:
@@ -829,13 +1001,26 @@ Session 3:
   (summary fields);
 - `tests/`: the session-3 tests.
 
+As built: `model/build.py` and `exact/tree_oracle.py` needed nothing, the first because
+`model/coords.py` now carries which nodes hold their parent's plant, the second because it
+weights a node by its operating years, zero at a persistent root. The session touched
+`model/coords.py`, `model/investment_constraints.py`, `model/dispatch_constraints.py` and
+`model/economics.py` (section 9.7), `exact/tree_certify.py`, `exact/first_stage.py` (the
+costless bound, section 9.7, and the `--tree-mode` and `--node-year` options),
+`exact/tree_value.py` (a chain carved from a persistent tree keeps its operating-only node),
+`post/report.py` and `run.py` (the summary names the nesting, the node year, the operating
+nodes and the distortion; `run` takes `--tree-mode` and `--node-year`),
+`docs/formulation/model.tex` (the root's span and the node year) and the new
+`tests/test_persistent_tree.py`.
+
 Noticed while reading, for whichever session next touches the file:
 
-- `model/dispatch_constraints.py`: the module docstring says the storage recursion is "closed
+- `model/dispatch_constraints.py`: the module docstring said the storage recursion is "closed
   within each representative day"; the code chains it across the node's days and leaves the end
-  free.
-- `tree/build_tree.py`: the docstring says a late-stage node inherits the trajectory of the path
-  it comes from; under the fan, consecutive nodes come from different paths.
+  free. Corrected in session 3.
+- `tree/build_tree.py`: the docstring said a late-stage node inherits the trajectory of the path
+  it comes from; under the fan, consecutive nodes come from different paths. Corrected in
+  session 3.
 - `demand/growth.py`: `main()` prints a French heading.
 - Neither template village declares a place of worship (`community_mix`), whereas two churches
   are metered at each. It matters for the brownfield runs of session 4.
@@ -869,12 +1054,21 @@ Left open by the revision, for session 4 unless the author settles them sooner:
 | 13 | Meters silent for less than three months | four Gbowele households connected in May 2026 have recorded nothing since late August or early September 2026; by the next export they are failed meters or not |
 | 14 | The productive intensity beyond the record | at Gbowele the rule expects about 0.63 productive users per connected household, against about 0.46 observed at `T` (42 for 92 households); under the anchored rule it only drives the increments after `T` |
 
+Left open by session 3, for session 4:
+
+| | Question | State |
+|---|---|---|
+| 15 | The fan's feature scaling | `ModelConfig.centre_features = False`, so that the fan and its objective stay those of the stored results, whose root is the first path drawn rather than the medoid of year 0 (section 9.7). Recommended: `True`, with the other defaults, whenever the fan is drawn again |
+| 16 | The stored first-stage certificates | computed with a costless bound whose capital term was charged at the root's prices (section 9.7); to be re-run with the corrected bound |
+| 17 | The certified year under `node_year = "last"` | `exact/certify.py` does not read `node_year`; option B of section 8 then has to follow the root's year, which becomes year 4 |
+| 18 | `node_year = "both"` | refused as built (section 9.7); session 4 decides whether to measure it |
+
 ## 15. Out of scope
 
 - **Session 4**: change the defaults of `connection.mode`, `tree_mode` and `node_year` together;
   set `maturity_months = 0` for greenfield runs; recompute the greenfield test bench and the two
-  real villages as brownfield; measure `both` against `last`; run the sensitivities of decisions
-  1 and 8 (census plateau, a 19 % loss).
+  real villages as brownfield; decide whether `both` is to be built and measured against `last`
+  (point 18); run the sensitivities of decisions 1 and 8 (census plateau, a 19 % loss).
 - **Growth beyond 24 months [decision 9].** Cohort ageing keeps the community's demand moving
   while households keep connecting, but each household still stops growing in the 25+ band,
   because no record runs much past two years: Gbowele's ends at 25 months and the fast trajectory

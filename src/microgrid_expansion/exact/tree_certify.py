@@ -66,11 +66,19 @@ def _monotone(plans: dict, tree: ScenarioTree, fields: tuple[str, ...]) -> dict:
     node without imposing this describes a plant which dismantles itself between two
     milestones — which the programme forbids by construction and the descent, moving one
     coordinate at a time, does not.
+
+    A node that invests nothing -- an operating-only node below a persistent root -- is set
+    to its parent's plant outright, the generating set included: it is the parent's plant
+    operated under one regime, and it moves only when the parent does.
     """
     fixed = dict(plans)
     for node in tree.nodes:
         parent = tree.parent[node]
         if parent is None:
+            continue
+        if not tree.invests_at(node):
+            held = fixed[parent]
+            fixed[node] = replace(held, node=node) if hasattr(held, "node") else held
             continue
         updates = {f: max(getattr(fixed[node], f), getattr(fixed[parent], f))
                    for f in fields}
@@ -201,7 +209,9 @@ def certify_tree(plans: dict, tree: ScenarioTree, rep: dict[int, RepDays],
     ``fixed_nodes`` holds nodes the descent may not move. Pinning the root is what makes
     this an upper oracle for one year-0 plant rather than for the plan as a whole: the
     value it returns is then the cost of the best plan *rooted at that plant* the descent
-    can find, which is what a branch-and-bound on the first stage needs from it.
+    can find, which is what a branch-and-bound on the first stage needs from it. A node the
+    tree says invests nothing is never moved either: it holds its parent's plant, and
+    follows the parent wherever the parent goes.
     """
     import os
     from concurrent.futures import ProcessPoolExecutor
@@ -222,7 +232,9 @@ def certify_tree(plans: dict, tree: ScenarioTree, rep: dict[int, RepDays],
     base["generator_kw"] = 0.0                       # stepped by catalogue index, not by size
 
     workers = workers or min(os.cpu_count() or 1, 16)
-    grid = [(node, field, direction) for node in tree.nodes if node not in fixed_nodes
+    # A node that invests nothing is never a coordinate: it holds its parent's plant.
+    grid = [(node, field, direction) for node in tree.nodes
+            if node not in fixed_nodes and tree.invests_at(node)
             for field in base for direction in (+1.0, -1.0)]
 
     best_plans = _monotone(dict(plans), tree, tuple(base))

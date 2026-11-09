@@ -1170,6 +1170,10 @@ class ProjectSettings:
     #: a plant and a record derives its age from the record instead.
     maturity_months: int = 0
     seed: int = 0
+    #: A factor on the productive-use intensity the rule reads, for the certified year
+    #: alone. One is the calibration as measured; the sensitivity of section 14, point 14,
+    #: scales it to what a village's record shows against what the rule expects there.
+    productive_intensity_scale: float = 1.0
 
     #: What the tree is drawn over. ``demand_trajectory`` above is a different question: it
     #: fixes one trajectory for the reference year, which is a study of a demand assumed,
@@ -1235,6 +1239,9 @@ class ProjectSettings:
                                  "must lie in [0, 1)")
         if self.demand_trajectory not in ("slow", "central", "fast"):
             raise ValueError(f"unknown demand trajectory {self.demand_trajectory!r}")
+        if not float(self.productive_intensity_scale) > 0.0:
+            raise ValueError("the productive intensity scale must be positive, not "
+                             f"{self.productive_intensity_scale}")
 
         # Refused rather than normalised. Weights that do not sum to one are not a scaling
         # mistake to be absorbed: they are a reader who has changed one of three numbers and

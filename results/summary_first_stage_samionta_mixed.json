@@ -1,7 +1,7 @@
 {
   "site": "Samionta",
   "architecture": "mixed",
-  "commit": "61638c7",
+  "commit": "c710e03",
   "seed": 0,
   "settings": {
     "stage_years": [
@@ -31,51 +31,85 @@
   },
   "tree": {
     "nodes": 46,
-    "leaves": 24,
+    "leaves": 9,
+    "operating_nodes": 45,
+    "tree_mode": "persistent",
+    "node_year": "last",
+    "regime_branches": 9,
+    "regime_fan": [
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "root_period": "regimes",
     "reduction_error": {
-      "0": 2.2069,
-      "5": 1.9461,
-      "10": 2.2774,
-      "15": 2.3142,
-      "20": 2.3207
+      "0": 2.2784,
+      "5": 2.1769,
+      "10": 2.1445,
+      "15": 2.1793,
+      "20": 2.1441
+    },
+    "distortion": {
+      "stage": {
+        "0": 1.4983064987909998,
+        "5": 1.7162790667844923,
+        "10": 1.6935084130245124,
+        "15": 1.7085735305893113,
+        "20": 1.6880303924104014
+      },
+      "regime": 2.431800960964102,
+      "coverage": 3.845086543645253,
+      "plausibility": 1.6532373654595058,
+      "persistence_violations": 0,
+      "violations_by_kind": {
+        "connected_stock": 0,
+        "regime": 0,
+        "grid": 0
+      },
+      "tree_paths": 9,
+      "regimes": 27,
+      "regimes_held": 9,
+      "regime_reduction_error": 2.431800960964102
     }
   },
   "incumbent": {
-    "z_rule_usd": 87555.72849628072,
-    "programme_bound_usd": 82510.82795823664,
+    "z_rule_usd": 66491.95844162068,
+    "programme_bound_usd": 61865.558405984244,
     "root": {
-      "pv_kw": 41.5,
-      "pv_ac_kw": 22.0,
-      "battery_kwh": 175.0,
-      "inverter_kw": 32.5,
-      "generator_kw": 8.0
+      "pv_kw": 29.0,
+      "pv_ac_kw": 21.0,
+      "battery_kwh": 125.0,
+      "inverter_kw": 22.5,
+      "generator_kw": 12.0
     }
   },
   "certificate": {
     "root": {
-      "pv_kw": 41.5,
-      "pv_ac_kw": 22.0,
-      "battery_kwh": 175.0,
-      "inverter_kw": 32.5,
-      "generator_kw": 8.0
+      "pv_kw": 29.0,
+      "pv_ac_kw": 21.0,
+      "battery_kwh": 125.0,
+      "inverter_kw": 22.5,
+      "generator_kw": 12.0
     },
-    "z_rule": 87555.72849628072,
-    "lower_bound": 82846.07247766362,
+    "z_rule": 66491.95844162068,
+    "lower_bound": 62376.067678489664,
     "proven": false,
-    "gap_abs_usd": 4709.656018617097,
-    "gap_rel_pct": 5.379038127490606,
+    "gap_abs_usd": 4115.890763131014,
+    "gap_rel_pct": 6.190057955270979,
     "boxes_opened": 40,
     "boxes_pruned_free": 0,
-    "boxes_pruned_programme": 6,
+    "boxes_pruned_programme": 9,
     "programmes_solved": 40,
-    "descents": 0,
-    "unresolved": 0,
-    "lattice_size": 1151592
+    "descents": 2,
+    "unresolved": 2,
+    "lattice_size": 278586
   },
   "seconds": {
-    "building_the_tree": 3964.9,
-    "the_incumbent": 319.6,
-    "the_search": 3526.3,
-    "total": 7810.8
+    "building_the_tree": 543.2,
+    "the_incumbent": 378.3,
+    "the_search": 4031.0,
+    "total": 4952.5
   }
 }

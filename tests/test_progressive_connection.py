@@ -205,6 +205,49 @@ def test_productive_users_follow_the_connected_households(monkeypatch) -> None:
     assert [n for n, _, _ in means] == [6] * 12
 
 
+def test_the_productive_intensity_scale_moves_the_rule_and_nothing_at_one(monkeypatch) -> None:
+    """The sensitivity of section 14, point 14, scales what the rule draws from.
+
+    At one the year is the year drawn without the factor, to the last value, so nothing
+    computed before it moves; away from one the mean the rule draws around moves by the
+    factor and nothing else does.
+    """
+    from microgrid_expansion.demand import generator, productive
+
+    _quiet_generator(monkeypatch, active_share=0.5)
+    means = []
+    original = productive.sample_units
+
+    def recorded(cal, n, band, trajectory, rng, **kwargs):
+        means.append(float(cal.intensity.loc[band, trajectory]) * n)
+        return original(cal, n, band, trajectory, rng, **kwargs)
+
+    monkeypatch.setattr(productive, "sample_units", recorded)
+    site = Site(name="Samionta", census={"HH1": 40})
+    schedule = ConnectionSchedule(("HH1",), (40,), ((10,), (20,), (30,)))
+    drawn = {}
+    for scale in (None, 1.0, 2.0):
+        means.clear()
+        kwargs = {} if scale is None else {"productive_scale": scale}
+        year = generator.simulate_demand_year(site, 2025, seed=4, maturity_months=2,
+                                              connection=schedule, **kwargs)
+        drawn[scale] = (np.asarray(year.hourly_kw), list(means))
+    assert np.array_equal(drawn[None][0], drawn[1.0][0])
+    assert drawn[2.0][1] == pytest.approx([2.0 * m for m in drawn[1.0][1]])
+
+
+def test_the_tree_refuses_a_productive_intensity_it_would_not_read() -> None:
+    from microgrid_expansion.config import ModelConfig
+    from microgrid_expansion.scenarios import sample_scenario_paths, space_from_settings
+    from microgrid_expansion.settings import default_settings
+
+    settings = default_settings()
+    settings.productive_intensity_scale = 0.5
+    cfg = ModelConfig(site="Samionta", n_mc_paths=2, stage_years=(0, 5), branching=(1, 2))
+    with pytest.raises(ValueError, match="certified year alone"):
+        sample_scenario_paths(cfg, space_from_settings(settings), settings)
+
+
 def test_the_observed_productive_users_are_held_on_the_record(monkeypatch) -> None:
     from microgrid_expansion.demand import generator, productive
     from microgrid_expansion.demand.growth import maturity_band

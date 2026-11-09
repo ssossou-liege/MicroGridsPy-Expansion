@@ -4,8 +4,8 @@
 sections 4 to 7 and 10, and session 3 section 9, both on 2026-11-07; section 9.7 records how
 section 9 was built, and section 12 what each session measured. Section 8 spans both.
 Session 4, the same day, closed the record (section 4.7), applied the author's decisions on
-the points of section 14 and switched the defaults together (section 15); session 4 bis
-recomputes the results.*
+the points of section 14 and switched the defaults together (section 15); session 4 bis, on 7
+and 8 November, recomputed the results and ran the sensitivities (section 12).*
 
 Decisions D1 to D3 (section 2) are the author's and are not reopened here. Every other choice
 is settled in this document. The few that are the author's to confirm are marked
@@ -1221,6 +1221,173 @@ programmes and four hours):
   a programme at 4 days. Expect 1.5 to 2.5 hours for each first-stage certificate within its
   four-hour budget, for each village and each case.
 
+Session 4 bis (2026-11-07 and 08) is done when every result `results/` held is computed
+again under the shipped defaults, the old ones are archived, and the sensitivities the
+specification left to it are run. The old results are in
+`results/superseded/2026-11-07_before_progressive_connection/`, and
+`results/superseded/README.md` says why they are superseded and how to tell them apart.
+Every new result was computed with the stored settings (1 000 paths, 64 representative days,
+seed 0, the stored programme budgets, Gurobi), on the working tree of commit c710e03 with this
+session's changes, which the session's commit holds; the studies that record a commit record
+c710e03.
+
+**What the runs needed or proved broken.** Five changes, none of which moves a default:
+
+- *The price of the heuristic of a single year* (`exact/certify._price_relative`) is read
+  against what the plant costs under the cost-optimal dispatch, `z_opt` less the grid
+  connection and the infrastructure, which are not the plant; the standing plant now stays
+  in. It was netted out with them, so an extension that buys nothing was read against its
+  fuel alone: Samionta's plant, 18 $/yr dearer under the controller, reported 1 835 %, and
+  now reports 0.9 %. On bare ground nothing stands and no figure moves. The tree reads its
+  price the same way (`run.py`).
+- *The descent fell below the standing plant* (`exact/tree_certify._standing`). It moves
+  totals, and the upper oracle charges only what a total adds over the plant that stands, so
+  a node moved below it was charged nothing for capacity that was not there: stepped down,
+  the 16 kW set became a free 8 or 12 kW set and the pack fell to zero. Every node is now
+  raised to the standing plant, and the ratings below the set on site are not offered.
+  Found reading the code before the first brownfield tree; the test that shows it failed
+  before the change.
+- *The tree's report left the standing plant out* (`post/kpis.expected_npc_lcoe`,
+  `run.py`). Neither oracle carries what it still owes, being the same under every plan, and
+  the first brownfield tree reported Samionta at 0.0001 $/kWh and a price of the heuristic of
+  16.2 % of 41 $. The report now charges it every operating year, on the terms the certificate
+  does (2 054 $/yr at Samionta, 1 234 $/yr at Gbowele), and says so
+  (`standing_plant_usd_yr`, `standing_plant_usd`); a plan on bare ground reports as it did.
+  Both brownfield trees were run again after it; the plans did not change.
+- *Options*: `run --brownfield` (the tree could not be asked for an extension), its summary
+  named `_brownfield` as the certificate's is, and `--project` on `certify` and `run`, which
+  reads a project's parameters from YAML in place of the shipped ones. The sensitivities run
+  through them (`results/sensitivities/README.md`).
+- *`ProjectSettings.productive_intensity_scale`*, default 1, a factor on the intensity the
+  productive-use rule reads, for the certified year: `build_site_year` passes it to the
+  generator and adds it to the key only away from one, `certify` and the interface's
+  certificate read it, and the tree refuses a value other than one rather than ignoring it.
+  The generator's code is digested into the demand key, so the fingerprint moved from
+  85a1c1293f51 to 75451880b1f4 and every pool was built once more (240 pools, below); the
+  bench certificate at the new fingerprint is the one session 4 computed, to the dollar. The
+  certificate also records, under `connection`, the high plateau, the census and the factor.
+
+**Old against new.** Plant as array on the battery's bus + array on the load's bus,
+storage, conversion, generating set. For a single year the cost is the annual cost under the
+controller, the gap is to the cost-optimal bound over the proven lattice, and the price of the
+controller is `price_rel_pct`; for a tree the cost is the expected cost under the controller,
+the bound is the programme's and the price is against it. Files are in `results/` (new) and
+`results/superseded/2026-11-07_before_progressive_connection/` (old).
+
+| Result | Old | New | New file |
+|---|---|---|---|
+| Bench, Samionta central, VOLL 1 | 42.25 + 30.25 kWp, 180 kWh, 32.5 kW, 8 kW; 6 373 $/yr; proven, 4.8 %; controller 306 $/yr, 5.0 %; 0.0870 $/kWh (twelve months, 231 households) | 26 + 19 kWp, 115 kWh, 20 kW, 8 kW; 4 262 $/yr; proven, 5.5 %; controller 233 $/yr, 5.8 %; 0.0896 $/kWh (plan year 4, 48 months, 113 households) | `summary_certification_samionta_central_mixed_m48_voll1_ccentral.json` |
+| Bench, VOLL 0.5 and 3 | as at VOLL 1 | as at VOLL 1, to the dollar | `..._m48_voll0.5_ccentral.json`, `..._m48_voll3_ccentral.json` |
+| Bench, slow growth | 26 + 19 kWp, 130 kWh, 20 kW, 8 kW; 4 493 $/yr; proven, 5.2 %; 5.4 % | 19.5 + 12 kWp, 85 kWh, 15 kW, 8 kW; 3 139 $/yr; proven, 5.5 %; 5.8 % | `summary_certification_samionta_slow_mixed_m48_voll1_ccentral.json` |
+| Bench, fast growth | 55.25 + 42.25 kWp, 240 kWh, 42.5 kW, 8 kW; 8 549 $/yr; proven, 4.5 %; 4.7 % | 39 + 25.5 kWp, 150 kWh, 30 kW, 8 kW; 5 512 $/yr; proven, 4.4 %; 4.7 % | `summary_certification_samionta_fast_mixed_m48_voll1_ccentral.json` |
+| Bench, Gbowele central | 29.25 + 21.25 kWp, 130 kWh, 22.5 kW, 8 kW; 4 821 $/yr; proven, 5.5 %; 5.8 % (159 households) | 19.5 + 14.5 kWp, 80 kWh, 15 kW, 8 kW; 3 150 $/yr; proven, 6.2 %; 6.6 % (77 households) | `summary_certification_gbowele_central_mixed_m48_voll1_ccentral.json` |
+| Samionta with its plant, one year | 65 + 6 kWp, 180 kWh, 50 kW, 16 kW; 4 979 $/yr; proven, 5.8 % (twelve months, 231 households, the direct coupling of the comparison) | the standing plant, 25.5 + 0 kWp in whole modules, 95 kWh, 47.5 kW, 16 kW, nothing added; 2 057 $/yr; proven, 0.9 %; controller 18 $/yr, 0.9 %; 0.1626 $/kWh (plan year 4, 79 months, 49 households) | `summary_certification_samionta_central_mixed_m79_voll1_ccentral_brownfield.json` |
+| Gbowele with its plant, one year | 32.5 + 17.5 kWp, 135 kWh, 25 kW, 16 kW; 4 075 $/yr; proven, 5.8 % (twelve months, 159 households) | 42.25 + 12.75 kWp, 150 kWh, 32.5 kW, 16 kW; 4 341 $/yr; proven, 5.9 %; 6.2 %; 0.0901 $/kWh (plan year 4, 67 months, 140 households) | `summary_certification_gbowele_central_mixed_m67_voll1_ccentral_brownfield.json` |
+| Tree, Samionta | root 41.5 + 22 kWp, 175 kWh, 32.5 kW, 8 kW; 87 556 $ against 82 517 $; controller 6.1 %; 0.0729 $/kWh; fan, 24 leaves | root 29 + 21 kWp, 125 kWh, 22.5 kW, 12 kW; 66 492 $ against 61 871 $; controller 7.5 %; 0.1013 $/kWh; persistent, 9 leaves | `summary_tree_samionta.json` |
+| Tree, Gbowele | root 26 + 20 kWp, 125 kWh, 20 kW, 8 kW; 65 659 $ against 61 319 $; 7.1 %; 0.0803 $/kWh | root 19.5 + 15 kWp, 95 kWh, 15 kW, 8 kW; 44 461 $ against 41 991 $; 5.9 %; 0.0961 $/kWh | `summary_tree_gbowele.json` |
+| Tree, Samionta with its plant | none | the standing plant at every node, nothing added; 48 $ of operation against 41 $, controller 0.02 %; with the standing plant, 27 511 $ and 0.0859 $/kWh | `summary_tree_samionta_brownfield.json` |
+| Tree, Gbowele with its plant | none | root 30.81 + 23.64 kWp, 155 kWh, 24 kW, 16 kW; 43 294 $ against 39 433 $; controller 6.9 %; with the standing plant, 59 786 $ and 0.0728 $/kWh | `summary_tree_gbowele_brownfield.json` |
+| Value of the tree, Samionta: building the certified central plant at year 0 against the tree's root | 88 226 $ against 87 556 $, 0.77 % | 67 921 $ against 66 492 $, 2.15 % | `summary_value_of_tree_samionta.json` |
+| Value of the tree, the other fixed roots (slow, fast, mean value) | 25.4 %, 12.8 %, 1.5 % | 16.5 %, 2.8 %, 2.2 % | the same |
+| Value of the tree, perfect information (growth; everything) | 5.4 %; 0.13 % | 5.0 %; 24.9 % | the same |
+| Value of the tree, seed to seed | 34.7 % of the expected cost | 8.0 % | the same |
+| Build once, Samionta | flexibility worth 16 960 $ (19.4 %); a campaign above 16 218 $ makes building once cheaper | 9 949 $ (15.0 %); above 17 791 $ | `summary_build_once_samionta.json` |
+| Build once, Gbowele | 16 815 $ (25.6 %); above 20 958 $ | 2 684 $ (6.0 %); above 4 003 $ | `summary_build_once_gbowele.json` |
+| Price sensitivity, Samionta | every set within the seed-to-seed noise (15.1 % of the cost) | the noise falls to 5.5 %, and the high and the landed-battery sets move the root beyond it: high prices 40 kWp, 85 kWh, 8 kW against 50 kWp, 125 kWh, 12 kW | `summary_price_sensitivity_samionta.json` |
+| Price sensitivity, Gbowele | every set within the noise (11.2 %) | noise 5.9 %; high and landed-battery sets beyond it (27.5 and 30.5 kWp, 65 and 70 kWh against 34.5 kWp, 95 kWh) | `summary_price_sensitivity_gbowele.json` |
+| First stage, Samionta | 41.5 + 22 kWp, 175 kWh, 32.5 kW, 8 kW at 87 556 $ against 82 846 $, gap 5.38 %, 40 programmes, bound that could prune the optimum | 29 + 21 kWp, 125 kWh, 22.5 kW, 12 kW, the tree's own root, at 66 492 $ against 62 376 $, gap 6.19 %, not proven; 40 programmes, 9 boxes pruned by a programme, none by the costless bound (17 556 $), 2 plants unresolved, bounded by the descent from above only | `summary_first_stage_samionta_mixed.json` |
+
+Five readings. The bench plant at the plan's year 4 is about two thirds of the old one, the
+village there being 113 households of 231 rather than all of them, and every certificate is
+still proven. The price of the real controller on the single year is 5.8 % rather than 5.0 %;
+the cost it is read against shrank by a third and the dollars by a quarter. The tree's year-0
+plant is now smaller than the old one and close to the single year's: 50 kWp, 125 kWh and
+22.5 kW against 45 kWp, 115 kWh and 20 kW, with a 12 kW set rather than an 8 kW one, the
+root's span being operated under all nine regimes, the high connection trajectory among them. Building the single year's plant at once, rather than following the
+tree, now costs 2.15 % in expectation, three times the 0.77 % of the old record, and the
+noise from one seed to another, which used to be a third of the cost, is a twelfth of it: the
+persistent tree is what makes the value of waiting measurable. And knowing the regime in
+advance, the connection trajectory with the growth and the cost future, would save a quarter of
+the expected cost, where the old record put the value of all information at 0.13 %: the old
+tree drew no connection trajectory and held no regime along its paths.
+
+**What each real village must add.** Samionta's plant (25.86 kWp on the battery's bus, 95 kWh
+since 29 July 2026, 48 kW of conversion, the 16 kW set) carries its own record's future. The
+single year needs nothing added, and the tree adds nothing at any node, under any of the nine
+regimes, to year 20: its own bracket ends at 53 households. Gbowele's (22.45 kWp, 16.31 on the
+battery's bus and 6.14 on the load's, 40 kWh, 24 kW, the 16 kW set) does not:
+
+| Milestone | Added, in expectation over the tree | Range over the nodes |
+|---|---|---|
+| Year 0 | 14.5 kWp on the battery's bus and 17.5 kWp on the load's, 115 kWh of storage; the converter and the set as they stand | the same at every node |
+| Year 5 | 5.7 kWp, 11.7 kWh, 3.0 kW of conversion | nothing on 46 % of the mass; at most 14 + 8.5 kWp, 50 kWh, 11 kW |
+| Year 10 | 0.5 kWp, 0.4 kWh, 0.5 kW | |
+| Year 15 | 0.6 kWp, 2.8 kWh, 0.2 kW | |
+| Year 20 | 2.0 kWp, 0.2 kWh, 1.2 kW | at most 49.8 + 33.6 kWp, 210 kWh and 40 kW in all |
+
+The single certified year (plan year 4, 140 households) asks for more conversion at once:
+55 kWp split 42.25 and 12.75, 150 kWh and 32.5 kW, where the tree's root keeps the standing
+24 kW and extends at year 5 on half the mass.
+
+**Sensitivities** (`results/sensitivities/`, one directory each; the base case is the row
+above it):
+
+| Sensitivity | Run | Base | With the reading changed |
+|---|---|---|---|
+| 7a, node year `first` (point 18) | Samionta's tree | `last`: root 29 + 21 kWp, 125 kWh, 22.5 kW, 12 kW; 66 492 $ against 61 871 $; controller 7.5 % | root 6.5 + 4.5 kWp, 25 kWh, 5 kW, 8 kW, extended at year 5 on every path (26.5 + 17.4 kWp, 115 kWh, 20.4 kW in expectation); 34 877 $ against 34 153 $; controller 2.1 % |
+| 7b, high plateau at the census (decision 1) | bench certificate | 113 households; 26 + 19 kWp, 115 kWh, 20 kW, 8 kW; 4 262 $/yr | 136 households; 32.5 + 25 kWp, 145 kWh, 25 kW, 8 kW; 5 296 $/yr, proven; controller 5.3 % |
+| 7b | Samionta's tree | as in 7a | root 32.5 + 25 kWp, 150 kWh, 25 kW, 8 kW, extended at year 5 on 44 % of the mass; 74 175 $ (+11.6 %) against 70 546 $; controller 5.1 % |
+| 7c, Gbowele at 171 households (point 10), curves refitted (plateau 128 to 171) | greenfield certificate | 159: 77 households; 19.5 + 14.5 kWp, 80 kWh, 15 kW, 8 kW; 3 150 $/yr | 81 households; 19.5 + 14.5 kWp, 90 kWh, 15 kW, 8 kW; 3 249 $/yr, proven; 5.7 % |
+| 7c | brownfield certificate | 140 households; 42.25 + 12.75 kWp, 150 kWh, 32.5 kW, 16 kW; 4 341 $/yr | 149 households; 42.25 + 18.75 kWp, 155 kWh, 32.5 kW, 16 kW; 4 923 $/yr, proven; 5.7 % |
+| 7d, productive intensity × 44/60.8 = 0.724 (point 14) | bench certificate | 26 + 19 kWp, 115 kWh, 20 kW, 8 kW; 4 262 $/yr | 26 + 16.5 kWp, 115 kWh, 20 kW, 8 kW; 4 013 $/yr (−5.8 %), proven; 5.0 % |
+| 7d, × 16/11.4 = 1.404 | bench certificate | the same | 35.75 + 24.25 kWp, 140 kWh, 27.5 kW, 8 kW; 5 189 $/yr (+21.8 %), proven; 5.0 % |
+
+The node year is the largest of the four. Under `first` the root carries the plan's year 0,
+when a new village has hardly begun to connect, so the year-0 plant is a fifth of the one under
+`last` and every path extends at year 5; and since each node charges its whole span at its
+first, least demanding year, the expected cost falls by nearly half. That is the bias of section
+9.3, measured: under `first` a plant is never asked to carry the later years of its span, and
+the plan looks half as dear as under `last`, which overstates the operating cost of a growing
+span instead. The two bracket the year a node stands for, and they are a factor of two apart on
+a new village. The census plateau raises the tree's cost by 11.6 % and the bench year's by 24 %, the
+tree's root keeping the 8 kW set and deferring part of the plant to year 5.
+
+The productive intensity moves the bench as much as the plateau does, and not symmetrically:
+Samionta's ratio of observed to expected users, 1.40, raises its cost by 21.8 %, with a larger
+array and converter; Gbowele's, 0.72, lowers it by 5.8 %. The field census matters less: it
+adds four households at year 4 on bare ground, and 10 kWh of storage, and nine with the
+village's record, and 6 kWp on the load's bus and 5 kWh; the costs rise by 3 % and 13 %.
+
+**Times**, against the estimates above. The machine was shared throughout: until 19 h on
+7 November three to four jobs ran at once with the pools beside them, and the Windows virtual
+machine of the host held 10 GB; past about 50 GB of programmes the host swapped, which is what
+the longest times below record. Two jobs at a time from then on.
+
+| Run | Estimate | Taken |
+|---|---|---|
+| Pools, Samionta and Gbowele greenfield, 90 (the moved fingerprint) | 37.5 min for Samionta's 45 on 12 processes | 61 min on 11 |
+| Pools, both villages with their plant, 75 | 12 + 35 min on 12 | 206 min on 5, beside two programmes |
+| Pools, node year `first` and the census plateau, 75 new | 30 + 30 min on 12 | 273 min on 6, beside two programmes |
+| A single certified year, 13 runs | half a minute to two minutes | 5 to 220 s of certification, 52 to 387 s in all with the year built |
+| `run`, each tree | a quarter of an hour | Samionta 40 min and Gbowele 113 min (swapping); with their plant 15 and 21 min |
+| Value of the tree, 16 cases and the wait-and-see | none given; 8 to 27 min a case in the stored study | 5 to 30 min a case, 6 h in all |
+| Build once | none given; 15 min stored | 21 min (Samionta), 37 min (Gbowele) |
+| Price sensitivity, 4 sets and 3 seeds | none given; 83 and 95 min stored | 104 min (Samionta), 114 min (Gbowele) |
+| `first_stage`, Samionta | 1.5 to 2.5 h within four | 1 h 23 min: tree 9 min, incumbent 6 min, 40 programmes in 67 min, about 100 s each |
+
+A first run of the first stage, beside a tree and two pool builds, was stopped after 2 h 15:
+its programmes cost 980 s each, against 88 s in the stored run, and with a budget of four hours
+of wall clock its gap would have measured the machine. It was run again alone, the last
+quarter of an hour of the test suite beside it. Its first programme took 378 s, and it
+announced that 40 might not fit in four hours; the later boxes are narrower and the 40 took
+67 minutes. The gap is wider than the stored 5.38 %, with the same number of programmes, and
+two plants of the lattice remain unresolved, which the stored run had none of: the persistent
+tree's programme is harder per box, and the gap is mostly the price of the heuristic, the
+programme lying 7.0 % below the descent at the root.
+
+The full suite, run once at the end in `mgpy_dev`: 481 passed and 1 skipped, in 1 h 12 min,
+building the census pools it reads beside the other runs.
+
 ## 13. Files each session touches
 
 Session 2, from the files read in session 1:
@@ -1316,6 +1483,23 @@ Session 4:
   loss and the certified year;
 - `tests/`: the session-4 tests of section 11 and the stored settings where tests pin them.
 
+Session 4 bis, beside `results/` (section 12):
+
+- `exact/certify.py`: `_price_relative` keeps the standing plant in its denominator,
+  `--project`, the productive factor passed to the year, and the high plateau, the census and
+  the factor recorded under `connection`;
+- `exact/tree_certify.py`: `_standing`, every node raised to the standing plant, and no rating
+  below the set on site;
+- `run.py`: `--brownfield`, `--project`, the `_brownfield` summary, the price of the heuristic
+  read with the standing plant; `post/kpis.py`: `expected_npc_lcoe(standing_plant_usd_yr=...)`;
+- `settings.py`: `ProjectSettings.productive_intensity_scale` and its validation;
+  `demand/generator.py` and `instances.py`: `productive_scale`, in the key only away from one;
+  `scenarios/assemble.py`: the tree refuses a factor other than one; `ui/engine.py`: the
+  interface's certificate passes it;
+- `tests/`: the price of the heuristic over a standing plant, the descent's floor, the standing
+  plant in the tree's report, the factor at one and away from it, and the tree's refusal;
+- `results/superseded/README.md` and `results/sensitivities/README.md`.
+
 ## 14. Points left to the author
 
 | | Question | Default |
@@ -1339,28 +1523,28 @@ Left open by the revision, for session 4 unless the author settles them sooner:
 
 | | Question | State |
 |---|---|---|
-| 10 | The census of households. The operator's field census counts 171 households at Gbowele (HH1 144, HH2 16, HH3 11) against the 159 (143, 5, 11) of `sites.py`, and 230 at Samionta against 231 | **Decided (session 4):** `sites.py` keeps 159 at Gbowele, and 171 is a sensitivity for session 4 bis. With `H` = 171, Gbowele's plateau was not identified on either record in session 2 bis (92 to 171 on the roster record, 127 to 171 on the extended one) |
+| 10 | The census of households. The operator's field census counts 171 households at Gbowele (HH1 144, HH2 16, HH3 11) against the 159 (143, 5, 11) of `sites.py`, and 230 at Samionta against 231 | **Decided (session 4):** `sites.py` keeps 159 at Gbowele, and 171 is a sensitivity for session 4 bis. With `H` = 171, Gbowele's plateau was not identified on either record in session 2 bis (92 to 171 on the roster record, 127 to 171 on the extended one) *Measured (session 4 bis):* refitted at 171, the plateau runs from 128 to 171 households; Gbowele's greenfield certificate rises by 3 % and its brownfield one by 13 %, with 6 kWp more on the load's bus (section 12, session 4 bis) |
 | 11 | Which record the tables hold | **Decided (session 4):** the extended record, `T` = October 2026 (section 4.7); the roster record is a sensitivity |
 | 12 | A month without any reading in S2-A5 | **Decided (session 4):** a household without any reading in `T` is not observed and leaves both sides; chosen after the result was seen, the other reading reported as a sensitivity (sections 4.7 and 12) |
 | 13 | Meters silent for less than three months | **Unchanged (session 4):** the four Gbowele households silent for less than three months (0133, 0146, 0196 and 0198GBO) stay in the stock. All four are among the seven roster customers absent from the field census, with 0007, 0137 and 0158GBO, and the question is now put to the operator |
-| 14 | The productive intensity beyond the record | **Unchanged (session 4), for session 4 bis:** at Gbowele the rule expects about 0.63 productive users per connected household, against 44 for 96 households, about 0.46, observed at `T` on the extended record; under the anchored rule it only drives the increments after `T` |
+| 14 | The productive intensity beyond the record | **Unchanged (session 4), for session 4 bis:** at Gbowele the rule expects about 0.63 productive users per connected household, against 44 for 96 households, about 0.46, observed at `T` on the extended record; under the anchored rule it only drives the increments after `T` *Measured (session 4 bis):* the bench certificate with the intensity scaled by 44/60.8 costs 5.8 % less, by 16/11.4 21.8 % more (`ProjectSettings.productive_intensity_scale`, section 12) |
 
 Left open by session 3, for session 4:
 
 | | Question | State |
 |---|---|---|
 | 15 | The fan's feature scaling | **Decided (session 4):** `ModelConfig.centre_features = True` by default; `False` reproduces the stored fans, whose root is the first path drawn rather than the medoid of year 0 (section 9.7) |
-| 16 | The stored first-stage certificates | computed with a costless bound whose capital term was charged at the root's prices (section 9.7); **re-run in session 4 bis** |
+| 16 | The stored first-stage certificates | computed with a costless bound whose capital term was charged at the root's prices (section 9.7); **re-run in session 4 bis:** Samionta's year-0 plant is the tree's root, 29 + 21 kWp, 125 kWh, 22.5 kW and 12 kW, at a gap of 6.19 % with two plants unresolved (section 12) |
 | 17 | The certified year under `node_year = "last"` | **Built (session 4):** `exact/certify.py` reads `node_year`, and the certified year is the root's, the plan's year 4 under `last` (section 8) |
-| 18 | `node_year = "both"` | **Decided (session 4):** stays refused; session 4 bis measures `first` against `last` instead |
+| 18 | `node_year = "both"` | **Decided (session 4):** stays refused; session 4 bis measures `first` against `last` instead *Measured (session 4 bis):* under `first` Samionta's year-0 plant is a fifth of the one under `last` and the plan's expected cost 47.5 % lower (section 12) |
 
 Left open by session 4:
 
 | | Question | State |
 |---|---|---|
 | 19 | Empty codes before an owner's own code | not corrected (section 4.7): two Gbowele meters recorded an empty code from the morning the test meters were installed, 15 January 2025, until 0204GBO's code appeared in December 2025 and 0023GBO's in February 2025, and are most likely bench meters; 0037GBO and 0154GBO carry months of empty codes before their roster dates. 0204GBO is a household of the register, whose five months at zero before its connection enter the segmentation. A question for the operator |
-| 20 | Gbowele's high plateau under the extended record | the plateau's lower bound is 124 households of 159 (share 0.78), against 92 on the roster record, because the logistic reads the campaign of May 2026 as the middle of a rise; it is the high trajectory of a new site and the low end of Gbowele's own bracket (section 12). The census variant stays the sensitivity of decision 1 |
-| 21 | The scaling factors | `archetype_scaling.csv` was not fitted again on the corrected archive (section 4.7); a refit belongs with the next change to the appliance calibration |
+| 20 | Gbowele's high plateau under the extended record | the plateau's lower bound is 124 households of 159 (share 0.78), against 92 on the roster record, because the logistic reads the campaign of May 2026 as the middle of a rise; it is the high trajectory of a new site and the low end of Gbowele's own bracket (section 12). **Decided (session 4 bis):** decision 1 stands, the profile lower bound is the high plateau, and the census is its sensitivity, run on the bench certificate and Samionta's tree (section 12, session 4 bis) |
+| 21 | The scaling factors | `archetype_scaling.csv` was not fitted again on the corrected archive (section 4.7); a refit belongs with the next change to the appliance calibration. **Decided (session 4 bis):** left unfitted. The correction shifts the fit's target by 1.3 %, below the residuals the fit itself leaves, about 8 % on the energy and 10 % on the peak, so a refit would trade a shift smaller than its own noise for Monte-Carlo noise of that order |
 
 ## 15. Out of scope
 
@@ -1368,11 +1552,16 @@ Left open by session 4:
   "persistent"`, `node_year = "last"`, `centre_features = True` (point 15) and `maturity_months =
   0`, a site with its own record keeping the age derived from it. `both` stays unbuilt
   (point 18).
-- **Session 4 bis** recomputes the greenfield test bench and the two real villages as
-  brownfield under those defaults, re-runs the first-stage certificates (point 16), measures
-  `first` against `last` (point 18) and runs the sensitivities: the census plateau (decision 1),
-  171 households at Gbowele (point 10) and the roster record (point 11). The 19 % loss
-  sensitivity is dropped: it came from a gap that included the street lighting (section 10).
+- **Session 4 bis** recomputed the greenfield test bench and the two real villages as
+  brownfield under those defaults, re-ran the first-stage certificate (point 16), measured
+  `first` against `last` (point 18) and ran the sensitivities: the census plateau (decision 1),
+  171 households at Gbowele (point 10) and the productive intensity (point 14), section 12. The
+  roster record (point 11) was not run as a sensitivity: the author's list for the session did
+  not hold it, and it stays one to run. The 19 % loss sensitivity is dropped: it came from a gap
+  that included the street lighting (section 10).
+- **Left open after session 4 bis.** Points 13 and 19 are questions put to the operator. The
+  first-stage certificate of Gbowele was not part of the stored results and was not computed.
+  The comparison of bare ground against extension is no longer a file of its own (section 12).
 - **Growth beyond 24 months [decision 9].** Cohort ageing keeps the community's demand moving
   while households keep connecting, but each household still stops growing in the 25+ band,
   because no record runs much past two years: Gbowele's ends at 25 months and the fast trajectory

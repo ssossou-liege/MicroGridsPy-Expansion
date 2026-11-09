@@ -1,0 +1,88 @@
+{
+  "site": "Gbowele",
+  "year": 2025,
+  "trajectory": "central",
+  "maturity_months": 67,
+  "brownfield": true,
+  "connection": {
+    "mode": "progressive",
+    "trajectory": "central",
+    "node_year": "last",
+    "plan_year": 4,
+    "village_age_months": 67,
+    "year0_village_age_months": 19,
+    "village_age_derived": true,
+    "connected_first_month": {
+      "HH1": 126,
+      "HH2": 4,
+      "HH3": 10
+    },
+    "connected_last_month": {
+      "HH1": 127,
+      "HH2": 4,
+      "HH3": 10
+    },
+    "high_plateau": "profile_lower_bound",
+    "census": {
+      "HH1": 143,
+      "HH2": 5,
+      "HH3": 11
+    },
+    "productive_intensity_scale": 1.0
+  },
+  "voll_usd_kwh": 1.0,
+  "design": {
+    "pv_kw": 42.25,
+    "battery_kwh": 150.0,
+    "pv_ac_kw": 12.75,
+    "inverter_kw": 32.5,
+    "generator_kw": 16.0
+  },
+  "z_rule_usd_yr": 4341.430238831504,
+  "z_opt_usd_yr": 4087.171506369966,
+  "design_opt": {
+    "pv_kw": 32.5,
+    "pv_ac_kw": 21.5,
+    "battery_kwh": 135.0,
+    "inverter_kw": 25.0,
+    "generator_kw": 16.0
+  },
+  "price_abs_usd_yr": 254.25873246153742,
+  "price_rel_pct": 6.220897069410188,
+  "proven": true,
+  "lattice_size": 97812,
+  "pruned_points": 79112,
+  "enumerated_points": 18700,
+  "simulations": 20099,
+  "relaxations": 2,
+  "seconds": 17.968485832214355,
+  "discount_rate": 0.08,
+  "generator_hours": 54,
+  "generator_mean_load_fraction": 0.4362170994574179,
+  "generator_kwh": 376.891573931209,
+  "fuel_litres": 141.04414549981666,
+  "solar_penetration_pct": 99.37413105241049,
+  "curtailed_kwh": 17280.011623538812,
+  "curtailed_pct": 22.28184754029193,
+  "storage_throughput_kwh": 36633.28967208973,
+  "equivalent_full_cycles_per_year": 271.35770127473876,
+  "inverter_peak_fraction": 0.6644155735647572,
+  "inverter_peak_fraction_daylight": 0.48382792253247725,
+  "energy_served_kwh": 60218.928480600865,
+  "billable_energy_kwh": 48122.745716319696,
+  "npc_usd": 57910.78814388171,
+  "lcoe_usd_kwh": 0.09008815108697361,
+  "tariff_target_usd_kwh": 0.263,
+  "subsidy_fraction": 0.0,
+  "subsidy_usd": 0.0,
+  "battery_life_years": 16.0,
+  "infrastructure_usd": 0,
+  "collection_rate": 1.0,
+  "network_loss_fraction": 0.13,
+  "binding_ceilings": [
+    "dc_ratio"
+  ],
+  "irr": 0.32999204740777544,
+  "irr_without_salvage": 0.32989861979264157,
+  "architecture": "mixed"
+}

@@ -29,7 +29,7 @@ from .paths import RESULTS_DIR
 from .post import extract_solution, expected_npc_lcoe, node_kpis
 from .post.report import write_report
 from .scenarios import sample_scenario_paths, space_from_settings
-from .settings import ProjectSettings, default_settings
+from .settings import ProjectSettings, default_settings, reference_plant
 from .solve import solve
 from .timedomain import reduce_to_rep_days
 from .tree import build_tree
@@ -108,19 +108,36 @@ def run(cfg: ModelConfig, out_dir: Path = RESULTS_DIR, verbose: bool = True,
     upper, lower, architecture, plans, traces, certificate = min(outcomes,
                                                                  key=lambda o: o[0])
     kpis = [node_kpis(plans, n, tree, traces) for n in tree.nodes]
+    # What the plant already standing owes each year is the same under every plan, so
+    # neither oracle carries it; the certificate charges it, and so does what the plan
+    # reports. Left out, Samionta's plant, which needs nothing added, reported a levelised
+    # cost of a hundredth of a cent and a price of the heuristic read against its fuel.
+    from .exact.lower_bound import Economics
+
+    standing = Economics.from_settings(settings,
+                                       architecture=architecture).existing_plant_usd_yr
     expected = expected_npc_lcoe(plans, tree, traces,
-                                 discount_rate=settings.economics.discount_rate)
+                                 discount_rate=settings.economics.discount_rate,
+                                 standing_plant_usd_yr=standing)
+    # Against what the plan costs under the better dispatch, the standing plant included,
+    # as the single certified year reads it (``certify._price_relative``).
+    charged = lower + expected.get("standing_plant_usd", 0.0)
     expected.update({
         "architecture": architecture,
         "expected_rule_cost_usd": upper,
         "expected_optimal_cost_usd": lower,
         "price_of_heuristic_usd": upper - lower,
-        "price_of_heuristic_pct": 100.0 * (upper - lower) / max(lower, 1.0),
+        "price_of_heuristic_pct": 100.0 * (upper - lower) / max(charged, 1.0),
         "search_evaluations": certificate.evaluations,
         "cost_of_the_programme_plan_usd": certificate.improved_from,
     })
-    written = write_report(plans, kpis, expected, tree, out_dir,
-                           stem=f"summary_tree_{cfg.site.lower()}", node_year=cfg.node_year)
+    # An extension of the standing plant is a different plan from one on bare ground, and
+    # under the same name it would be written over the other.
+    stem = f"summary_tree_{cfg.site.lower()}"
+    if not settings.installed.is_empty:
+        stem += "_brownfield"
+    written = write_report(plans, kpis, expected, tree, out_dir, stem=stem,
+                           node_year=cfg.node_year)
     if verbose:
         root = plans[0]
         array = f"{root.pv_kw:.1f} kW"
@@ -144,8 +161,15 @@ def _configuration(args) -> tuple[ModelConfig, "ProjectSettings"]:
     discount rate. The project is the source of all three, and the configuration holds the
     copies the tree needs before a settings object exists.
     """
-    settings = default_settings()
+    project = getattr(args, "project", None)
+    settings = default_settings() if project is None else ProjectSettings.load(project)
     settings.site = args.site
+    if getattr(args, "brownfield", False):
+        settings.installed = reference_plant(args.site)
+        if settings.installed.is_empty:
+            raise SystemExit(f"no plant is on record at {args.site}; a brownfield plan "
+                             "needs the capacities already standing and the years they "
+                             "went in")
     cfg = ModelConfig(site=settings.site, solver=args.solver, n_rep_days=args.rep_days,
                       n_mc_paths=args.mc_paths, seed=args.seed,
                       stage_years=tuple(args.stage_years),
@@ -192,6 +216,14 @@ def main(argv: list[str] | None = None) -> int:
                         help="the year of its span whose demand a node carries")
     parser.add_argument("--out", type=Path, default=RESULTS_DIR,
                         help="directory the summary is written to")
+    parser.add_argument("--brownfield", action="store_true",
+                        help="plan the extension of the plant already standing at the "
+                             "site, from its own record, rather than a plant on bare "
+                             "ground; the summary's name says so")
+    parser.add_argument("--project", type=Path, default=None,
+                        help="a project's parameters (YAML, as the settings module writes "
+                             "them) in place of the shipped ones; what it omits stays at "
+                             "its default")
     args = parser.parse_args(argv)
 
     cfg, settings = _configuration(args)

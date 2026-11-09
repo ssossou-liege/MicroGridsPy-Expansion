@@ -487,20 +487,25 @@ def _design_capital_usd_yr(capacities, economics, annualised=None,
 
 
 def _price_relative(z_rule: float, z_opt: float, economics) -> float:
-    """The price of the heuristic, against the cost the dispatch can actually move.
+    """The price of the heuristic, against what the plant costs under the better dispatch.
 
-    It measures the controller, so it is read against what the controller decides. The
+    It measures the controller, so it is read against the plant the controller runs: the
+    capital of what the plan buys, the upkeep of what already stands, and the operation. The
     connection, the network, the civil works and the development are the same money under
-    any dispatch, and leaving them in the denominator would let a developer shrink the
-    apparent price of their controller by pricing their network -- on this project's own
-    example site it fell from 6.1 to 3.5 per cent without a line of the controller
-    changing. Netting them out keeps the figure a property of the plant.
+    any dispatch and are not the plant, and leaving them in the denominator would let a
+    developer shrink the apparent price of their controller by pricing their network -- on
+    this project's own example site it fell from 6.1 to 3.5 per cent without a line of the
+    controller changing. Netting them out keeps the figure a property of the plant.
+
+    The standing plant stays in. It was netted out too, which left an extension that buys
+    nothing with its fuel and its unserved energy alone in the denominator, a few dollars a
+    year: Samionta's plant, which needs nothing added, reported 18 $/yr as 1 835 per cent.
+    A ratio to a cost near zero says nothing about the controller; the plant it runs does.
     """
     constant = (getattr(economics, "grid_connection_usd_yr", 0.0)
-                + getattr(economics, "infrastructure_usd_yr", 0.0)
-                + getattr(economics, "existing_plant_usd_yr", 0.0))
-    movable = max(z_opt - constant, 1.0)
-    return 100.0 * (z_rule - z_opt) / movable
+                + getattr(economics, "infrastructure_usd_yr", 0.0))
+    plant = max(z_opt - constant, 1.0)
+    return 100.0 * (z_rule - z_opt) / plant
 
 
 def _evaluate_rule(instance, capacities, economics, battery, generator, controller,
@@ -1256,9 +1261,14 @@ def main(argv: list[str] | None = None) -> int:
                              "capacity becomes the floor of the search and is not bought "
                              "again; what it still owes, its upkeep and the replacement "
                              "its remaining life defers, is charged")
+    parser.add_argument("--project", type=Path, default=None,
+                        help="a project's parameters (YAML, as the settings module writes "
+                             "them) in place of the shipped ones; what it omits stays at "
+                             "its default, and the options above apply over it")
     args = parser.parse_args(argv)
 
-    settings = default_settings()
+    settings = (default_settings() if args.project is None
+                else ProjectSettings.load(args.project))
     if args.brownfield:
         settings.installed = reference_plant(args.site)
         if settings.installed.is_empty:
@@ -1299,7 +1309,8 @@ def main(argv: list[str] | None = None) -> int:
         network_loss_fraction=settings.infrastructure.network_loss_fraction,
         module=module_from(settings.photovoltaic),
         chemistry=settings.battery.chemistry,
-        connection=schedule)
+        connection=schedule,
+        productive_scale=settings.productive_intensity_scale)
     print(f"{args.site} {args.year} -- trajectory {args.trajectory}, plan year {plan_year} "
           f"({args.node_year} of the root's span), village age {village_age} months "
           f"({year0_age} at year 0"
@@ -1463,7 +1474,11 @@ def main(argv: list[str] | None = None) -> int:
             "year0_village_age_months": year0_age,
             "village_age_derived": connection.year0_age is not None,
             "connected_first_month": schedule.connected(village_age),
-            "connected_last_month": schedule.connected(village_age + 11)},
+            "connected_last_month": schedule.connected(village_age + 11),
+            # The two readings a sensitivity moves, so that a certificate says which.
+            "high_plateau": settings.connection.high_plateau,
+            "census": dict(get_site(args.site).census),
+            "productive_intensity_scale": settings.productive_intensity_scale},
         "voll_usd_kwh": settings.economics.value_of_lost_load_usd_kwh,
         "design": {"pv_kw": result.design.pv_kw, "battery_kwh": result.design.battery_kwh,
                    "pv_ac_kw": result.design.pv_ac_kw,

@@ -54,7 +54,8 @@ def node_kpis(plans: dict, node: int, tree: ScenarioTree, simulated: dict) -> di
 
 def expected_npc_lcoe(plans: dict, tree: ScenarioTree, simulated: dict,
                       discount_rate: float | None = None,
-                      infrastructure_usd_yr: float = 0.0) -> dict:
+                      infrastructure_usd_yr: float = 0.0,
+                      standing_plant_usd_yr: float = 0.0) -> dict:
     """Expected net present cost and levelised cost over the tree.
 
     Both are expectations over the leaves, and both are ratios of expectations rather than
@@ -67,19 +68,32 @@ def expected_npc_lcoe(plans: dict, tree: ScenarioTree, simulated: dict,
     every node and every year, so that a plan and a single-year sizing of the same community
     answer with the same cost boundary. Without it the plan reported the cheaper of two
     boundaries and the sizing the dearer, which is worse than either being wrong alone.
+
+    ``standing_plant_usd_yr`` is what a plant already on the ground still owes each year,
+    its upkeep and the replacement its remaining life defers, which the certificate charges
+    and neither oracle of the tree carries, being the same under every plan. Charged here on
+    the same terms, and reported only where there is a standing plant, so that a plan on
+    bare ground reads as it did.
     """
     rate = config.DISCOUNT_RATE if discount_rate is None else discount_rate
     cost = 0.0
     energy = 0.0
+    standing = 0.0
     for node in tree.nodes:
         trace = simulated[node]
         weight = tree.prob[node] * tree.disc[node] * tree.n_years[node]
-        cost += weight * (trace["annual_cost_usd"] + infrastructure_usd_yr)
+        cost += weight * (trace["annual_cost_usd"] + infrastructure_usd_yr
+                          + standing_plant_usd_yr)
         energy += weight * trace["served_kwh"]
-    return {
+        standing += weight * standing_plant_usd_yr
+    out = {
         "expected_npc_usd": cost,
         "expected_energy_kwh": energy,
         "expected_lcoe_usd_kwh": cost / max(energy, 1e-9),
         "infrastructure_usd_yr": infrastructure_usd_yr,
         "discount_rate": rate,
     }
+    if standing_plant_usd_yr > 0.0:
+        out["standing_plant_usd_yr"] = standing_plant_usd_yr
+        out["standing_plant_usd"] = standing
+    return out

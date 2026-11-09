@@ -355,6 +355,7 @@ def build_site_year(
     network_loss_fraction: float = 0.0,
     module=None,
     connection=None,
+    productive_scale: float = 1.0,
 ) -> SiteYear:
     """Resolve a site and year into aligned hourly series.
 
@@ -371,6 +372,10 @@ def build_site_year(
     ``connection`` is the ``ConnectionSchedule`` the households follow, and ``None`` the
     whole census at village month 0. ``maturity_months`` is then the village age at the
     first month of the year.
+
+    ``productive_scale`` multiplies the productive-use intensity the generator reads; it
+    enters the key only away from one, so a year at the calibration keys as it would without
+    the factor.
     """
     from .demand import archetypes as _archetypes
     from .demand.generator import simulate_demand_year
@@ -392,7 +397,9 @@ def build_site_year(
     key = _cache_key(site.name, year, trajectory, maturity_months, seed, chemistry,
                      _archetypes.fingerprint(site.name), _site_fingerprint(site),
                      network_loss=loss, module=_module_fingerprint(module),
-                     connection=_connection_fingerprint(connection, maturity_months))
+                     connection=_connection_fingerprint(connection, maturity_months)
+                     + ("" if float(productive_scale) == 1.0
+                        else f"|p:{float(productive_scale):.6f}"))
     path = CACHE_DIR / f"siteyear_{site.name.lower()}_{key}.npz"
 
     if use_cache and path.exists():
@@ -416,7 +423,8 @@ def build_site_year(
                                   maturity_months=maturity_months,
                                   trajectory=trajectory,
                                   scaling=_archetypes.scaling_for(site.name),
-                                  connection=connection)
+                                  connection=connection,
+                                  productive_scale=productive_scale)
     resource = simulate_resource_year(site, year, module=module, chemistry=chemistry)
     if demand.hourly_kw.size != resource.specific_yield.size:
         raise ValueError(

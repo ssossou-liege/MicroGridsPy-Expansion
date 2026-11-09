@@ -253,6 +253,33 @@ def test_the_price_of_the_heuristic_does_not_move_with_the_cost_boundary() -> No
     assert bare == pytest.approx(6.09, abs=0.02)
 
 
+def test_the_price_of_the_heuristic_is_read_against_the_plant_it_runs() -> None:
+    """An extension that buys nothing is still a plant, and the ratio is read against it.
+
+    The standing plant's upkeep was netted out with the network, which left a village that
+    needs nothing added with its fuel alone in the denominator: Samionta's plant, 18 $/yr
+    dearer under the controller, reported 1 835 per cent. Read against what the plant costs,
+    standing part and operation included, the same 18 dollars are under one per cent; and
+    on bare ground, where nothing stands, the figure is what it always was.
+    """
+    from microgrid_expansion.exact.certify import _price_relative
+    from microgrid_expansion.exact.lower_bound import Economics
+    from microgrid_expansion.settings import reference_plant
+
+    standing = Economics(installed=reference_plant("Samionta"))
+    owed = standing.existing_plant_usd_yr
+    assert owed > 1_000.0
+    z_opt = owed + 3.0                       # nothing bought: the fuel and little else
+    z_rule = z_opt + 18.0
+    price = _price_relative(z_rule, z_opt, standing)
+    assert price == pytest.approx(100.0 * 18.0 / z_opt, rel=1e-9)
+    assert price < 1.0
+
+    bare = Economics()
+    assert _price_relative(6_372.57, 6_067.00, bare) == pytest.approx(
+        100.0 * (6_372.57 - 6_067.00) / 6_067.00, rel=1e-9)
+
+
 def test_a_saturated_ceiling_is_reported_rather_than_left_to_be_noticed() -> None:
     """Both array ratios are single sourced numbers, and the optimum sits on them.
 

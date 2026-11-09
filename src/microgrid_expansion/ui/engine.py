@@ -62,7 +62,8 @@ def size_site(job: Job, overrides: dict[str, Any],
         network_loss_fraction=settings.infrastructure.network_loss_fraction,
         module=module_from(settings.photovoltaic),
         chemistry=settings.battery.chemistry,
-        connection=connection.schedule(settings.connection.trajectory))
+        connection=connection.schedule(settings.connection.trajectory),
+        productive_scale=settings.productive_intensity_scale)
     job.done = step + 1
 
     job.announce("job.lattice")

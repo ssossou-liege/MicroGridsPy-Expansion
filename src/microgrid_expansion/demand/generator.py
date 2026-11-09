@@ -24,7 +24,7 @@ silently shrink the community.
 from __future__ import annotations
 
 import calendar
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 import pandas as pd
@@ -648,6 +648,7 @@ def simulate_demand_year(
     apply_seasonality: bool = True,
     include_productive: bool = True,
     connection: "ConnectionSchedule | None" = None,
+    productive_scale: float = 1.0,
 ) -> DemandYear:
     """Draw one community load profile for ``site`` over the calendar year ``year``.
 
@@ -668,6 +669,11 @@ def simulate_demand_year(
     computed under both bounds rather than under the central case alone. Genuine calendar
     seasonality is restored afterwards through the residual seasonal index, the part of the
     monthly variation that survives conditioning on maturity.
+
+    ``productive_scale`` multiplies the productive-use intensity the rule reads, a
+    sensitivity of the rule and not of the record: the productive users a village's record
+    holds stay as recorded, and only what the rule draws is scaled. One leaves the year as
+    it was.
     """
     from .connection import ConnectionSchedule
     from .growth import maturity_band, seasonal_index, trajectory_law
@@ -676,6 +682,9 @@ def simulate_demand_year(
     schedule = ConnectionSchedule.whole_census(site) if connection is None else connection
     law = trajectory_law(trajectory)
     productive = ProductiveCalibration.load() if include_productive else None
+    if productive is not None and float(productive_scale) != 1.0:
+        productive = replace(productive,
+                             intensity=productive.intensity * float(productive_scale))
     appliances = load_archetype_appliances()
     scaling = ArchetypeScaling.load() if scaling is None else scaling
     season = seasonal_index() if apply_seasonality else None

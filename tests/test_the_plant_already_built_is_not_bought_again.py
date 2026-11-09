@@ -388,3 +388,63 @@ def test_a_saved_brownfield_project_reloads_with_its_dates(tmp_path) -> None:
     assert len(reloaded.installed.pv) == 2
     assert [v.commissioned_year for v in reloaded.installed.vintages("pv")] == [2024, 2025]
     assert reloaded.installed.capacity("inverter") == pytest.approx(48.0)
+
+
+def test_the_descent_cannot_take_a_node_below_the_plant_that_exists() -> None:
+    """The programme cannot plan below the standing plant, and the descent must not either.
+
+    The upper oracle charges what a plan adds over the plant that stands, so a node moved
+    below it is charged nothing for capacity that is not there. Stepping the set of a
+    village with 16 kW standing down the catalogue offered the descent an 8 kW set, more
+    frugal at light load, for free; and the array, the pack and the converter could be
+    lowered at no saving into a plant smaller than the one in service.
+    """
+    from types import SimpleNamespace
+
+    from microgrid_expansion.exact.tree_certify import _apply
+    from microgrid_expansion.model.investment_constraints import installed_base
+    from microgrid_expansion.post.extract import NodePlan
+    from microgrid_expansion.settings import reference_plant
+
+    settings = default_settings()
+    settings.installed = reference_plant("Gbowele")
+    pv, battery, inverter, generator, pv_ac = installed_base(settings.installed)
+    tree = SimpleNamespace(nodes=[0, 1], parent={0: None, 1: 0}, children={0: [1], 1: []},
+                           invests_at=lambda node: True)
+    plans = {n: NodePlan(n, pv, battery, inverter, generator, pv_ac) for n in tree.nodes}
+    steps = {"pv_kw": 4.0, "battery_kwh": 40.0, "inverter_kw": 20.0, "pv_ac_kw": 4.0,
+             "generator_kw": 0.0}
+    down = [(0, field, -1.0) for field in steps]
+    moved = _apply(plans, tree, down, steps, (8.0, 12.0, 16.0), "mixed", settings)
+    for node in tree.nodes:
+        plan = moved[node]
+        assert plan.pv_kw >= pv - 1e-9
+        assert plan.pv_ac_kw >= pv_ac - 1e-9
+        assert plan.battery_kwh >= battery - 1e-9
+        assert plan.inverter_kw >= inverter - 1e-9
+        assert plan.generator_kw >= generator - 1e-9, "the set on site was sold back"
+
+
+def test_a_plan_over_a_standing_plant_reports_what_the_plant_still_owes() -> None:
+    """The tree's report charges the standing plant as the certificate does.
+
+    Neither oracle of the tree carries it, being the same under every plan, and the plan
+    was reported without it: Samionta's plant, which needs nothing added, showed a
+    levelised cost of a hundredth of a cent. On bare ground the report is what it was.
+    """
+    from types import SimpleNamespace
+
+    from microgrid_expansion.post.kpis import expected_npc_lcoe
+
+    tree = SimpleNamespace(nodes=[0, 1], prob={0: 1.0, 1: 1.0}, disc={0: 1.0, 1: 0.5},
+                           n_years={0: 5, 1: 20})
+    traces = {n: {"annual_cost_usd": 3.0, "served_kwh": 1_000.0} for n in tree.nodes}
+    bare = expected_npc_lcoe({}, tree, traces, discount_rate=0.08)
+    standing = expected_npc_lcoe({}, tree, traces, discount_rate=0.08,
+                                 standing_plant_usd_yr=2_000.0)
+    weight = 5 * 1.0 + 20 * 0.5
+    assert "standing_plant_usd" not in bare
+    assert standing["standing_plant_usd"] == pytest.approx(2_000.0 * weight)
+    assert standing["expected_npc_usd"] == pytest.approx(bare["expected_npc_usd"]
+                                                         + 2_000.0 * weight)
+    assert standing["expected_energy_kwh"] == pytest.approx(bare["expected_energy_kwh"])

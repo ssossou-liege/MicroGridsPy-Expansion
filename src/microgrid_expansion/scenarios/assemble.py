@@ -88,6 +88,12 @@ def sample_scenario_paths(
             f"the space draws the connection under {space.demand.connection_mode!r} and the "
             f"project describes it under {project.connection.mode!r}; build the space from "
             "the project's settings")
+    # Refused rather than ignored: the pools are drawn at the calibration, and a tree that
+    # read the factor nowhere would answer a sensitivity with the base case.
+    if float(project.productive_intensity_scale) != 1.0:
+        raise ValueError(
+            "the productive intensity scale is read by the certified year alone; the "
+            "tree's demand is drawn at the calibration")
     connection = connection_plan(get_site(site), project)
     # A site with its own record in a brownfield run starts from its derived age.
     base_maturity = (connection.year0_age if connection.year0_age is not None

@@ -86,6 +86,32 @@ def _monotone(plans: dict, tree: ScenarioTree, fields: tuple[str, ...]) -> dict:
     return fixed
 
 
+def _standing(plans: dict, settings: ProjectSettings | None) -> dict:
+    """Raise every node to the plant already standing, which no plan may fall below.
+
+    The programme cannot plan below it, its additions being non-negative over the standing
+    base. The descent moves totals, and the upper oracle charges only what a total adds over
+    that base, so a node moved below it was charged nothing for capacity that is not there:
+    the set of a village with 16 kW standing could be stepped down to a more frugal 8 kW
+    for free, and the pack lowered into a plant smaller than the one in service.
+    """
+    from ..model.investment_constraints import installed_base
+
+    pv, battery, inverter, generator, pv_ac = installed_base(
+        getattr(settings, "installed", None))
+    floor = {"pv_kw": pv, "battery_kwh": battery, "inverter_kw": inverter,
+             "generator_kw": generator, "pv_ac_kw": pv_ac}
+    floor = {f: v for f, v in floor.items() if v > 0.0}
+    if not floor:
+        return plans
+    out = {}
+    for node, plan in plans.items():
+        updates = {f: max(getattr(plan, f), v) for f, v in floor.items()
+                   if hasattr(plan, f) and getattr(plan, f) < v}
+        out[node] = replace(plan, **updates) if updates else plan
+    return out
+
+
 #: Shared state a worker builds once, so that a candidate crossing to it carries only the
 #: plan — a few dozen numbers — rather than the tree's arrays, which are megabytes and would
 #: cost more to send than the evaluation saves.
@@ -165,7 +191,7 @@ def _apply(plans: dict, tree: ScenarioTree, moves, steps: dict,
                 candidate[descendant],
                 **{field: _moved(getattr(candidate[descendant], field), field,
                                  direction, steps[field], ratings)})
-    candidate = _monotone(candidate, tree, tuple(steps))
+    candidate = _monotone(_standing(candidate, settings), tree, tuple(steps))
     if settings is not None:
         # Conversion follows the array up, and accumulation is restored after it: raising a
         # node's converter must not leave it below its parent's.
@@ -228,7 +254,13 @@ def certify_tree(plans: dict, tree: ScenarioTree, rep: dict[int, RepDays],
     # The set is a coordinate too. Left out, a plan was stuck with whatever rating the
     # programme happened to choose under anticipative dispatch -- and the controller, which
     # cannot see tomorrow's cloud, is exactly the operator that would want a different one.
-    ratings = tuple(sorted(g.rating_kw for g in settings.generators))
+    # The set on site is a floor on the rating, as it is in the programme: a village does
+    # not sell its generator back to buy a smaller one.
+    from ..model.investment_constraints import installed_base
+
+    standing_set = installed_base(getattr(settings, "installed", None))[3]
+    ratings = tuple(sorted(g.rating_kw for g in settings.generators
+                           if g.rating_kw >= standing_set - 1e-9))
     base["generator_kw"] = 0.0                       # stepped by catalogue index, not by size
 
     workers = workers or min(os.cpu_count() or 1, 16)

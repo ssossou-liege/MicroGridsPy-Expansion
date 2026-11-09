@@ -74,3 +74,57 @@ programme's plan scaled up in storage or in array. What was done once in a scrip
 done again in a script, and the finding it reached -- that enlarging the neighbourhood
 changes nothing and restarting from a larger plant finds 166 165 $ -- is the part worth
 carrying forward. Its figures are not citable on the current prices.
+
+## The twenty-two records of 2026-11-07, set aside before progressive connection
+
+`2026-11-07_before_progressive_connection/` holds every result `results/` carried when the
+defaults were switched to progressive connection and the persistent tree (commit c710e03):
+the six single-year certificates, the bare-ground-against-extension comparison of the two
+villages, the two trees, the first-stage certificate, the value of the tree, the two
+build-once studies and the two price sensitivities, with the seven figures that stood
+beside them. The summaries were computed at commits 9a05453, d526ae9 and 61638c7, from 4 to
+6 November 2026, and the comparison was written by hand at ca6ee85; the figures, untracked
+as every figure in this repository is, are kept with the records they were drawn from.
+
+They are superseded by six changes, each of which moves the plant:
+
+- **The whole census at year 0.** Every household of the census, 231 at Samionta and 159 at
+  Gbowele, was connected from the plan's first month, all of them twelve months old
+  (`maturity_months = 12`), and the demand was stationary from the fifth year. The two
+  villages connected a fifth and three fifths of theirs in two and a half years. Under
+  progressive connection the households join on a logistic curve bracketed by the two
+  villages, in monthly cohorts that each age on their own clock, and a village with a plant
+  starts from its own record.
+- **The fan tree.** The scenario tree nested the stage medoids as a fan, so a path of the
+  tree did not keep its growth trajectory or its cost future: no path of the stored trees
+  holds one regime from year 5 to year 20. The persistent tree branches over regimes and
+  holds each along its path.
+- **A root that was the first path drawn.** A feature channel that does not vary was divided
+  by its rounding spread, which made every distance zero at year 0, where every cost future
+  starts from the same prices: the root of every stored tree was path 0 rather than the
+  medoid of year 0.
+- **A first-stage bound that could prune the optimum.** The costless bound of
+  `summary_first_stage_samionta_mixed.json` charged the box's capital at the root's prices
+  with the whole tree's weight, more than the programme charges, since every cost future
+  of the shipped settings has the prices fall.
+- **The meter archive as the roster indexed it.** The calibration rested on the archive
+  read by the customer roster's codes. It is now rebuilt from the operator's exports by the
+  code that held each meter at each reading, the connection record runs to October 2026,
+  and the calibration chain was run again on it.
+- **No places of worship.** Neither village declared the two churches metered at each, so
+  every plan left them out.
+
+You can tell the records apart without opening them. A current certificate carries a
+`connection` block (`mode` `progressive`, the `node_year`, the `plan_year`, the village age
+and the households connected) and is named after the age of the year it certifies, `_m48_`
+for a new site, with `_ccentral` for its connection trajectory and `_brownfield` for a
+village with its plant; these are `_m12_` and carry no such block. A current tree carries
+`tree_mode` `persistent`, its `node_year`, its `operating_nodes` and its `distortion`, and
+has 9 leaves; these have 24 and none of those fields. The studies built on a tree record
+the commit they were computed at and their tree's leaves, 24 here.
+
+The comparison of bare ground against extension has no command and is not regenerated as a
+file: its current counterpart is the pair of certificates and the pair of trees of each
+village, greenfield and brownfield. Its own premise no longer holds either, since a
+village with its record now starts from that record and a new site from the curve, so the
+two halves of a pair no longer share a demand.

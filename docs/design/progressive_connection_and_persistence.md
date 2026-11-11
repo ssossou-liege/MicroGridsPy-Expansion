@@ -5,7 +5,9 @@ sections 4 to 7 and 10, and session 3 section 9, both on 2026-11-07; section 9.7
 section 9 was built, and section 12 what each session measured. Section 8 spans both.
 Session 4, the same day, closed the record (section 4.7), applied the author's decisions on
 the points of section 14 and switched the defaults together (section 15); session 4 bis, on 7
-and 8 November, recomputed the results and ran the sensitivities (section 12).*
+and 8 November, recomputed the results and ran the sensitivities (section 12). Session 4 ter,
+on 11 November, set the brownfield year against the meters (criterion S4ter-A1) and drew the
+record's productive users at their own levels (section 5.3).*
 
 Decisions D1 to D3 (section 2) are the author's and are not reopened here. Every other choice
 is settled in this document. The few that are the author's to confirm are marked
@@ -244,6 +246,11 @@ and the site has rows in `connection_observed.csv`. Otherwise the stock of secti
   is derived (months from the origin to that January), not declared. `maturity_months` is then
   ignored and the derived age is written to the summary JSON. A roster that ends more than
   twelve months before that January is refused rather than extrapolated in silence.
+- *Added (session 4 ter).* The record holds what its productive users draw as well as who
+  they are: each productive user on the grid at `T` keeps the level its own meter measured,
+  with its own month-to-month pattern where its readings cover a year (section 5.3). The
+  households keep the mixture law of their cohorts: their energy per connected household
+  is reported against the meters in section 12, and nothing of them changed.
 
 **[decision 3] Which bracket a site with its own record follows.** Default `own`: a reference
 village's future is bracketed by its own fit, the estimate plus or minus two standard errors
@@ -527,6 +534,63 @@ only, so a schedule with fewer connected households makes every simulated year c
   record, and beyond it the observed users stay and only the rule's increment is drawn, never
   negative. A site that declares its own enterprises
   (`productive_units` or `productive_mix`) keeps its declaration instead.
+- *Revised (session 4 ter): the record's users at their own levels.* The split held the count
+  and gave each user its class's profile, and the class profiles describe a unit of a class,
+  not the units a village has: `milling` averages one mill of Samionta at 14.1 kWh a day and
+  two units of Gbowele at 0.1 and 0.8, hence 5.0, and Samionta's other mill, 0097SAM, which
+  the activity survey does not list, counted as a small trader at 0.82 kWh a day (section 12,
+  session 4 ter). The users the record holds are now drawn one by one. A user `j` of class
+  `c`, on the grid at village month `a <= T` when `joined_j <= a < left_j` and beyond `T` when
+  it is on the grid at `T`, draws on day `d` of calendar month `m`, at hour `h`,
+
+      x_j(d, h) = E_j f_j(m) s_c(h) e_jd,   e_jd ~ logN(-sigma_j^2 / 2, sigma_j^2),
+      sigma_j^2 = ln(1 + cv_j^2),
+
+  with `s_c` the class's mean day normalised to one, so that a day's expected energy is
+  `E_j f_j(m)`:
+  - `E_j`, the user's mean daily energy: its mean power over its last twelve months of readings
+    up to `T`, or since its connection where that is shorter, times 24 h. Each reading is
+    taken over its own period, the time since the meter's previous reading capped at a day
+    (`build_meter_archive.timed_readings`): a meter that reports once after a gap in
+    communication carries the gap's mean power, and a quarter-hour apiece, as the archive's
+    other readers take it, drops the rest of the gap.
+  - `f_j(m)`, its own pattern: where every one of the twelve months holds readings over at
+    least half of it, `E_j` is the mean of the twelve monthly means weighted by their days, and
+    `f_j(m)` the mean of month `m` over `E_j`; otherwise `f_j = 1`.
+  - `cv_j`, its own day-to-day spread: the standard deviation of its daily energy over the mean
+    of the day's month (of the whole window where `f_j = 1`), over the days its readings cover
+    at 90 % or more, and the class's spread with fewer than 28 such days. The class's spread
+    would give 0097SAM, whose days vary by 0.41 of their mean, the 1.07 of the class
+    `milling`, and a mill's peak is what its spread draws.
+  - `c`, the activity survey's class, `small_trade` where the survey does not reach the user,
+    and for 0097SAM `milling`, which its record shows
+    (`build_productive_profiles.RECORD_CLASS`): almost nothing between 22:00 and 06:00 and
+    62 % of its energy between 07:00 and 18:00, where the class `small_trade` would put a
+    fifth of it after dark. The class gives the shape only;
+    the class profiles and the mix are not touched (section 14, point 24).
+
+  The users the rule adds after `T` keep their class's profile; a user the levels' readings do
+  not reach (connected after the levels' last month, which only the held-out check of section
+  12 sets) draws its class's mean day. The levels are the table
+  `data/ramp_params/reference/pue_own_levels.csv`, one row per productive user of the record:
+  its class and where the class comes from, its connection and departure months, the months
+  the level was taken over, `kwh_per_day`, `daily_cv` and twelve factors `f01` to `f12`, empty
+  without a year. `build_productive_profiles` writes it beside the class tables, from the
+  record of `meter_status.csv`, the archive and the activity survey; it is read at generation,
+  and `observed_state` refuses a table whose users do not count, month by month, the
+  productive users of `connection_observed.csv`. The schedule carries the users
+  (`ConnectionSchedule.productive_users`, `held_users`), and its digest covers them where
+  there are any, so a brownfield year's key moves with a level and a greenfield one's does
+  not. In the generator the record's users are drawn after the rule's increment, one draw of
+  a month's days each, in the order of their codes. Without the table, the split above
+  applies.
+
+  It is the simplest form that holds what the record measured: one level and twelve factors
+  per user, on a shape the calibration already has. Nothing changes for a year without the
+  record's users, a new site's or the whole census's: the productive classes are drawn
+  class by class (`productive.monthly_profile_parts`) and added in the order they always
+  were, which gives the same sum to the last bit, and section 12 holds a greenfield
+  certificate and a greenfield pool against the stored ones.
 
 Measured against the meters (S2-A6), counting customers of type productive user with more
 than 0.05 kWh in month `T`: see section 12.
@@ -969,6 +1033,21 @@ keep holding what they held, on the census pools: `test_layer4_tree.py`,
 and `test_the_tree_says_what_futures_it_weighs.py`; the fans of `test_persistent_tree.py`
 name their mode.
 
+Session 4 ter, in `tests/test_own_levels.py`:
+
+| Test | Property |
+|---|---|
+| `test_a_user_draws_its_own_level_and_its_own_months` | with the day-to-day spread at zero, a user of the record draws its level times its month's factor, day by day, from the month it joined, on its class's shape |
+| `test_a_user_without_a_level_draws_its_class_profile` | a user the levels do not reach draws its class's mean day |
+| `test_the_users_the_rule_adds_after_the_record_keep_the_class_profile` | beyond `T` the rule's users draw the class profile beside the record's, which stay |
+| `test_the_parts_add_up_to_the_billed_load` | `DemandYear.parts` sums to the load less what nobody is billed for |
+| `test_the_classes_drawn_apart_add_up_to_the_load_drawn_before` | the classes drawn one by one add up, to the last bit, to the single sum the generator drew before |
+| `test_the_levels_enter_the_digest_and_only_where_there_are_some` | a level moves a brownfield key, a user joining after the year does not, and a schedule without users keys as before |
+| `test_a_schedule_refuses_levels_that_disagree_with_its_count`, `test_beyond_the_record_the_users_of_its_last_month_stay` | the users one by one count the record's productive users month by month, and beyond `T` the users of `T` stay |
+| `test_the_shipped_levels_are_the_users_the_record_holds` | at both villages the table's users count the record's, each has a level, and a year's factors average to one over its days |
+| `test_each_reading_counts_over_its_own_period`, `test_a_level_is_the_mean_over_the_time_the_readings_cover` | on synthetic readings, a reading after a gap carries the gap, a level is the mean power over the time covered, a seasonal pattern needs a year |
+| `test_a_held_out_level_stops_where_it_is_told` | the held-out levels stop at their month, and a user connected after it has none |
+
 ## 12. Acceptance criteria
 
 Session 2 is done when:
@@ -1388,6 +1467,210 @@ programme lying 7.0 % below the descent at the root.
 The full suite, run once at the end in `mgpy_dev`: 481 passed and 1 skipped, in 1 h 12 min,
 building the census pools it reads beside the other runs.
 
+Session 4 ter (2026-11-11) was to be done when a brownfield year is set against the meters
+(S4ter-A1), the productive users the record holds are drawn at their own levels, and, if the
+criterion holds, the four brownfield results are computed again. It does not hold, on the
+households, at either village, and the brownfield results were not computed again: the two
+certificates and the two trees of session 4 bis stay in `results/`, and they are not to be
+read as the real villages' needs (section 14, point 22).
+
+**The meters.** The archive keeps each reading's mean power and its time, not its period, and
+a meter that reports once after a gap in communication carries the mean over the whole gap.
+Every reader of the archive took a reading for a quarter-hour; read over its own period, the
+time since the code's previous reading capped at a day (`build_meter_archive.timed_readings`),
+it is what the exports record in 99.98 % of the readings. Over November 2025 to October 2026
+the customers billed 17 473 kWh at Samionta and 19 559 at Gbowele read so, against 16 747 and
+18 247 at a quarter-hour apiece; in the months of outage the gap reaches 10 to 17 % (May
+2026: 15 % at Samionta and 17 % at Gbowele; June 2026 at Samionta: 870 kWh against 780). Read
+so, the archive stays 1 to 5 % below the meters' registers in most months (`kilowatt_hours`
+in the exports): the gap between the mean power the archive keeps and the energy the meter
+counts.
+
+*June 2026 at Samionta*, 780 kWh in the archive and 1 176 in the energy balance made outside
+the repository from the operator's exports: both a missing period and a different count. The
+quarter-hour reading drops 90 kWh of the month's gaps (870 kWh over each reading's period,
+908 on the registers). The other 305 kWh are the plant room's air conditioner, which
+recorded under an empty customer code and the label of the air conditioner until the meter
+was relabelled as the powerhouse's in July 2026: the balance told the plant's meters apart
+by that label and counted the air conditioner among the customers in June and in July until
+the relabelling (869 + 305 = 1 174 kWh in June, 1 165 + 208 = 1 373 in July, against 1 176
+and 1 370 in the balance). From August the balance and the archive read over each period
+agree (1 431 and 1 436 kWh, 1 633 and 1 633, 2 133 and 2 125). The archive is right not to
+count the air conditioner, which the model carries as the plant's own use.
+
+**The diagnosis, under the shipped model** (before any change): the brownfield year at the
+village ages of November 2025 to October 2026, as `certify --brownfield` builds its year
+(central growth trajectory, the record's stock, the site's own scaling), the mean of four
+seeds, against the meters read over each period. Billed energy in kWh, peak of the billed
+hourly load in kW; productive users as the calibration classes them, 0097SAM a small trader.
+
+| Samionta | Meters | Model | Peak, meters | Peak, model | Households, meters | Model | Productive, meters | Model | Worship, meters | Model |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 2025-11 | 1 426 | 972 | 9.7 | 4.2 | 386 | 475 | 945 | 462 | 96 | 35 |
+| 2025-12 | 1 508 | 929 | 8.9 | 4.2 | 368 | 425 | 1 081 | 467 | 59 | 37 |
+| 2026-01 | 1 311 | 1 173 | 8.5 | 4.7 | 437 | 690 | 842 | 449 | 32 | 34 |
+| 2026-02 | 1 181 | 1 013 | 9.9 | 4.4 | 349 | 575 | 801 | 407 | 32 | 31 |
+| 2026-03 | 1 895 | 1 122 | 10.9 | 5.2 | 339 | 624 | 1 515 | 463 | 41 | 36 |
+| 2026-04 | 1 706 | 1 138 | 11.2 | 4.8 | 339 | 571 | 1 321 | 530 | 46 | 38 |
+| 2026-05 | 1 216 | 1 084 | 10.1 | 5.6 | 253 | 485 | 947 | 563 | 16 | 36 |
+| 2026-06 | 870 | 972 | 7.1 | 4.1 | 244 | 419 | 619 | 520 | 8 | 32 |
+| 2026-07 | 1 165 | 1 075 | 6.3 | 4.4 | 280 | 468 | 873 | 569 | 13 | 38 |
+| 2026-08 | 1 436 | 1 023 | 9.7 | 4.1 | 269 | 448 | 1 147 | 544 | 20 | 31 |
+| 2026-09 | 1 633 | 978 | 8.6 | 4.7 | 271 | 394 | 1 354 | 548 | 7 | 37 |
+| 2026-10 | 2 125 | 1 142 | 9.7 | 4.6 | 310 | 501 | 1 793 | 605 | 22 | 36 |
+| Twelve months | 17 473 | 12 622 | 11.2 | 5.6 | 3 845 | 6 075 | 13 236 | 6 127 | 392 | 421 |
+
+| Gbowele | Meters | Model | Peak, meters | Peak, model | Households, meters | Model | Productive, meters | Model | Worship, meters | Model |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 2025-11 | 1 145 | 1 126 | 4.7 | 4.6 | 612 | 348 | 520 | 747 | 13 | 31 |
+| 2025-12 | 1 350 | 1 868 | 5.0 | 7.7 | 557 | 418 | 782 | 1 413 | 11 | 37 |
+| 2026-01 | 2 101 | 2 021 | 6.9 | 7.5 | 1 021 | 582 | 1 070 | 1 405 | 10 | 35 |
+| 2026-02 | 1 777 | 1 760 | 6.3 | 7.9 | 987 | 457 | 780 | 1 267 | 10 | 37 |
+| 2026-03 | 2 018 | 1 979 | 5.7 | 7.6 | 1 059 | 551 | 948 | 1 395 | 11 | 33 |
+| 2026-04 | 1 677 | 1 970 | 5.8 | 8.3 | 832 | 509 | 836 | 1 430 | 9 | 31 |
+| 2026-05 | 1 663 | 2 097 | 4.7 | 8.3 | 949 | 619 | 703 | 1 446 | 11 | 32 |
+| 2026-06 | 1 523 | 2 040 | 5.4 | 8.5 | 799 | 609 | 712 | 1 397 | 12 | 34 |
+| 2026-07 | 1 581 | 2 063 | 5.8 | 8.3 | 850 | 583 | 718 | 1 448 | 12 | 32 |
+| 2026-08 | 1 446 | 2 088 | 5.7 | 8.1 | 729 | 584 | 706 | 1 469 | 11 | 36 |
+| 2026-09 | 1 344 | 2 007 | 6.2 | 8.3 | 649 | 620 | 685 | 1 355 | 11 | 32 |
+| 2026-10 | 1 934 | 2 350 | 7.0 | 9.7 | 877 | 813 | 1 030 | 1 508 | 27 | 30 |
+| Twelve months | 19 559 | 23 371 | 7.0 | 9.7 | 9 921 | 6 692 | 9 489 | 16 280 | 149 | 400 |
+
+The community uses beyond the places of worship are Gbowele's school, 0054GBO, whose meter
+recorded nothing over the twelve months, and which the model does not carry. By class, over
+the twelve months (kWh; units on the grid in the model, the mean of the months):
+
+| Class | Samionta, meters | Model | Model units | Gbowele, meters | Model | Model units |
+|---|---|---|---|---|---|---|
+| `milling` | 4 811 | 1 779 | 1.0 | 347 | 3 432 | 1.9 |
+| `small_trade` | 5 724 | 1 860 | 6.2 | 6 869 | 10 589 | 35.3 |
+| `refrigeration` | 1 668 | 1 700 | 3.7 | 548 | 451 | 1.0 |
+| `incubation` | 819 | 624 | 1.0 | 474 | 625 | 1.0 |
+| `sawmill` | none | none | 0 | 1 064 | 1 025 | 0.9 |
+| `tailoring` | 214 | 164 | 1.0 | 188 | 157 | 0.9 |
+
+The model gives Samionta 72 % of its billed energy and Gbowele 119 %. At Samionta it draws
+the households 58 % too high and the productive users 54 % too low; at Gbowele the households
+33 % too low and the productive users 72 % too high. The billed peak is half the meters' at
+Samionta, where two mills make it, and 40 % above them at Gbowele. Those two errors are of a
+different nature. The productive users drew their class's mean day, and the class profiles,
+each the plain mean of the units of a class at both villages, describe neither village's
+units (below). The households drew the mixture law of their cohorts under the central growth
+trajectory, which lies between the two villages and fits neither; their own laws are
+closer, and still out (S4ter-A1 below).
+
+*Each productive class's profile against the metered mean of its units*, November 2025 to
+October 2026, in kWh a day (the class profile is the shipped one; the units' levels are those
+of `pue_own_levels.csv`, each reading over its own period):
+
+| Class | Profile | Samionta: units, mean | Gbowele: units, mean (median) |
+|---|---|---|---|
+| `milling` | 5.00 | 1, 13.2 (0043SAM); 0097SAM, 14.1, counted as `small_trade` | 2, 0.51 |
+| `small_trade` | 0.82 | 9 with 0097SAM, 1.82 (median 0.33); 8 without it, 0.28 | 38, 0.57 (0.17) |
+| `refrigeration` | 1.25 | 4, 1.15 | 1, 1.50 |
+| `incubation` | 1.71 | 1, 2.25 | 1, 1.30 |
+| `sawmill` | 3.03 | none | 1, 2.91 |
+| `tailoring` | 0.46 | 1, 0.59 | 1, 0.52 |
+
+`milling` came to 5.0 kWh a day as the plain mean of the three units the survey calls mills
+among the roster's enterprises, each over its readings from 6 November 2025 to 1 November
+2026 at a quarter-hour apiece (`build_productive_profiles.enterprise_profiles`, twelve
+months of thirty days before the archive's end): 0043SAM at 14.1 kWh a day, 0163GBO at 0.75
+and 0016GBO at 0.14. 0043SAM draws by season: 12 to 15 kWh a day in November and December
+2025, 5 to 7 in January and February, 23 to 28 in March and April, 13 in May, nothing in
+June and almost nothing in July, then 13 to 15 in August and September and 28 in October.
+0016GBO drew less than 0.05 kWh a day in seven of the twelve months. 0097SAM, the other mill
+of Samionta, 10 to 23 kWh a day and rising through 2026, is not in the survey and counts as
+a small trader, which lifts that class from 0.50 kWh a day to 0.82. Samionta's own mix (the
+`slow` column) holds one mill in fourteen for that reason.
+
+**What changed.** The record's productive users are drawn at their own levels (section 5.3).
+The households, the class profiles and the mix are as they were.
+
+**S4ter-A1.** *The brownfield year built at the village ages of the record's last twelve
+months bills within 10 % of the meters over those months, at both villages, in total, for
+the households and for the productive users.* Built by `demand/record_check.py`: the meters
+by category read over each period, the brownfield year as `certify --brownfield` builds it
+(the record's stock, the own bracket's central connection, the site's scaling, each calendar
+year at the village age of its January), its billed load by category from
+`DemandYear.parts`, before the distribution loss, the mean of four seeds; a customer's
+category is its type in the record, a productive user's class that of `pue_own_levels.csv`.
+The held-out version takes the productive users' levels from the readings up to April 2026
+and sets May to October 2026 against the meters; a user connected after April draws its
+class's mean day. Nothing was tuned on either.
+
+| Village, growth trajectory | Meters, twelve months | Model | Total | Households | Productive users | Within 10 % |
+|---|---|---|---|---|---|---|
+| Samionta, central (shipped) | 17 473 | 19 868 | +13.7 % | +58.0 % (3 845 against 6 075) | +1.0 % (13 236 against 13 372) | no |
+| Gbowele, central (shipped) | 19 559 | 16 764 | −14.3 % | −32.6 % (9 921 against 6 692) | +1.9 % (9 489 against 9 673) | no |
+| Samionta, slow (its own law) | 17 473 | 18 127 | +3.7 % | +14.8 % (4 412) | +0.4 % | no |
+| Gbowele, fast (its own law) | 19 559 | 17 263 | −11.7 % | −27.3 % (7 210) | +1.7 % | no |
+
+| Held out, May to October 2026 | Meters | Model | Total | Households | Productive users |
+|---|---|---|---|---|---|
+| Samionta, central | 8 445 | 10 082 | +19.4 % | +66.9 % | +6.3 % |
+| Gbowele, central | 9 490 | 9 097 | −4.1 % | −21.1 % | +11.4 % |
+| Samionta, slow | 8 445 | 9 347 | +10.7 % | +19.2 % | +6.9 % |
+| Gbowele, fast | 9 490 | 9 334 | −1.6 % | −16.9 % | +12.1 % |
+
+S4ter-A1 fails at both villages, on the households, under the shipped trajectory and under
+each village's own law alike. The productive users pass in the year their levels come from,
+which is close to true by construction, and the held-out version says how far a year's level
+carries: 6 to 7 % at Samionta, 11 to 12 % at Gbowele, over six months. The month-to-month
+pattern carries less: at Samionta the levels of May 2025 to April 2026 put October 2026 at
+832 kWh of productive use where the meters billed 1 793, 0043SAM's season having moved from
+one year to the next. Seed to seed, the twelve months' total moves by 2 to 5 %. Per connected
+household and day, the meters give 0.227 kWh at Samionta and 0.382 at Gbowele over the twelve
+months; the model 0.358 and 0.258 under the central trajectory, 0.260 and 0.278 under each
+village's own law.
+
+*The peak.* With the users at their own levels the billed peak at Samionta rises from half the
+meters' to two thirds above them: 18.9 kW in the year against 11.2, the two mills alone 16.7 kW
+against 10.4, the mean of the monthly peaks 9.5 against 9.2. A day's draw scales the whole
+day: a mill whose days vary by their mean draws, on its busiest day of a month, four times its
+mean day at every hour, where a mill's power is bounded by its motor and a busy day is a
+longer one. The class units of a new site are drawn the same way (section 14, point 25). At
+Gbowele the peak is 7.4 kW against 7.0.
+
+*The households, for decision 9*, energy per connected household and day (kWh) over each
+village's whole record, every household on the grid counted, a month without a reading as
+none (more than 95 % of the household-months hold readings):
+
+| Band of age (months) | Samionta, village's age | Samionta, household's own | Gbowele, village's age | Gbowele, household's own |
+|---|---|---|---|---|
+| 0-3 | 0.009 (10 household-months) | 0.228 (197) | 0.601 (28) | 0.191 (375) |
+| 4-6 | 0.481 (30) | 0.237 (147) | 0.313 (78) | 0.372 (239) |
+| 7-12 | 0.362 (143) | 0.222 (259) | 0.440 (180) | 0.439 (272) |
+| 13-24 | 0.208 (377) | 0.256 (415) | 0.451 (612) | 0.572 (354) |
+| 25-36 | 0.238 (526) | 0.242 (251) | 0.273 (370) | 0.540 (28) |
+| 37 and more | 0.190 (193) | 0.243 (10) | none | none |
+
+On a household's own clock Samionta's households do not grow: 0.22 to 0.26 kWh a day from
+their first months to their third year. Gbowele's triple over their first two years, from 0.19
+to 0.57, and the 28 household-months past 24 months, the first cohorts, hold 0.54. On the
+village's clock the two read otherwise, because a campaign of new households lowers the mean:
+Gbowele's 25-36 band, 0.27, is July to October 2026, when the 35 households of May 2026 were in
+their first months.
+
+**Not done, the criterion having failed.** Step 4 was not run, and nothing in `results/` was
+written or moved. By the author's addendum of the same day, step 4 is the two brownfield
+certificates alone: the brownfield trees are left to the next session, which computes every
+tree again, the tree's shape being about to change (the formulation's section 8.3 asks for a
+fan within each regime, which the shipped default leaves out).
+
+**Greenfield unchanged.** With the session's code, the bench certificate
+(`certify --site Samionta`, written outside `results/`) is the stored
+`summary_certification_samionta_central_mixed_m48_voll1_ccentral.json` field for field, its
+running time aside, and its simulated year is the cached one bit for bit, every array; a
+greenfield pool rebuilt at the new fingerprint (Samionta, the low connection trajectory, 48
+months, four years) is the cached pool bit for bit, the load and the plant's own part. The code
+of the generation moved the demand fingerprint from 75451880b1f4 to 17ed4d88c5bb, so a
+greenfield run rebuilds its pools once, to the same contents; nothing in the cache was
+deleted.
+
+The full suite, run once at the end in `mgpy_dev`: 494 passed and 1 skipped, in 1 h 18 min,
+building the census pools it reads at the new fingerprint.
+
 ## 13. Files each session touches
 
 Session 2, from the files read in session 1:
@@ -1500,6 +1783,27 @@ Session 4 bis, beside `results/` (section 12):
   plant in the tree's report, the factor at one and away from it, and the tree's refusal;
 - `results/superseded/README.md` and `results/sensitivities/README.md`.
 
+Session 4 ter:
+
+- `demand/build_meter_archive.py`: `timed_readings` and `with_periods`, the archive with each
+  reading over its own period;
+- `demand/build_productive_profiles.py`: `record_users`, `own_levels`, `record_classes`,
+  `levels_table`, `RECORD_CLASS`, and the new table `pue_own_levels.csv`, written beside the
+  three class tables, which come out unchanged to the byte; the module's docstring no
+  longer says a test re-runs it, which none does;
+- `demand/connection.py`: `ProductiveUser`, `load_levels`, `productive_users`,
+  `ObservedState.productive_users` and its check against the record's count,
+  `ConnectionSchedule.productive_users` and `held_users`, the users in the digest;
+- `demand/productive.py`: `monthly_profile_parts`, which replaces `monthly_profile_kw`, and
+  `own_level_parts`; `demand/generator.py`: the record's users at their own levels and
+  `DemandYear.parts`;
+- new `demand/record_check.py`, offline (`instances._OFFLINE_SOURCES`): the meters by
+  category, the brownfield year by category, S4ter-A1 and its held-out version, the
+  households by age and the classes against their units;
+- `data/ramp_params/reference/README.md` and `data/README.md`: the new table, read at
+  generation;
+- new `tests/test_own_levels.py`; `tests/test_productive_demand.py` reads the classes' parts.
+
 ## 14. Points left to the author
 
 | | Question | Default |
@@ -1546,6 +1850,18 @@ Left open by session 4:
 | 20 | Gbowele's high plateau under the extended record | the plateau's lower bound is 124 households of 159 (share 0.78), against 92 on the roster record, because the logistic reads the campaign of May 2026 as the middle of a rise; it is the high trajectory of a new site and the low end of Gbowele's own bracket (section 12). **Decided (session 4 bis):** decision 1 stands, the profile lower bound is the high plateau, and the census is its sensitivity, run on the bench certificate and Samionta's tree (section 12, session 4 bis) |
 | 21 | The scaling factors | `archetype_scaling.csv` was not fitted again on the corrected archive (section 4.7); a refit belongs with the next change to the appliance calibration. **Decided (session 4 bis):** left unfitted. The correction shifts the fit's target by 1.3 %, below the residuals the fit itself leaves, about 8 % on the energy and 10 % on the peak, so a refit would trade a shift smaller than its own noise for Monte-Carlo noise of that order |
 
+Left open by session 4 ter, for the author before the brownfield results are computed again:
+
+| | Question | State |
+|---|---|---|
+| 22 | The households of a brownfield year | S4ter-A1 fails on them at both villages (section 12): over November 2025 to October 2026 the brownfield year draws Samionta's households 58 % above their meters and Gbowele's 33 % below under the central growth trajectory, which `certify --brownfield` uses by default, and 15 % above and 27 % below under each village's own law, the one S2-A5 reads. Per connected household and day the meters give 0.23 kWh at Samionta and 0.38 at Gbowele, the model 0.36 and 0.26 (central) or 0.26 and 0.28 (own). Three ways out: a village with its own record follows its own growth law, which settles the sign at Samionta and not Gbowele's gap; the households' levels are anchored on the record as the productive users' now are, the mixture law driving only what changes after `T`; or the archetypes' energies are revisited, which moves the greenfield bench (point 26). **Nothing changed; step 4 not run.** The brownfield results of session 4 bis stay in `results/` and are not the villages' needs; the two brownfield certificates wait on this point, and the trees on the next session's |
+| 23 | Decision 9, growth beyond 24 months | Energy per connected household on its own clock (section 12): Samionta's households hold 0.22 to 0.26 kWh a day from their first months to past 36, with no growth at any age; Gbowele's triple over two years, 0.19 at 0-3 months to 0.57 at 13-24, and its first cohorts hold 0.54 past 24 months over only 28 household-months. Nothing in either record shows growth after 24 months, and Gbowele's is too short to rule it out. **Unchanged** |
+| 24 | The productive class profiles against their units | A class profile is the plain mean of its units at both villages, and its units differ by two orders of magnitude: `milling` is 5.0 kWh a day from one mill of Samionta at 14.1 and two units of Gbowele at 0.75 and 0.14. 0097SAM, Samionta's other mill at 14.6, is not in the activity survey and counts as `small_trade`, lifting that class from 0.50 kWh a day to 0.82. Typed a mill in the class tables, `milling` becomes 7.4 kWh a day over four units and `small_trade` 0.50. The expected energy of a productive unit under the `central` mix, which the bench reads, would not move (1.134 kWh a day: mix and means are both counted by unit), but its share between 07:00 and 18:00 would rise from 55 to about 60 %; under the `slow` mix it rises by 39.5 % (1.28 to 1.78) and under `fast` it falls by 15 % (1.09 to 0.92), which moves the slow and fast bench certificates and every tree path on those trajectories. **Not changed**: the own levels read 0097SAM as a mill for its shape only (point 28) |
+| 25 | A day's draw scales the whole day | A productive unit's day is its mean day times a log-normal factor, so a busy day is a higher one, not a longer one. With the record's users at their own levels, Samionta's billed peak over the twelve months is 18.9 kW against the meters' 11.2, the two mills' 16.7 against 10.4, the mean of the monthly peaks 9.5 against 9.2: a mill whose days vary by their mean draws about four times its mean hour on its busiest day of a month. A new site's class units are drawn the same way, `milling` with a spread of 1.07. A ceiling per unit, its motor's rating, or busy days drawn as longer ones would hold the peak. **Unchanged** |
+| 26 | The quarter-hour reading in the calibration | The household segmentation (`build_monthly_household_clusters`, whose monthly energies the archetypes and the mixture law rest on) takes each reading as a quarter-hour, which leaves out 4 % of what Samionta's customers billed over the last twelve months and 7 % of Gbowele's, up to 15 and 17 % in the month of an outage (section 12). The class profiles take a mean over the readings, which a gap biases far less. Reading each reading over its own period there moves the greenfield bench. **Not changed** |
+| 27 | The places of worship at Gbowele | The class is the mean of the four metered places of worship, 0.55 kWh a day each; Gbowele's two drew 149 kWh over the twelve months, 0.20 a day each, and Samionta's 392, 0.54 a day each, so the model gives Gbowele 400 kWh where its meters billed 149, about 1 % of its billed energy. Its school, 0054GBO, a customer since May 2026, recorded nothing over the months it has been connected, which the operator may confirm. **Unchanged** |
+| 28 | 0097SAM's class | Typed `milling` for the shape of its own level (`build_productive_profiles.RECORD_CLASS`): its mean day is a mill's, and the activity survey lists a maize mill at Samionta under the code "0017" with no site, a code the roster gives to a household. **A question for the operator**; the class tables do not read it (point 24) |
+
 ## 15. Out of scope
 
 - **Session 4** changed the defaults together: `connection.mode = "progressive"`, `tree_mode =
@@ -1562,6 +1878,13 @@ Left open by session 4:
 - **Left open after session 4 bis.** Points 13 and 19 are questions put to the operator. The
   first-stage certificate of Gbowele was not part of the stored results and was not computed.
   The comparison of bare ground against extension is no longer a file of its own (section 12).
+- **Left open after session 4 ter.** S4ter-A1 failed on the households (point 22), so the two
+  brownfield certificates were not computed again; they wait on the author's choice there,
+  with the settings of session 4 bis, and the two files they replace then go to
+  `results/superseded/<date>_brownfield_before_anchored_levels/`. The two brownfield trees are
+  left to the next session, which computes every tree again with a fan within each regime
+  (the formulation's section 8.3). Points 24 to 27 would move the greenfield bench, and
+  point 28 is a question for the operator.
 - **Growth beyond 24 months [decision 9].** Cohort ageing keeps the community's demand moving
   while households keep connecting, but each household still stops growing in the 25+ band,
   because no record runs much past two years: Gbowele's ends at 25 months and the fast trajectory

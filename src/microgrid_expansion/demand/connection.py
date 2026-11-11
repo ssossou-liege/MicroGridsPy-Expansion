@@ -19,7 +19,10 @@ A household whose meter failed and was not replaced leaves the grid, since a fai
 lets no energy through. The roster's record carries those departures, each from the cohort
 it joined in, so the observed stock may fall; beyond the record no trajectory disconnects
 anyone. The record also carries the productive users connected by its last month, which a
-village with a plant starts from as it does from its households.
+village with a plant starts from as it does from its households, each at the level its own
+meter measured (``ProductiveUser``): a village's productive users differ by two orders of
+magnitude, and in October 2026 the two mills of Samionta drew seven tenths of what all its
+customers drew.
 
 The village clock starts at the site's first customer connection, the origin the
 productive-use intensity is estimated on. The whole census at village month 0 is the
@@ -29,7 +32,7 @@ from __future__ import annotations
 
 import hashlib
 import math
-from dataclasses import dataclass, field
+from dataclasses import astuple, dataclass, field
 from functools import lru_cache
 
 import pandas as pd
@@ -41,6 +44,7 @@ from ..sites import HOUSEHOLD_TYPES
 
 CURVES_PATH = REFERENCE_DIR / "connection_curves.csv"
 OBSERVED_PATH = REFERENCE_DIR / "connection_observed.csv"
+LEVELS_PATH = REFERENCE_DIR / "pue_own_levels.csv"
 
 #: Under ``pairing = "paired"``, each reference village's connection goes with its growth.
 PAIRED_WITH_GROWTH = {"slow": "low", "central": "central", "fast": "high"}
@@ -92,6 +96,75 @@ class ConnectionCurve:
 
 
 @dataclass(frozen=True)
+class ProductiveUser:
+    """One productive user a village's record holds, at the level its own meter measured.
+
+    ``joined`` and ``left`` are village months, ``left`` ``None`` for a user still on the
+    grid at the record's last month. ``kwh_per_day`` is the user's mean daily energy over
+    its last twelve months of readings, or since its connection if that is shorter, and
+    ``None`` for a user the readings the level was taken from do not reach, who then draws
+    its class's profile. ``monthly`` holds twelve factors, January first, when its readings
+    cover a full year, and is empty otherwise. ``klass`` gives the hourly shape, and the
+    day-to-day spread where the user's own, ``daily_cv``, was not measured.
+    """
+
+    klass: str
+    joined: int
+    left: int | None
+    kwh_per_day: float | None
+    monthly: tuple[float, ...] = ()
+    daily_cv: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.kwh_per_day is not None and not float(self.kwh_per_day) >= 0.0:
+            raise ValueError(f"a daily energy cannot be negative: {self.kwh_per_day}")
+        if self.monthly and (len(self.monthly) != 12 or min(self.monthly) < 0.0):
+            raise ValueError("a monthly pattern holds twelve non-negative factors")
+        if self.left is not None and self.left <= self.joined:
+            raise ValueError("a productive user leaves after it joined")
+        if self.daily_cv is not None and not float(self.daily_cv) >= 0.0:
+            raise ValueError(f"a day-to-day spread cannot be negative: {self.daily_cv}")
+
+    def present(self, age: int) -> bool:
+        """On the grid at village month ``age``."""
+        return self.joined <= age and (self.left is None or age < self.left)
+
+
+def load_levels(site_name: str, path=None) -> pd.DataFrame:
+    """The rows of the own-levels table for one site, empty if it has none."""
+    path = LEVELS_PATH if path is None else path
+    if not path.exists():
+        return pd.DataFrame()
+    table = pd.read_csv(path, dtype={"departure_month": str}, keep_default_na=False)
+    return table[table.site_name == site_name]
+
+
+def productive_users(levels: pd.DataFrame, origin: str) -> tuple[ProductiveUser, ...]:
+    """The rows of an own-levels table as users, on a village clock starting at ``origin``.
+
+    Sorted by code, so that the users fall in a fixed order whatever the table holds.
+    """
+    if levels.empty:
+        return ()
+    factors = [f"f{m:02d}" for m in range(1, 13)]
+    users = []
+    for row in levels.sort_values("customer_code").itertuples():
+        level = getattr(row, "kwh_per_day")
+        spread = getattr(row, "daily_cv", "")
+        monthly = tuple(float(getattr(row, f)) for f in factors) \
+            if all(str(getattr(row, f)) != "" for f in factors) else ()
+        users.append(ProductiveUser(
+            klass=str(row.activity_class),
+            joined=_month_index(row.connection_month) - _month_index(origin),
+            left=(_month_index(row.departure_month) - _month_index(origin)
+                  if row.departure_month else None),
+            kwh_per_day=None if str(level) == "" else float(level),
+            monthly=monthly,
+            daily_cv=None if str(spread) == "" else float(spread)))
+    return tuple(users)
+
+
+@dataclass(frozen=True)
 class ObservedState:
     """A reference village's connections as its record holds them, up to its last month."""
 
@@ -107,6 +180,22 @@ class ObservedState:
     departures: tuple[tuple[int, int, int, int], ...] = ()
     #: Productive users connected at village months ``0..T``, net of any that left.
     productive: tuple[int, ...] = ()
+    #: The same users one by one, each at its own measured level (section 5.3 of the
+    #: specification); empty where no level was measured, and the users are then split
+    #: among the classes by the village's mix.
+    productive_users: tuple[ProductiveUser, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.productive_users:
+            return
+        for age, count in enumerate(self.productive):
+            present = sum(u.present(age) for u in self.productive_users)
+            if present != count:
+                raise ValueError(
+                    f"{self.site}: the record holds {count} productive users at village "
+                    f"month {age} and the own-levels table {present}; the two were built "
+                    "on different records, rebuild the levels with "
+                    "build_productive_profiles")
 
     def connected(self, age: int) -> tuple[int, ...]:
         """Households of each category on the grid at village month ``age``."""
@@ -246,7 +335,8 @@ def observed_state(site_name: str) -> ObservedState | None:
         for a in range(joined, gone):
             productive[a] += int(row.customers)
     return ObservedState(site_name, origin, last, categories, tuple(stock),
-                         tuple(sorted(departures)), tuple(productive))
+                         tuple(sorted(departures)), tuple(productive),
+                         productive_users(load_levels(site_name), origin))
 
 
 @dataclass(frozen=True)
@@ -260,7 +350,8 @@ class ConnectionSchedule:
     at the same ages are equal whatever horizon they were drawn over.
 
     ``productive`` is the productive users a village's record holds at village months
-    ``0..T``, empty for a schedule drawn from a curve alone.
+    ``0..T``, empty for a schedule drawn from a curve alone, and ``productive_users`` the
+    same users one by one at their own measured levels, where the record has them.
     """
 
     categories: tuple[str, ...]
@@ -270,6 +361,7 @@ class ConnectionSchedule:
     #: ``(cohort month, departure month, category index, households)``.
     departures: tuple[tuple[int, int, int, int], ...] = ()
     productive: tuple[int, ...] = ()
+    productive_users: tuple[ProductiveUser, ...] = ()
 
     def __post_init__(self) -> None:
         width = len(self.categories)
@@ -313,6 +405,14 @@ class ConnectionSchedule:
                                  f"{joined} than joined it")
         if any(n < 0 for n in self.productive):
             raise ValueError("a count of productive users cannot be negative")
+        object.__setattr__(self, "productive_users", tuple(self.productive_users))
+        if self.productive_users and not self.productive:
+            raise ValueError("productive users at their own levels need the record's count")
+        for age, count in enumerate(self.productive):
+            if self.productive_users and \
+                    sum(u.present(age) for u in self.productive_users) != count:
+                raise ValueError(f"the record holds {count} productive users at village "
+                                 f"month {age}, and not as many are listed one by one")
 
     # ---------------------------------------------------------------- reading
     def _row(self, age: int) -> tuple[int, ...]:
@@ -375,13 +475,19 @@ class ConnectionSchedule:
             digest.update(b"departures:" + repr(gone).encode())
         if self.productive:
             digest.update(b"productive:" + repr(self.productive[:int(until) + 1]).encode())
+        # The users' own levels, where the record has them: each one decides the load of
+        # every month it is on the grid, the record's later months included.
+        held = [u for u in self.productive_users if u.joined <= until]
+        if held:
+            digest.update(b"levels:" + repr([astuple(u) for u in held]).encode())
         return digest.hexdigest()[:12]
 
     @property
     def is_whole_census(self) -> bool:
         """Every household connected at village month 0: the model before this module."""
         return (len(self.stock) == 1 and self.stock[0] == self.census
-                and not self.departures and not self.productive)
+                and not self.departures and not self.productive
+                and not self.productive_users)
 
     def observed_productive(self, age: int) -> tuple[int, int] | None:
         """The productive users a village's record holds, and the record's last month.
@@ -394,6 +500,17 @@ class ConnectionSchedule:
             return None
         last = len(self.productive) - 1
         return self.productive[min(int(age), last)], last
+
+    def held_users(self, age: int) -> tuple[ProductiveUser, ...]:
+        """The record's productive users on the grid at village month ``age``, one by one.
+
+        Beyond the record's last month, those on the grid at that month: no user the
+        record holds leaves after it. Empty where the record measured no level.
+        """
+        if not self.productive_users:
+            return ()
+        on = min(int(age), len(self.productive) - 1)
+        return tuple(u for u in self.productive_users if u.present(on))
 
     # ---------------------------------------------------------- construction
     @classmethod
@@ -457,7 +574,8 @@ class ConnectionSchedule:
             rows.append(tuple(joined + math.floor((c - n) * progress + 0.5)
                               for joined, n, c in zip(joined_by_t, on_grid, ceiling)))
         return cls(categories, census, tuple(rows), label=curve.label,
-                   departures=departures, productive=observed.productive)
+                   departures=departures, productive=observed.productive,
+                   productive_users=observed.productive_users)
 
 
 @dataclass

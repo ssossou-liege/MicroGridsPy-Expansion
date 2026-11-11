@@ -138,24 +138,63 @@ def sample_units(calibration: ProductiveCalibration, n_connected: int,
     return dict(zip(calibration.mix.index, (int(n) for n in draw)))
 
 
-def monthly_profile_kw(counts: dict[str, int], calibration: ProductiveCalibration,
-                       days: int, rng: np.random.Generator) -> np.ndarray:
-    """Hourly load of the connected enterprises over one month [kW].
+def _class_day(calibration, klass: str) -> tuple[np.ndarray, float]:
+    """A class's measured mean day [kW per hour] and the log-normal sigma of its days."""
+    hours = [h for h in range(24) if h in calibration.profiles.columns]
+    shape = calibration.profiles.loc[klass, hours].to_numpy(dtype=float)
+    spread = float(calibration.profiles.loc[klass].get("daily_cv", 0.0) or 0.0)
+    return shape, float(np.sqrt(np.log1p(spread ** 2)))
+
+
+def monthly_profile_parts(counts: dict[str, int], calibration,
+                          days: int, rng: np.random.Generator) -> dict[str, np.ndarray]:
+    """Hourly load of the connected enterprises over one month [kW], class by class.
 
     Each class contributes its measured mean day, scaled each day by a draw whose spread
     reproduces the day-to-day variability measured for that class. Repeating a mean day
     unchanged would flatten exactly the peaks a storage sizing is most sensitive to; a mill
     that runs hard two days in three is not a mill running steadily at two thirds.
+
+    Added from a zero array in the order they come, the parts give the whole load to the
+    last bit as the single sum this replaced did, so that a year drawn class by class is the
+    year drawn before.
     """
-    hours = [h for h in range(24) if h in calibration.profiles.columns]
-    total = np.zeros(days * 24)
+    parts: dict[str, np.ndarray] = {}
     for klass, n in counts.items():
         if not n or klass not in calibration.profiles.index:
             continue
-        shape = calibration.profiles.loc[klass, hours].to_numpy(dtype=float)
-        spread = float(calibration.profiles.loc[klass].get("daily_cv", 0.0) or 0.0)
+        shape, sigma = _class_day(calibration, klass)
         # Log-normal about a unit mean, so the drawn days average to the measured day.
-        sigma = float(np.sqrt(np.log1p(spread ** 2)))
         factors = rng.lognormal(-0.5 * sigma ** 2, sigma, size=(n, days))
-        total += (factors.sum(axis=0)[:, None] * shape[None, :]).ravel()
-    return total
+        parts[klass] = (factors.sum(axis=0)[:, None] * shape[None, :]).ravel()
+    return parts
+
+
+def own_level_parts(users, calibration: ProductiveCalibration, month: int, days: int,
+                    rng: np.random.Generator) -> dict[str, np.ndarray]:
+    """Hourly load over one month [kW] of productive users at their own measured levels.
+
+    Each user draws its own mean daily energy, times its own factor for the calendar month
+    where its readings cover a full year, on its class's hourly shape, with its own
+    day-to-day spread where it was measured and its class's otherwise. A user without a
+    measured level draws its class's mean day, which is what a unit of its class draws in
+    ``monthly_profile_parts``. Users come in the order given, one draw of ``days`` factors
+    each; the parts are keyed by class.
+    """
+    parts: dict[str, np.ndarray] = {}
+    for user in users:
+        if user.klass not in calibration.profiles.index:
+            raise ValueError(f"no profile for the productive class {user.klass!r}")
+        shape, sigma = _class_day(calibration, user.klass)
+        if user.kwh_per_day is not None:
+            total = float(shape.sum())
+            unit = shape / total if total > 0 else np.full(shape.size, 1.0 / shape.size)
+            shape = unit * float(user.kwh_per_day)
+            if user.monthly:
+                shape = shape * float(user.monthly[month - 1])
+        if user.daily_cv is not None:
+            sigma = float(np.sqrt(np.log1p(float(user.daily_cv) ** 2)))
+        factors = rng.lognormal(-0.5 * sigma ** 2, sigma, size=days)
+        load = (factors[:, None] * shape[None, :]).ravel()
+        parts[user.klass] = parts[user.klass] + load if user.klass in parts else load
+    return parts

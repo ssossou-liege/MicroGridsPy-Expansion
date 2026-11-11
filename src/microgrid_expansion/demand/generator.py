@@ -596,6 +596,12 @@ class DemandYear:
     #: Households connected each month, by category, whether or not they consumed. Under
     #: the whole census it is the census in every month.
     connected: dict[int, dict[str, int]] = field(default_factory=dict)
+    #: The billed load hour by hour, by who draws it: ``households``, ``productive:<class>``
+    #: for the productive users of each class, ``community:<class>`` for the measured
+    #: community buildings, and ``declared`` for the billed uses a developer declared. Their
+    #: sum is ``hourly_kw`` less ``unbilled_kw``, to rounding. Kept so that a simulated year
+    #: can be set against the meters category by category; nothing the sizing reads.
+    parts: dict[str, np.ndarray] = field(default_factory=dict)
 
     @property
     def annual_energy_kwh(self) -> float:
@@ -677,7 +683,8 @@ def simulate_demand_year(
     """
     from .connection import ConnectionSchedule
     from .growth import maturity_band, seasonal_index, trajectory_law
-    from .productive import ProductiveCalibration, monthly_profile_kw, sample_units
+    from .productive import (ProductiveCalibration, monthly_profile_parts, own_level_parts,
+                             sample_units)
 
     schedule = ConnectionSchedule.whole_census(site) if connection is None else connection
     law = trajectory_law(trajectory)
@@ -696,6 +703,7 @@ def simulate_demand_year(
     composition: dict[int, dict[str, int]] = {}
     enterprises: dict[int, dict[str, int]] = {}
     connected_by_month: dict[int, dict[str, int]] = {}
+    months_parts: list[dict[str, np.ndarray]] = []
     for month in range(1, 13):
         age = maturity_months + month - 1
         # The band of the village, which is the clock the productive-use intensity was
@@ -720,6 +728,8 @@ def simulate_demand_year(
         profile = _to_hourly_kw(minutes)
         if season is not None:
             profile = profile * float(season.get(month, 1.0))
+        days = profile.size // 24
+        billed_parts: dict[str, np.ndarray] = {"households": profile.copy()}
         # The households the productive users are referred to. The intensity was estimated
         # per household of the connected stock, so that is the base under a progressive
         # schedule. The whole census keeps the reading the model had before, households
@@ -750,6 +760,7 @@ def simulate_demand_year(
                 share = connected / max(site.n_households, 1)
                 roster = {k: int(round(v * share)) for k, v in roster.items()}
             observed = schedule.observed_productive(age)
+            users = ()
             if observed is not None and expected_units is None and not roster:
                 # A village with its own record starts from the productive users it has,
                 # as it does from its households, and the rule decides only what changes
@@ -763,14 +774,31 @@ def simulate_demand_year(
                     * sum(schedule.connected(last).values()))
                 units = sample_units(productive, connected, band, trajectory, rng,
                                      expected_units=expected_units)
-                for klass, n in _observed_units(productive, site.name, held).items():
-                    units[klass] = units.get(klass, 0) + n
+                # The users the record holds draw what their own meters measured, each one,
+                # where the record has their levels; the users the rule adds draw their
+                # class's profile. Without the levels, the record's count is split among
+                # the classes by the village's mix and every user draws its class's profile.
+                users = schedule.held_users(age)
+                if not users:
+                    for klass, n in _observed_units(productive, site.name, held).items():
+                        units[klass] = units.get(klass, 0) + n
             else:
                 units = sample_units(productive, connected, band, trajectory, rng,
                                      expected_units=expected_units, declared_mix=roster)
-            enterprises[month] = units
-            profile = profile + monthly_profile_kw(units, productive,
-                                                   profile.size // 24, rng)
+            drawn = monthly_profile_parts(units, productive, days, rng)
+            enterprises[month] = dict(units)
+            own = own_level_parts(users, productive, month, days, rng) if users else {}
+            for user in users:
+                enterprises[month][user.klass] = enterprises[month].get(user.klass, 0) + 1
+            # Added in the order the parts come, which for a year without the record's
+            # levels is the sum the profile always received.
+            total = np.zeros(profile.size)
+            for part in (*drawn.values(), *own.values()):
+                total += part
+            profile = profile + total
+            for klass in dict.fromkeys((*drawn, *own)):
+                billed_parts[f"productive:{klass}"] = (drawn.get(klass, 0.0)
+                                                       + own.get(klass, 0.0))
 
         # The classes the meters could speak to contribute their measured day exactly as a
         # productive class does, spread and all. Each group goes where its own kind of load
@@ -779,8 +807,14 @@ def simulate_demand_year(
         measured_unbilled = np.zeros(profile.size)
         measured_at_plant = np.zeros(profile.size)
         for counts, calibration, billable, on_network in _measured_groups(site):
-            part = monthly_profile_kw(counts, calibration, profile.size // 24, rng)
+            by_class = monthly_profile_parts(counts, calibration, days, rng)
+            part = np.zeros(profile.size)
+            for one in by_class.values():
+                part += one
             profile = profile + part
+            if billable:
+                for klass, one in by_class.items():
+                    billed_parts[f"community:{klass}"] = one
             if not billable:
                 measured_unbilled = measured_unbilled + part
             if not on_network:
@@ -821,6 +855,8 @@ def simulate_demand_year(
                     continue
                 part = _to_hourly_kw(minutes)
                 profile = profile + part
+                if kind == "billed":
+                    billed_parts["declared"] = part
                 if kind != "billed":
                     unbilled_month = unbilled_month + part
                 if kind == "plant":
@@ -828,9 +864,14 @@ def simulate_demand_year(
         hourly.append(profile)
         unbilled.append(unbilled_month)
         at_plant.append(at_plant_month)
+        months_parts.append(billed_parts)
 
     unbilled_series = np.concatenate(unbilled)
     at_plant_series = np.concatenate(at_plant)
+    names = list(dict.fromkeys(k for p in months_parts for k in p))
+    parts = {name: np.concatenate([p.get(name, np.zeros(h.size))
+                                   for p, h in zip(months_parts, hourly)])
+             for name in names}
     return DemandYear(
         site=site.name,
         year=year,
@@ -841,4 +882,5 @@ def simulate_demand_year(
         unbilled_kw=unbilled_series if unbilled_series.any() else None,
         at_plant_kw=at_plant_series if at_plant_series.any() else None,
         connected=connected_by_month,
+        parts=parts,
     )

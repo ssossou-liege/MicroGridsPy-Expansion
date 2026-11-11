@@ -1,6 +1,6 @@
 r"""Calibrate productive-use archetypes from the meter records and the activity survey.
 
-Writes three tables to ``data/ramp_params/reference/``:
+Writes four tables to ``data/ramp_params/reference/``:
 
 ``pue_class_profiles.csv``
     Mean hourly load of one connected enterprise of each class [kW]. Taken from the meters,
@@ -14,9 +14,16 @@ Writes three tables to ``data/ramp_params/reference/``:
     Enterprises cannot be counted in advance --- nobody knows who will start a business ---
     so their number is carried as a trajectory and bracketed by the two reference sites,
     exactly as household growth is.
+``pue_own_levels.csv``
+    Each productive user the record of a reference village holds, at the level its own
+    meter measured: its mean daily energy over its last twelve months of readings, or since
+    its connection where that is shorter, and its own factor for each calendar month where
+    its readings cover a full year. A village with a plant starts from these users rather
+    than from the class profiles, which describe a unit of a class and not the units a
+    village has: the class ``milling`` averages one mill of Samionta at 14 kWh a day and two
+    of Gbowele below one.
 
-The script is deterministic given its inputs, and ``tests/test_productive_demand.py``
-re-runs it and asserts that it reproduces the committed tables.
+The script is deterministic given its inputs.
 """
 from __future__ import annotations
 
@@ -39,6 +46,26 @@ TRAJECTORY_SITE = {"slow": "Samionta", "central": None, "fast": "Gbowele"}
 
 METER_FILES = {"Samionta": "sam_meter_readings.parquet",
                "Gbowele": "gbo_meter_readings.parquet"}
+
+LEVELS_FILE = "pue_own_levels.csv"
+#: The months a productive user's own level is measured over, ending at its last month of
+#: readings within the record.
+LEVEL_MONTHS = 12
+#: A month enters a user's own seasonal pattern when its readings cover this share of it;
+#: the pattern is kept only when every month of the year does.
+MONTH_COVERAGE = 0.5
+#: A day enters a user's own day-to-day spread when its readings cover this share of it,
+#: and the spread is measured on no fewer days than this; otherwise the class's applies.
+DAY_COVERAGE = 0.9
+MIN_DAYS = 28
+#: Productive users the activity survey did not reach and whose class their record shows,
+#: for the hourly shape of their own level only; the class profiles and the mix, which the
+#: survey alone types, do not read this. 0097SAM is not in the survey, which lists a maize
+#: mill at Samionta under the code "0017" with no site, a code the roster gives to a
+#: household. Its mean day is a mill's: almost nothing from 22:00 to 06:00, 62 % of its energy
+#: between 07:00 and 18:00, against 71 % for the class ``milling`` and 50 % for
+#: ``small_trade``, whose night floor would put 3 of its 15 kWh a day after dark.
+RECORD_CLASS = {"0097SAM": "milling"}
 
 
 def load_survey(path: Path, known_codes: set[str]) -> pd.DataFrame:
@@ -145,6 +172,136 @@ def connection_intensity() -> pd.DataFrame:
     return table
 
 
+def record_users() -> pd.DataFrame:
+    """The productive users of the record the tables hold, with the month of their record's
+    end: code, site, connection month and, where they left within the record, departure
+    month."""
+    from .build_connection_curves import DEFAULT_RECORD, STATUS_FILE, record_customers
+
+    status = pd.read_csv(REFERENCE_DIR / STATUS_FILE, keep_default_na=False)
+    curves = pd.read_csv(REFERENCE_DIR / "connection_curves.csv")
+    last = curves.groupby("site_name").last_month.first()
+    held = record_customers(status, DEFAULT_RECORD)
+    held = held[(held.customer_type == "PUE") & held.site_name.isin(last.index)].copy()
+    held["record_end"] = held.site_name.map(last)
+    held = held[[pd.Period(c, freq="M") <= pd.Period(t, freq="M")
+                 for c, t in zip(held.connection_month, held.record_end)]]
+    gone = [bool(d) and pd.Period(d, freq="M") <= pd.Period(t, freq="M")
+            for d, t in zip(held.departure_month, held.record_end)]
+    held["departure_month"] = held.departure_month.where(gone, "")
+    return held[["site_name", "customer_code", "connection_month", "departure_month",
+                 "record_end"]].reset_index(drop=True)
+
+
+def own_levels(users: pd.DataFrame, classes: pd.Series,
+               last: str | None = None) -> pd.DataFrame:
+    """Each user's own level, from the readings up to ``last`` (default: its record's end).
+
+    The level is the mean power over the user's last ``LEVEL_MONTHS`` months of readings up
+    to that month, or since its connection where that is shorter, each reading over its own
+    period (``build_meter_archive.timed_readings``), as energy per day. Where every one of
+    those twelve months is covered at ``MONTH_COVERAGE``, the level is the mean of the
+    twelve months, each weighted by its days, and the user keeps a factor per calendar
+    month, its month's mean over the year's; otherwise the factors are left empty. Its
+    day-to-day spread is measured over the same readings (``_daily_spread``). A user with
+    no reading up to ``last`` has no level, and the generator gives it its class's profile.
+    """
+    from .build_meter_archive import timed_readings
+
+    factors = [f"f{m:02d}" for m in range(1, 13)]
+    rows = []
+    for site_name, group in users.groupby("site_name", sort=True):
+        readings = timed_readings(site_name)
+        readings = readings[readings.customer_code.isin(set(group.customer_code))]
+        by_code = dict(tuple(readings.groupby("customer_code")))
+        for user in group.sort_values("customer_code").itertuples():
+            joined = pd.Period(user.connection_month, freq="M")
+            until = pd.Period(last if last is not None else user.record_end, freq="M")
+            row = {"site_name": site_name, "customer_code": user.customer_code,
+                   "activity_class": classes.get(user.customer_code, UNSURVEYED),
+                   "connection_month": user.connection_month,
+                   "departure_month": user.departure_month,
+                   "level_from": "", "level_to": "", "months_read": 0,
+                   "kwh_per_day": np.nan, "daily_cv": np.nan,
+                   **{f: np.nan for f in factors}}
+            own = by_code.get(user.customer_code)
+            own = (own[(own.month >= joined) & (own.month <= until)]
+                   if own is not None else None)
+            if own is not None and not own.empty:
+                end = own.month.max()
+                start = max(end - (LEVEL_MONTHS - 1), joined)
+                window = own[own.month >= start]
+                months = window.groupby("month").agg(seconds=("seconds", "sum"),
+                                                     kwh=("kwh", "sum"))
+                months["watts"] = months.kwh * 3.6e6 / months.seconds
+                span = pd.period_range(start, end, freq="M")
+                days = pd.Series([p.days_in_month for p in span], index=span)
+                covered = (months.seconds.reindex(span, fill_value=0.0)
+                           / (days * 86_400.0))
+                full = len(span) == LEVEL_MONTHS and bool((covered >= MONTH_COVERAGE).all())
+                if full:
+                    watts = months.watts.reindex(span)
+                    mean = float((watts * days).sum() / days.sum())
+                    for period, w in watts.items():
+                        row[f"f{period.month:02d}"] = w / mean if mean > 0 else 1.0
+                else:
+                    mean = float(window.kwh.sum() * 3.6e6 / window.seconds.sum())
+                row.update(level_from=str(start), level_to=str(end),
+                           months_read=int(len(months)),
+                           kwh_per_day=mean * 24.0 / 1000.0,
+                           daily_cv=_daily_spread(window, by_month=full))
+            rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def _daily_spread(readings: pd.DataFrame, by_month: bool) -> float:
+    """A user's day-to-day spread: the standard deviation of its daily energy over its mean.
+
+    Over the days its readings cover at ``DAY_COVERAGE``, each day's energy taken over the
+    mean of its own month where the user keeps a monthly pattern, so that the spread the
+    generator draws does not count the seasons twice, and over the mean of the whole window
+    otherwise. Empty with fewer than ``MIN_DAYS`` such days, and the class's spread applies.
+    """
+    day = readings.timestamp.dt.floor("D")
+    daily = readings.groupby(day).agg(kwh=("kwh", "sum"), seconds=("seconds", "sum"))
+    daily = daily[daily.seconds >= DAY_COVERAGE * 86_400.0]
+    if len(daily) < MIN_DAYS:
+        return np.nan
+    month = daily.index.to_period("M")
+    base = (daily.kwh.groupby(month).transform("mean") if by_month
+            else pd.Series(daily.kwh.mean(), index=daily.index))
+    ratio = (daily.kwh / base)[base > 0]
+    return float(ratio.std()) if len(ratio) >= MIN_DAYS else np.nan
+
+
+def record_classes(survey: Path | None, codes: set[str]) -> tuple[pd.Series, pd.Series]:
+    """The class of each code for its own level's shape, and where the class comes from.
+
+    The survey's class where it reaches the code, ``RECORD_CLASS`` where the record shows
+    one the survey missed, and ``UNSURVEYED`` otherwise.
+    """
+    found = (load_survey(survey, codes).set_index("customer_code")["activity_class"]
+             if survey is not None else pd.Series(dtype=str))
+    classes, sources = {}, {}
+    for code in sorted(codes):
+        if code in found.index:
+            classes[code], sources[code] = found[code], "survey"
+        elif code in RECORD_CLASS:
+            classes[code], sources[code] = RECORD_CLASS[code], "record"
+        else:
+            classes[code], sources[code] = UNSURVEYED, "unsurveyed"
+    return pd.Series(classes), pd.Series(sources)
+
+
+def levels_table(survey: Path) -> pd.DataFrame:
+    """``pue_own_levels.csv``: the record's productive users at their own levels."""
+    users = record_users()
+    classes, sources = record_classes(survey, set(users.customer_code))
+    table = own_levels(users, classes)
+    table.insert(3, "class_source", table.customer_code.map(sources))
+    return table
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--survey", type=Path, required=True,
@@ -183,8 +340,13 @@ def main(argv: list[str] | None = None) -> int:
     by_class.round(6).to_csv(args.out / "pue_class_profiles.csv")
     mix.round(6).to_csv(args.out / "pue_class_mix.csv")
     connection_intensity().round(6).to_csv(args.out / "pue_connection_intensity.csv")
+    levels = levels_table(args.survey)
+    levels.round(6).to_csv(args.out / LEVELS_FILE, index=False)
 
     print(f"{len(labelled)} enterprises profiled, {survey.shape[0]} classified by survey")
+    print(f"{len(levels)} productive users of the record at their own levels, "
+          f"{int(levels.f01.notna().sum())} with a year of readings; classes by source: "
+          f"{levels.class_source.value_counts().to_dict()}")
     report = pd.concat([by_class[hours].sum(axis=1).round(2).rename("kWh_jour"),
                         by_class["daily_cv"].round(2), mix.round(3)], axis=1)
     print(report.to_string())

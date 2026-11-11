@@ -31,6 +31,7 @@ Hashed into the demand fingerprint. Changing one of these invalidates every cach
 | `pue_class_mix.csv` | `productive.py` | the mix of productive-use classes under each growth trajectory |
 | `pue_class_profiles.csv` | `productive.py` | the hourly shape of each productive-use class |
 | `pue_connection_intensity.csv` | `productive.py` | consumption per productive connection by maturity, under each growth trajectory |
+| `pue_own_levels.csv` | `connection.py` | each productive user the record of a reference village holds, at its own level: its class (from the activity survey, or from its record where the survey missed it), connection and departure months, its mean daily energy over its last twelve months of readings, and a factor per calendar month where its readings cover a year; the users a brownfield plan starts from; written by `build_productive_profiles.py` |
 
 ## Written for inspection
 

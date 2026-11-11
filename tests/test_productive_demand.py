@@ -80,7 +80,7 @@ def test_repeating_a_mean_day_would_flatten_the_peak(calibration):
     """Day-to-day spread is carried, so the month is not twenty-eight identical days."""
     rng = np.random.default_rng(1)
     counts = {"milling": 4, P.UNSURVEYED: 10}
-    profile = P.monthly_profile_kw(counts, calibration, days=28, rng=rng)
+    profile = sum(P.monthly_profile_parts(counts, calibration, days=28, rng=rng).values())
 
     assert profile.size == 28 * 24
     daily = profile.reshape(28, 24).sum(axis=1)

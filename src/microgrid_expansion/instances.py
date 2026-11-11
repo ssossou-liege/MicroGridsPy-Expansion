@@ -99,7 +99,7 @@ _OFFLINE_SOURCES = ("__init__.py", "build_archetype_shapes.py",
                     "build_community_profiles.py", "build_connection_curves.py",
                     "build_meter_archive.py",
                     "build_productive_profiles.py",
-                    "calibration.py", "validate.py")
+                    "calibration.py", "record_check.py", "validate.py")
 
 #: Calibration tables the generation does not read. Hashed, they invalidated every cached
 #: year whenever they were rebuilt, for a change that cannot reach one. The type-by-month

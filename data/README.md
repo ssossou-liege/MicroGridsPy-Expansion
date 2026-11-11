@@ -22,6 +22,7 @@ from, and what produces it.
 | `ramp_params/reference/pue_class_profiles.csv` | Meter records of all 57 enterprises | Mean hourly load of one enterprise of each activity class, and its day-to-day spread | ✅ |
 | `ramp_params/reference/pue_class_mix.csv` | Activity survey joined to the roster | Share of connections in each class, per growth trajectory | ✅ |
 | `ramp_params/reference/pue_connection_intensity.csv` | Connection dates of both sites | Enterprises connected per *connected* household, by maturity band and trajectory | ✅ |
+| `ramp_params/reference/pue_own_levels.csv` | Meter records of the productive users of the record, joined to the activity survey | Each user's class, connection month, mean daily energy over its last twelve months of readings (each reading over its own period) and monthly factors where a year is covered: what a village with a plant starts from | ✅ |
 | `ramp_params/reference/archetype_scaling.csv` | Fitted by `microgrid_expansion.demand.calibration` | Power and duration factors reconciling the appliance calibration with the measured archetype statistics | ✅ |
 | Economic and technical parameters | `src/microgrid_expansion/settings.py`, overridable per project | Discount rate, unit costs, generator catalogue, battery chemistry, tariff target | ✅ |
 

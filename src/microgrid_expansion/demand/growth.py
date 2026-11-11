@@ -44,6 +44,15 @@ TRAJECTORIES = {
 DEFAULT_TRAJECTORY = "central"
 
 
+def own_trajectory(site_name: str) -> str | None:
+    """The growth trajectory a reference village's own law is, ``None`` for any other site.
+
+    A run that starts from a village's record follows its own growth, as its connection
+    follows its own curve: Samionta's law is the slow trajectory and Gbowele's the fast one.
+    """
+    return next((name for name, site in TRAJECTORIES.items() if site == site_name), None)
+
+
 def maturity_band(maturity_months: int) -> str:
     """Maturity band a site of a given age falls into."""
     if maturity_months < 0:
@@ -100,6 +109,50 @@ def trajectory_law(
                              **{state: float(posterior[state]) for state in STATES}})
     table = pd.DataFrame(rows)
     return table.set_index(["maturity", "customer_type"])[list(STATES)]
+
+
+#: The age past which a household's level does not grow, in months [decision 9]: neither
+#: record shows growth beyond two years, Samionta's none at any age, and Gbowele's is too
+#: short to say more.
+ANCHORED_GROWTH_MONTHS = 24
+
+
+def household_energy(law: pd.DataFrame) -> pd.Series:
+    """What a connected household is expected to draw [kWh/day] under a mixture law, by
+    ``(maturity, customer_type)``.
+
+    The law's states weighted by the archetypes' measured mean daily energies, an inactive
+    household drawing nothing, the outlier mass folded into the archetypes as the generator
+    folds it before it draws.
+    """
+    from .generator import _redistribute_outliers
+    from .partition import load_archetype_profiles
+
+    energy = load_archetype_profiles()["mean_daily_kwh"].to_dict()
+    return pd.Series({key: float(sum(w * energy.get(state, 0.0)
+                                     for state, w in _redistribute_outliers(row).items()))
+                      for key, row in law.iterrows()}).rename_axis(["maturity",
+                                                                     "customer_type"])
+
+
+def anchored_growth(energy: pd.Series, category: str, age_then: int, age_now: int) -> float:
+    """How a household's own level grows from its age ``age_then`` to ``age_now`` [months].
+
+    The ratio of what the law behind ``energy`` (``household_energy``) expects of a
+    household of ``category`` at the band of each age, both held at
+    ``ANCHORED_GROWTH_MONTHS``, so that nothing grows past two years. A category the law
+    does not hold reads the mean over its categories, as the generator's composition does.
+    """
+    if age_now <= age_then:
+        return 1.0
+
+    def at(age: int) -> float:
+        band = maturity_band(min(int(age), ANCHORED_GROWTH_MONTHS))
+        rows = energy.xs(band, level="maturity")
+        return float(rows[category]) if category in rows.index else float(rows.mean())
+
+    then = at(age_then)
+    return at(age_now) / then if then > 0 else 1.0
 
 
 @dataclass(frozen=True)

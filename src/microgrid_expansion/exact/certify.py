@@ -1205,6 +1205,22 @@ def certified_year(year0_age: int, node_year: str | None = None,
     return plan_year, int(year0_age) + 12 * plan_year
 
 
+def growth_trajectory(site_name: str, connection, requested: str | None = None) -> str:
+    """The growth trajectory a certified year follows: ``requested`` where one is given,
+    else the village's own where the year starts from its record, else ``central``.
+
+    A brownfield run at a reference village follows its own growth, slow at Samionta and
+    fast at Gbowele, as its connection follows its own curve; ``connection`` is the plan
+    the year is drawn on, whose derived age says it starts from a record.
+    """
+    if requested is not None:
+        return requested
+    from ..demand.growth import own_trajectory
+
+    own = own_trajectory(site_name) if connection.year0_age is not None else None
+    return own or "central"
+
+
 def main(argv: list[str] | None = None) -> int:
     """Certify the sizing of one site and record the result."""
     import argparse
@@ -1216,8 +1232,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--site", default="Samionta")
     parser.add_argument("--year", type=int, default=2025)
-    parser.add_argument("--trajectory", default="central",
-                        choices=["slow", "central", "fast"])
+    parser.add_argument("--trajectory", default=None,
+                        choices=["slow", "central", "fast"],
+                        help="growth trajectory of the year; central by default, and a "
+                             "brownfield site with its own record follows its own, slow at "
+                             "Samionta and fast at Gbowele, as its connection follows its "
+                             "own curve")
     parser.add_argument("--maturity-months", type=int, default=None,
                         help="village age at the plan's year 0: whole months since the "
                              "first connection; defaults to the project's, zero for a site "
@@ -1298,6 +1318,7 @@ def main(argv: list[str] | None = None) -> int:
 
     connection = connection_plan(get_site(args.site), settings, brownfield=args.brownfield)
     schedule = connection.schedule(settings.connection.trajectory)
+    args.trajectory = growth_trajectory(args.site, connection, args.trajectory)
     year0_age = (connection.year0_age if connection.year0_age is not None
                  else settings.maturity_months if args.maturity_months is None
                  else args.maturity_months)

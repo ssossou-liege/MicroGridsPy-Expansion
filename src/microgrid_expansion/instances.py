@@ -90,12 +90,12 @@ class SiteYear:
 _GENERATION_SOURCES = ("generator.py", "growth.py", "productive.py", "archetypes.py",
                        "uses.py", "maturity.py", "partition.py", "connection.py",
                        "build_mixture_probabilities.py",
-                       "build_monthly_household_clusters.py")
+                       "build_monthly_household_clusters.py", "readings.py")
 
 #: Modules that build the calibration tables rather than read them. Their output is the
 #: CSVs, which the digest already covers, so hashing them too would rebuild every cached
 #: year for a change that cannot reach one.
-_OFFLINE_SOURCES = ("__init__.py", "build_archetype_shapes.py",
+_OFFLINE_SOURCES = ("__init__.py", "build_archetype_shapes.py", "build_own_levels.py",
                     "build_community_profiles.py", "build_connection_curves.py",
                     "build_meter_archive.py",
                     "build_productive_profiles.py",
@@ -104,13 +104,14 @@ _OFFLINE_SOURCES = ("__init__.py", "build_archetype_shapes.py",
 #: Calibration tables the generation does not read. Hashed, they invalidated every cached
 #: year whenever they were rebuilt, for a change that cannot reach one. The type-by-month
 #: mixture was superseded by the maturity-conditioned law and is read only by ``validate.py``
-#: and the tests; six others are the record of the segmentation, written so that a
+#: and the tests; five others are the record of the segmentation, written so that a
 #: calibration can be checked against the meters rather than taken on trust, and read by
-#: nothing, and the last is the state of every meter, written for the field team. Rebuilding the segmentation to look at it rebuilt three hours and a half of
+#: nothing, and the last is the state of every meter, written for the field team. The
+#: archetypes' measured hourly shapes, once among them, are read since a village's record
+#: draws its households on them. Rebuilding the segmentation to look at it rebuilt three hours and a half of
 #: cached demand. The directory's own README states the same division table by table, and a
 #: test holds the two statements together.
 _NOT_READ_AT_GENERATION = ("mixture_probabilities_type_month.csv",
-                           "archetype_hourly_shapes.csv",
                            "global_cluster_profiles.csv",
                            "monthly_household_features.csv",
                            "monthly_household_cluster_assignments.csv",

@@ -20,6 +20,7 @@ Hashed into the demand fingerprint. Changing one of these invalidates every cach
 
 | table | read by | what it carries |
 | --- | --- | --- |
+| `archetype_hourly_shapes.csv` | `generator.py` | the measured hourly shape of each archetype, which a household of a village's record draws its own level on; written by `build_archetype_shapes.py`, and compared with the shape the appliance library generates |
 | `archetype_profiles.csv` | `archetypes.py`, `partition.py` | the four household archetypes, their support and their central daily energy, peak and load factor |
 | `archetype_reference_profiles.csv` | `build_mixture_probabilities.py` | the reference profile each household-month is assigned to the nearest of |
 | `archetype_scaling.csv` | `generator.py`, `calibration.py` | the power and time scaling applied to an archetype's appliance usage |
@@ -31,7 +32,7 @@ Hashed into the demand fingerprint. Changing one of these invalidates every cach
 | `pue_class_mix.csv` | `productive.py` | the mix of productive-use classes under each growth trajectory |
 | `pue_class_profiles.csv` | `productive.py` | the hourly shape of each productive-use class |
 | `pue_connection_intensity.csv` | `productive.py` | consumption per productive connection by maturity, under each growth trajectory |
-| `pue_own_levels.csv` | `connection.py` | each productive user the record of a reference village holds, at its own level: its class (from the activity survey, or from its record where the survey missed it), connection and departure months, its mean daily energy over its last twelve months of readings, and a factor per calendar month where its readings cover a year; the users a brownfield plan starts from; written by `build_productive_profiles.py` |
+| `own_levels.csv` | `connection.py` | each customer the record of a reference village holds, households, productive users and places of worship, at its own level: its type, the shape it draws and where the shape comes from (a household's archetype, from the segmentation of the record's households; a productive user's class, from the activity survey or from its record where the survey missed it; the class `place_of_worship`), connection and departure months, its mean daily energy over its last twelve months of readings, each reading over its own period, a factor per calendar month where its readings cover a year, its day-to-day spread and the highest hourly power its meter recorded; the customers a brownfield plan starts from; written by `build_own_levels.py` |
 
 ## Written for inspection
 
@@ -40,9 +41,8 @@ that a calibration can be checked against the meters rather than taken on trust.
 
 | table | written by | what it carries |
 | --- | --- | --- |
-| `archetype_hourly_shapes.csv` | `build_archetype_shapes.py` | the measured hourly shape of each archetype, for comparison with the one the appliance library generates |
 | `global_cluster_profiles.csv` | `build_monthly_household_clusters.py` | the robust and arithmetic descriptors of each cluster, with its membership |
-| `monthly_household_features.csv` | `build_monthly_household_clusters.py` | one row per household and month: energy, peak, load factor and the days observed |
+| `monthly_household_features.csv` | `build_monthly_household_clusters.py` | one row per household and month: energy, peak, load factor, the days observed and the days the readings cover, each reading over its own period |
 | `monthly_household_cluster_assignments.csv` | `build_monthly_household_clusters.py` | the same rows with the cluster each was assigned to |
 | `gbowele_monthly_cluster_summary.csv` | `build_monthly_household_clusters.py` | Gbowele month by month: the cluster mix by customer type and the peak |
 | `samionta_monthly_cluster_summary.csv` | `build_monthly_household_clusters.py` | Samionta month by month, as above |

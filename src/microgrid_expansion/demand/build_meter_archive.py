@@ -86,6 +86,10 @@ import pyarrow as pa
 import pyarrow.csv as pcsv
 
 from ..paths import DEMAND_DIR
+# Each reading over its own period. Read at generation by the household segmentation, so it
+# lives in a module of its own, which the cache key hashes; named here for the readers that
+# have always found it in this one.
+from .readings import FIRST_PERIOD_S, LONGEST_PERIOD_S, timed_readings, with_periods  # noqa: F401
 
 #: A customer code: four digits and the site it belongs to.
 VALID_CODE = re.compile(r"^0\d{3}(SAM|GBO)$")
@@ -235,49 +239,6 @@ def reproduces(built: pd.DataFrame, existing: Path) -> str:
             f"(largest difference {apart.max() if len(shared) else 0:.3f} W); "
             f"{len(b.index.difference(a.index)):,} gone, "
             f"{len(a.index.difference(b.index)):,} new")
-
-
-#: The longest stretch one reading is taken to cover, in seconds. Beyond a day the gap is
-#: more often a meter that stopped reporting than one that caught up, and the reading is
-#: given a day.
-LONGEST_PERIOD_S = 86_400.0
-#: The period of a code's first reading, which has no reading before it: the meters' own
-#: quarter-hour.
-FIRST_PERIOD_S = 900.0
-
-
-def timed_readings(site_name: str) -> pd.DataFrame:
-    """A site's archive with each reading over its own period, for the energy it bills.
-
-    A reading carries the mean power since the meter's previous one, which is usually a
-    quarter-hour but not always: after a gap in communication the meter reports once, with
-    the mean over the whole gap. The archive keeps the power and the time, not the period,
-    and its readers so far gave each reading a quarter-hour, which drops the rest of the
-    gap: read so, Samionta's customers draw 14 % less than their meters' registers in June
-    2026 and 11 % less in July, against 3 % in a month without outages. The period is the
-    time since the code's previous reading, which is what the exports record in 99.98 % of
-    the readings (checked against their own period column, June to October 2026), capped at
-    ``LONGEST_PERIOD_S``. Read so, the archive stays 1 to 5 % below the registers in most
-    months, at both villages, which is the gap between the mean power the archive keeps and
-    the energy the meter counts.
-
-    Returns the archive's columns, the period in ``seconds``, the energy in ``kwh`` and the
-    calendar ``month``.
-    """
-    from ..sites import SITES
-
-    return with_periods(pd.read_parquet(SITES[site_name].meter_path(),
-                                        columns=["timestamp", "customer_code", "power_W"]))
-
-
-def with_periods(readings: pd.DataFrame) -> pd.DataFrame:
-    """Readings with the period each covers, its energy and its month (``timed_readings``)."""
-    readings = readings.sort_values(["customer_code", "timestamp"], ignore_index=True)
-    gap = readings.groupby("customer_code").timestamp.diff().dt.total_seconds()
-    seconds = gap.fillna(FIRST_PERIOD_S).clip(upper=LONGEST_PERIOD_S)
-    return readings.assign(seconds=seconds,
-                           kwh=readings.power_W * seconds / 3.6e6,
-                           month=readings.timestamp.dt.to_period("M"))
 
 
 def main(argv: list[str] | None = None) -> int:

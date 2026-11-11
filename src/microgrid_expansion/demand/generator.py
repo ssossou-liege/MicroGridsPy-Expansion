@@ -234,7 +234,7 @@ def _appliance_spec(row: pd.Series,
     }
 
 
-def _measured_groups(site):
+def _measured_groups(site, anchored: frozenset[str] = frozenset()):
     """The calibrated classes this village has, grouped by who pays and where they sit.
 
     Returns a list of ``(counts, calibration, billable, on_network)``, empty when the
@@ -251,7 +251,8 @@ def _measured_groups(site):
     A class the developer has described device by device is left out. The two are both
     offered on purpose -- a measured shape for the village that has none of its own, and the
     developer's own figures for the village that knows better -- but they are alternatives,
-    and adding both counted one building twice.
+    and adding both counted one building twice. So is a class in ``anchored``, whose
+    buildings a village's record holds one by one at their own levels.
     """
     from .uses import CommunityCalibration
 
@@ -265,7 +266,7 @@ def _measured_groups(site):
     described = {u.key for u in (getattr(site, "declared_uses", None) or ())}
     groups: dict[tuple[bool, bool], dict[str, int]] = {}
     for klass, number in counted.items():
-        if int(number) <= 0 or klass in described:
+        if int(number) <= 0 or klass in described or klass in anchored:
             continue
         if klass not in calibration.profiles.index:
             continue
@@ -570,6 +571,41 @@ class ArchetypeScaling:
                    time=dict(zip(table["cluster"], table["time_scale"])))
 
 
+@dataclass(frozen=True)
+class ArchetypeShapes:
+    """The measured hourly shape of each archetype, as ``productive.own_level_parts`` reads a
+    class's: one row per archetype, one column per hour.
+
+    A household of a village's record draws its own level on its archetype's shape
+    (``build_archetype_shapes``), the one its meter's months are most often assigned to.
+    """
+
+    profiles: pd.DataFrame
+
+    @classmethod
+    def load(cls, path=None) -> "ArchetypeShapes":
+        path = REFERENCE_DIR / "archetype_hourly_shapes.csv" if path is None else path
+        table = pd.read_csv(path, dtype={"cluster": str}).set_index("cluster")
+        table.columns = [int(c) for c in table.columns]
+        return cls(profiles=table)
+
+
+def _household_growth(users, energy, age: int, last: int) -> list[float] | None:
+    """Each anchored household's level beyond the record, relative to the one it measured.
+
+    A household of the record keeps its own level up to the record's last month ``last``.
+    Beyond it, its level grows along the growth trajectory from its age at ``last``: the
+    ratio of what the trajectory's law expects of a household of its category at its age
+    now to what it expects at its age then, both ages held at
+    ``growth.ANCHORED_GROWTH_MONTHS`` (``growth.anchored_growth``). ``None`` on the record.
+    """
+    from .growth import anchored_growth
+
+    if age <= last:
+        return None
+    return [anchored_growth(energy, u.kind, last - u.joined, age - u.joined) for u in users]
+
+
 @dataclass
 class DemandYear:
     """One stochastic realisation of a community's demand over a calendar year."""
@@ -596,6 +632,10 @@ class DemandYear:
     #: Households connected each month, by category, whether or not they consumed. Under
     #: the whole census it is the census in every month.
     connected: dict[int, dict[str, int]] = field(default_factory=dict)
+    #: Households drawn at their own measured level each month, by category: the record's
+    #: households in a year that starts from a village's record, none otherwise.
+    #: ``composition`` covers the others.
+    anchored: dict[int, dict[str, int]] = field(default_factory=dict)
     #: The billed load hour by hour, by who draws it: ``households``, ``productive:<class>``
     #: for the productive users of each class, ``community:<class>`` for the measured
     #: community buildings, and ``declared`` for the billed uses a developer declared. Their
@@ -668,7 +708,11 @@ def simulate_demand_year(
     ``connection`` says which households are on the grid and since when; ``None`` is the
     whole census at village month 0, every household then as old as the village. Each
     cohort is composed under the law of its own maturity band, and an unconnected household
-    is in no state at all: it draws nothing and counts for nothing.
+    is in no state at all: it draws nothing and counts for nothing. A schedule that carries a
+    village's record draws each household, productive user and place of worship of the
+    record at the level its own meter measured, and the laws decide only what changes after
+    the record: the households and users who connect after it, and how an anchored
+    household's level grows from its age then.
 
     ``trajectory`` selects which of the observed growth behaviours to apply; the two
     reference villages bracket a factor of two after two years, so a sizing should be
@@ -682,12 +726,19 @@ def simulate_demand_year(
     it was.
     """
     from .connection import ConnectionSchedule
-    from .growth import maturity_band, seasonal_index, trajectory_law
+    from .growth import household_energy, maturity_band, seasonal_index, trajectory_law
     from .productive import (ProductiveCalibration, monthly_profile_parts, own_level_parts,
                              sample_units)
 
     schedule = ConnectionSchedule.whole_census(site) if connection is None else connection
     law = trajectory_law(trajectory)
+    # The record's households at their own levels: their shapes, and what the trajectory's
+    # law expects of a household by band, which their growth beyond the record follows.
+    shapes = energy = None
+    if schedule.household_users:
+        shapes = ArchetypeShapes.load()
+        energy = household_energy(law)
+    anchored_classes = frozenset(u.klass for u in schedule.community_users)
     productive = ProductiveCalibration.load() if include_productive else None
     if productive is not None and float(productive_scale) != 1.0:
         productive = replace(productive,
@@ -703,6 +754,7 @@ def simulate_demand_year(
     composition: dict[int, dict[str, int]] = {}
     enterprises: dict[int, dict[str, int]] = {}
     connected_by_month: dict[int, dict[str, int]] = {}
+    anchored_by_month: dict[int, dict[str, int]] = {}
     months_parts: list[dict[str, np.ndarray]] = []
     for month in range(1, 13):
         age = maturity_months + month - 1
@@ -715,7 +767,7 @@ def simulate_demand_year(
         # cohorts existed, with the same arguments in the same order: the random stream is
         # unchanged.
         counts = {state: 0 for state in (*ARCHETYPES, INACTIVE)}
-        for cohort_band, census in schedule.census_by_band(age).items():
+        for cohort_band, census in schedule.drawn_by_band(age).items():
             part = sample_composition(law.xs(cohort_band, level="maturity"), census, month,
                                       rng, by_maturity=True)
             for state, n in part.items():
@@ -729,6 +781,17 @@ def simulate_demand_year(
         if season is not None:
             profile = profile * float(season.get(month, 1.0))
         days = profile.size // 24
+        # The record's households at their own levels, each with its own months, which hold
+        # its season: the residual seasonality is the law's, and applies to the law's
+        # households alone.
+        anchored = schedule.anchored_households(age)
+        if anchored:
+            anchored_by_month[month] = {k: sum(u.kind == k for u in anchored)
+                                        for k in schedule.categories}
+            scales = _household_growth(anchored, energy, age, schedule.record_end)
+            for part in own_level_parts(anchored, shapes, month, days, rng,
+                                        scales=scales).values():
+                profile = profile + part
         billed_parts: dict[str, np.ndarray] = {"households": profile.copy()}
         # The households the productive users are referred to. The intensity was estimated
         # per household of the connected stock, so that is the base under a progressive
@@ -806,7 +869,8 @@ def simulate_demand_year(
         # load, the unbilled energy and the part that carries no distribution loss.
         measured_unbilled = np.zeros(profile.size)
         measured_at_plant = np.zeros(profile.size)
-        for counts, calibration, billable, on_network in _measured_groups(site):
+        for counts, calibration, billable, on_network in _measured_groups(site,
+                                                                           anchored_classes):
             by_class = monthly_profile_parts(counts, calibration, days, rng)
             part = np.zeros(profile.size)
             for one in by_class.values():
@@ -819,6 +883,25 @@ def simulate_demand_year(
                 measured_unbilled = measured_unbilled + part
             if not on_network:
                 measured_at_plant = measured_at_plant + part
+        # The places of worship a village's record holds, each at its own level, in place
+        # of its class's count; where they sit and who pays for them is their class's.
+        buildings = schedule.community_present(age)
+        if buildings:
+            from .uses import CommunityCalibration
+
+            calibration = CommunityCalibration.load()
+            if calibration is None:
+                raise ValueError("a village's record holds places of worship and the "
+                                 "community calibration is not built")
+            for klass, one in own_level_parts(buildings, calibration, month, days,
+                                              rng).items():
+                profile = profile + one
+                if calibration.is_billable(klass):
+                    billed_parts[f"community:{klass}"] = one
+                else:
+                    measured_unbilled = measured_unbilled + one
+                if not calibration.is_on_network(klass):
+                    measured_at_plant = measured_at_plant + one
 
         # The uses the developer declared, simulated device by device. Community uses are
         # connected from the first month rather than scaled by how far the line has reached:
@@ -882,5 +965,6 @@ def simulate_demand_year(
         unbilled_kw=unbilled_series if unbilled_series.any() else None,
         at_plant_kw=at_plant_series if at_plant_series.any() else None,
         connected=connected_by_month,
+        anchored=anchored_by_month,
         parts=parts,
     )

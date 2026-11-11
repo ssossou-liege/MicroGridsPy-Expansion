@@ -6,7 +6,7 @@ scenario-tree reduction.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -51,6 +51,26 @@ class ScenarioPath:
     t_amb: dict[int, np.ndarray]        # stage_year -> 8760 degC
 
 
+def own_growth_space(space: UncertaintySpace, site: str, connection) -> UncertaintySpace:
+    """The space a run draws its paths from, with a village's own growth where it starts from
+    its record.
+
+    A brownfield run at a reference village follows its own growth on every path, as its
+    connection follows its own curve: the trajectory is still drawn, so that every other draw
+    stays where it was, and it is the village's own whatever the project's weights. Any other
+    run keeps the space it was given.
+    """
+    if connection.year0_age is None:
+        return space
+    from ..demand.growth import own_trajectory
+
+    own = own_trajectory(site)
+    if own is None:
+        return space
+    weights = tuple(1.0 if name == own else 0.0 for name in demand_paths.TRAJECTORIES)
+    return replace(space, demand=replace(space.demand, trajectory_probabilities=weights))
+
+
 def sample_scenario_paths(
     cfg: ModelConfig,
     space: UncertaintySpace | None = None,
@@ -69,7 +89,6 @@ def sample_scenario_paths(
     """
     space = space or UncertaintySpace()
     rng = np.random.default_rng(cfg.seed)
-    raw_paths = mc_sampler.sample_paths(cfg, space)
     # The module the project describes, for the same reason as the prices: the yield of a
     # dirtier site or a hotter mounting is not the yield of the package's own module.
     from ..resource.yield_model import module_from
@@ -95,6 +114,8 @@ def sample_scenario_paths(
             "the productive intensity scale is read by the certified year alone; the "
             "tree's demand is drawn at the calibration")
     connection = connection_plan(get_site(site), project)
+    space = own_growth_space(space, site, connection)
+    raw_paths = mc_sampler.sample_paths(cfg, space)
     # A site with its own record in a brownfield run starts from its derived age.
     base_maturity = (connection.year0_age if connection.year0_age is not None
                      else getattr(cfg, "maturity_months", 12))

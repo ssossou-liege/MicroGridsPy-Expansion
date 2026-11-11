@@ -170,31 +170,85 @@ def monthly_profile_parts(counts: dict[str, int], calibration,
     return parts
 
 
-def own_level_parts(users, calibration: ProductiveCalibration, month: int, days: int,
-                    rng: np.random.Generator) -> dict[str, np.ndarray]:
-    """Hourly load over one month [kW] of productive users at their own measured levels.
+def longer_days(mean_day: np.ndarray, factors: np.ndarray, cap: float | None) -> np.ndarray:
+    """A customer's days [kW, one row a day], each a draw of its mean day that runs longer
+    rather than harder.
 
-    Each user draws its own mean daily energy, times its own factor for the calendar month
-    where its readings cover a full year, on its class's hourly shape, with its own
-    day-to-day spread where it was measured and its class's otherwise. A user without a
-    measured level draws its class's mean day, which is what a unit of its class draws in
-    ``monthly_profile_parts``. Users come in the order given, one draw of ``days`` factors
-    each; the parts are keyed by class.
+    Day ``d`` holds ``factors[d]`` times the mean day's energy. Scaling every hour by the
+    factor, as a class unit's day is drawn, gives a busy day of a mill four times its mean
+    power at every hour, far beyond what its motor draws. Here the hour ``h`` of day ``d`` is
+    ``min(cap, lambda_d m(h))``, with ``lambda_d`` set so that the day holds its energy: the
+    mean day is the customer's power when it runs times the share of each hour it runs, and
+    a busy day runs a larger share of each hour, an hour already full passing the rest to
+    the hours that are not. A quiet day runs a smaller share, which is the plain scaling. No
+    hour exceeds ``cap``, the highest hourly power the customer's meter recorded; a day that
+    would hold more than ``cap`` in every hour its mean day uses is held at that, and the
+    rest of its draw is lost, which a lognormal draw reaches only far in its tail.
+    ``cap`` ``None`` is the plain scaling.
+    """
+    m = np.asarray(mean_day, dtype=float)
+    factors = np.asarray(factors, dtype=float)
+    plain = factors[:, None] * m[None, :]
+    if cap is None or not np.any(plain > cap):
+        return plain
+    cap = float(cap)
+    busy = np.flatnonzero((plain > cap).any(axis=1))
+    target = factors[busy] * m.sum()
+    used = m > 0
+    full = target >= cap * used.sum()
+    days = np.empty((busy.size, m.size))
+    days[full] = np.where(used, cap, 0.0)
+    if (~full).any():
+        goal = target[~full]
+        low = np.zeros(goal.size)
+        high = np.full(goal.size, cap / m[used].min())
+        for _ in range(60):                      # bisection on lambda, to machine precision
+            middle = 0.5 * (low + high)
+            held = np.minimum(cap, middle[:, None] * m[None, :]).sum(axis=1)
+            low, high = np.where(held < goal, middle, low), np.where(held < goal, high, middle)
+        rows = np.minimum(cap, high[:, None] * m[None, :])
+        # The hours below the cap take what the bisection leaves, so the day is exact.
+        free = rows < cap
+        rest = goal - np.where(free, 0.0, rows).sum(axis=1)
+        below = np.where(free, rows, 0.0).sum(axis=1)
+        scale = np.where(below > 0, rest / np.where(below > 0, below, 1.0), 1.0)
+        days[~full] = np.where(free, rows * scale[:, None], rows)
+    plain[busy] = days
+    return plain
+
+
+def own_level_parts(users, calibration, month: int, days: int,
+                    rng: np.random.Generator,
+                    scales=None) -> dict[str, np.ndarray]:
+    """Hourly load over one month [kW] of a record's customers at their own measured levels.
+
+    Each customer draws its own mean daily energy, times its own factor for the calendar
+    month where its readings cover a full year and times its entry of ``scales`` where one
+    is given (a household's growth beyond the record), on its shape's hourly profile in
+    ``calibration``, with its own day-to-day spread where it was measured and its shape's
+    otherwise. A busy day runs longer and not harder, within the highest hourly power its
+    meter recorded (``longer_days``). A customer without a measured level draws its shape's
+    mean day, which is what a unit of its class draws in ``monthly_profile_parts``. Customers
+    come in the order given, one draw of ``days`` factors each; the parts are keyed by shape.
     """
     parts: dict[str, np.ndarray] = {}
-    for user in users:
+    for i, user in enumerate(users):
         if user.klass not in calibration.profiles.index:
-            raise ValueError(f"no profile for the productive class {user.klass!r}")
+            raise ValueError(f"no profile for the shape {user.klass!r}")
         shape, sigma = _class_day(calibration, user.klass)
+        cap = None
         if user.kwh_per_day is not None:
             total = float(shape.sum())
             unit = shape / total if total > 0 else np.full(shape.size, 1.0 / shape.size)
             shape = unit * float(user.kwh_per_day)
             if user.monthly:
                 shape = shape * float(user.monthly[month - 1])
+            if scales is not None:
+                shape = shape * float(scales[i])
+            cap = getattr(user, "peak_kw", None)
         if user.daily_cv is not None:
             sigma = float(np.sqrt(np.log1p(float(user.daily_cv) ** 2)))
         factors = rng.lognormal(-0.5 * sigma ** 2, sigma, size=days)
-        load = (factors[:, None] * shape[None, :]).ravel()
+        load = longer_days(shape, factors, cap).ravel()
         parts[user.klass] = parts[user.klass] + load if user.klass in parts else load
     return parts

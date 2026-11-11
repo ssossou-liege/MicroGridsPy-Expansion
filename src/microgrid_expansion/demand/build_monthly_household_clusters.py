@@ -10,6 +10,7 @@ import pandas as pd
 
 from ..paths import DEMAND_DIR, REFERENCE_DIR
 from ..settings import default_settings
+from .readings import with_periods
 
 
 # The reference sites, their meter files and their census come from the site registry.
@@ -23,7 +24,9 @@ SITE_FILES = {name: site.meter_file for name, site in _SITES.items()
 CENSUS_TOTALS = {name: dict(site.census) for name, site in _SITES.items()}
 HOUSEHOLD_TYPES = list(_HOUSEHOLD_TYPES)
 
-#: Metering interval of the reference readings [h].
+#: Nominal metering interval of the reference readings [h]: the resolution a simulated
+#: peak is read at to compare with a metered one. A reading's energy is taken over its own
+#: period, which is this interval in most readings and not in all.
 INTERVAL_HOURS = 0.25
 
 
@@ -104,6 +107,12 @@ def load_census(customers_path: Path) -> pd.DataFrame:
 
 
 def load_meter_readings(data_dir: Path, customers: pd.DataFrame) -> pd.DataFrame:
+    """The households' readings, each over its own period, up to the last full month.
+
+    The period of a reading is the time since its code's previous one, capped at a day
+    (``readings.with_periods``), and it is taken before the incomplete last
+    month is cut, so that a reading keeps the period it has in the whole archive.
+    """
     customer_codes_by_site = customers.groupby("site_name")["customer_code"].apply(set).to_dict()
     frames = []
 
@@ -111,22 +120,37 @@ def load_meter_readings(data_dir: Path, customers: pd.DataFrame) -> pd.DataFrame
         path = data_dir / file_name
         site_readings = pd.read_parquet(path, columns=["timestamp", "customer_code", "power_W"])
         site_readings = site_readings[site_readings["customer_code"].isin(customer_codes_by_site.get(site_name, set()))].copy()
-        site_readings["site_name"] = site_name
         site_readings["timestamp"] = pd.to_datetime(site_readings["timestamp"])
+        site_readings = with_periods(site_readings).drop(columns=["month", "kwh"])
+        site_readings["site_name"] = site_name
 
         last_full_month = infer_last_full_month(site_readings["timestamp"].max())
         site_readings = site_readings[site_readings["timestamp"].dt.to_period("M") <= last_full_month].copy()
         frames.append(site_readings)
 
     if not frames:
-        return pd.DataFrame(columns=["timestamp", "customer_code", "power_W", "site_name"])
+        return pd.DataFrame(columns=["timestamp", "customer_code", "power_W", "seconds",
+                                     "site_name"])
 
     return pd.concat(frames, ignore_index=True)
 
 
 def compute_monthly_features(readings: pd.DataFrame, customers: pd.DataFrame) -> pd.DataFrame:
+    """One row per household and month: its energy, peak, load factor and coverage.
+
+    Each reading counts over its own period (``seconds``, computed here where the readings
+    do not carry it), not over a quarter-hour: a meter that reports once after a gap in
+    communication carries the gap's mean power, and a quarter-hour apiece dropped 4 % of
+    what Samionta's customers billed over the record's last year, 7 % of Gbowele's, and up
+    to 17 % in a month of outages. The month's energy is the readings' energy, and its
+    daily energy the mean power over the time the readings cover, times a day:
+    ``covered_days`` is that time. The peak stays the highest reading, a mean power over
+    its own period.
+    """
     readings = readings.copy()
-    readings["energy_kWh"] = readings["power_W"] * INTERVAL_HOURS / 1000.0
+    if "seconds" not in readings.columns:
+        readings = with_periods(readings).drop(columns=["month", "kwh"])
+    readings["energy_kWh"] = readings["power_W"] * readings["seconds"] / 3.6e6
     readings["month"] = readings["timestamp"].dt.to_period("M")
     readings["date"] = readings["timestamp"].dt.normalize()
 
@@ -135,13 +159,17 @@ def compute_monthly_features(readings: pd.DataFrame, customers: pd.DataFrame) ->
         .agg(
             total_kWh=("energy_kWh", "sum"),
             peak_power=("power_W", "max"),
-            mean_power=("power_W", "mean"),
+            seconds=("seconds", "sum"),
             observed_days=("date", "nunique"),
             reading_count=("power_W", "size"),
         )
     )
 
-    monthly["mean_daily_kWh"] = monthly["total_kWh"] / monthly["observed_days"]
+    monthly["covered_days"] = monthly["seconds"] / 86_400.0
+    monthly["mean_power"] = np.where(monthly["seconds"] > 0,
+                                     monthly["total_kWh"] * 3.6e6 / monthly["seconds"], 0.0)
+    monthly["mean_daily_kWh"] = np.where(monthly["covered_days"] > 0,
+                                         monthly["total_kWh"] / monthly["covered_days"], 0.0)
     monthly["load_factor"] = np.where(
         monthly["peak_power"] > 0,
         monthly["mean_power"] / monthly["peak_power"],
@@ -165,6 +193,7 @@ def compute_monthly_features(readings: pd.DataFrame, customers: pd.DataFrame) ->
             "load_factor",
             "total_kWh",
             "observed_days",
+            "covered_days",
             "reading_count",
             "connection_date",
         ]
@@ -432,6 +461,7 @@ def main() -> None:
             "load_factor",
             "total_kWh",
             "observed_days",
+            "covered_days",
             "reading_count",
             "connection_date",
             "cluster",

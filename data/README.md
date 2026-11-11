@@ -22,7 +22,7 @@ from, and what produces it.
 | `ramp_params/reference/pue_class_profiles.csv` | Meter records of all 57 enterprises | Mean hourly load of one enterprise of each activity class, and its day-to-day spread | ✅ |
 | `ramp_params/reference/pue_class_mix.csv` | Activity survey joined to the roster | Share of connections in each class, per growth trajectory | ✅ |
 | `ramp_params/reference/pue_connection_intensity.csv` | Connection dates of both sites | Enterprises connected per *connected* household, by maturity band and trajectory | ✅ |
-| `ramp_params/reference/pue_own_levels.csv` | Meter records of the productive users of the record, joined to the activity survey | Each user's class, connection month, mean daily energy over its last twelve months of readings (each reading over its own period) and monthly factors where a year is covered: what a village with a plant starts from | ✅ |
+| `ramp_params/reference/own_levels.csv` | Meter records of the customers of the record, households, productive users and places of worship, joined to the activity survey and to the segmentation of the record's households | Each customer's type, the shape it draws (a household's archetype, a productive user's class, the class of a place of worship), connection month, mean daily energy over its last twelve months of readings (each reading over its own period), monthly factors where a year is covered, day-to-day spread and highest hourly power: what a village with a plant starts from | ✅ |
 | `ramp_params/reference/archetype_scaling.csv` | Fitted by `microgrid_expansion.demand.calibration` | Power and duration factors reconciling the appliance calibration with the measured archetype statistics | ✅ |
 | Economic and technical parameters | `src/microgrid_expansion/settings.py`, overridable per project | Discount rate, unit costs, generator catalogue, battery chemistry, tariff target | ✅ |
 
@@ -59,13 +59,18 @@ python -m microgrid_expansion.demand.partition
 python -m microgrid_expansion.demand.build_archetype_shapes
 python -m microgrid_expansion.demand.maturity
 python -m microgrid_expansion.demand.build_mixture_probabilities
-python -m microgrid_expansion.demand.build_productive_profiles
+python -m microgrid_expansion.demand.build_productive_profiles --survey <activity survey>
+python -m microgrid_expansion.demand.build_own_levels --survey <activity survey>
 python -m microgrid_expansion.demand.build_community_profiles
 python -m microgrid_expansion.demand.calibration
 ```
 
-Every step writes to `ramp_params/reference/` by default and is deterministic given its
-default settings, except the last: the scaling factors are fitted against RAMP simulations
+The steps that take an energy from the archive, the household segmentation, the productive
+class profiles and the own levels, read each reading over its own period, the time since
+the code's previous reading capped at a day (`demand/readings.py`): a meter that reports
+once after a gap in communication carries the gap's mean power, which a quarter-hour apiece
+dropped. Every step writes to `ramp_params/reference/` by default and is deterministic given
+its default settings, except the last: the scaling factors are fitted against RAMP simulations
 and move by the Monte-Carlo noise of sixty households from one run to the next.
 `tests/test_demand_calibration.py` re-runs the segmentation and asserts that it reproduces
 the committed CSVs exactly, so that the calibration and the code that produces it cannot

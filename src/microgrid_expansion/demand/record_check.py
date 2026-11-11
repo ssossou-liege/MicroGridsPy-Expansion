@@ -1,25 +1,27 @@
 r"""Set a village's brownfield year against its own meters: criterion S4ter-A1.
 
-A village with a plant starts from its record: the households and the productive users on
-its grid, month by month, up to the record's last month ``T``. Nothing checked what they
-then draw. This module builds the brownfield demand at the village ages of the record's
-last twelve months, as the certified year of a brownfield run would build it, and sets it
-against what the meters billed over those months, in total and by category: households,
-productive users by class, and the community buildings.
+A village with a plant starts from its record: the households, the productive users and
+the places of worship on its grid, month by month, up to the record's last month ``T``,
+each at the level its own meter measured. This module builds the brownfield demand at the
+village ages of the record's last twelve months, as the certified year of a brownfield run
+builds it, under the village's own growth trajectory, and sets it against what the meters
+billed over those months, in total and by category: households, productive users by
+class, and the community buildings.
 
 The meters are read from the archive with each reading over its own period
-(``build_meter_archive.timed_readings``). A customer's category is its type in the record
+(``readings.timed_readings``). A customer's category is its type in the record
 (``meter_status.csv``): households of every category, productive users by the class their
-own level is drawn on (``pue_own_levels.csv``), places of worship and the school. The model
+own level is drawn on (``own_levels.csv``), places of worship and the school. The model
 is read off ``DemandYear.parts``, the billed load by who draws it, before any distribution
 loss, which no meter sees. Several seeds are drawn and averaged: the criterion is about
 what the model expects, not about one draw.
 
 S4ter-A1 holds when the billed energy over the twelve months lies within ``TOLERANCE`` of
 the meters at both villages, in total, for the households and for the productive users.
-The held-out version takes the productive users' levels from the record up to
-``HELD_OUT_LAST`` and sets the months after it against the meters; it is reported, and
-nothing is tuned on it.
+The held-out version takes every customer's level from the record up to ``HELD_OUT_LAST``
+and sets the months after it against the meters: a customer connected after it is drawn from
+the model's laws, a household through the mixture law of its cohort and a productive user
+on its class's mean day. It is reported, and nothing is tuned on it.
 
 Two tables are reported beside it, for the author: the households' energy per connected
 household by village age and by the household's own age (decision 9 of the specification),
@@ -71,8 +73,8 @@ def categories(site_name: str) -> pd.Series:
     """Each customer code's category in the comparison, from the record's types."""
     status = pd.read_csv(REFERENCE_DIR / "meter_status.csv", keep_default_na=False)
     status = status[status.site_name == site_name]
-    levels = pd.read_csv(REFERENCE_DIR / "pue_own_levels.csv")
-    klass = levels.set_index("customer_code")["activity_class"]
+    levels = pd.read_csv(REFERENCE_DIR / "own_levels.csv", dtype={"shape": str})
+    klass = levels[levels.customer_type == "PUE"].set_index("customer_code")["shape"]
     out = {}
     for row in status.itertuples():
         if row.customer_type in HOUSEHOLD_TYPES:
@@ -90,7 +92,7 @@ def metered(site_name: str, months: pd.PeriodIndex) -> tuple[pd.DataFrame, pd.Da
     The peak is that of the category's hourly load, each code's readings averaged over the
     hour, which is the resolution the model draws at.
     """
-    from .build_meter_archive import timed_readings
+    from .readings import timed_readings
 
     kinds = categories(site_name)
     readings = timed_readings(site_name)
@@ -125,20 +127,24 @@ def _brownfield_schedule(site, observed=None):
 
 
 def simulated(site_name: str, months: pd.PeriodIndex, seeds: int = SEEDS,
-              trajectory: str = "central", observed=None
+              trajectory: str | None = None, observed=None
               ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """The brownfield demand at the village ages of ``months``, by category.
 
     Each calendar year the months span is drawn at the village age of its January, as
-    ``certify --brownfield`` draws its year, with the site's own scaling and the shipped
-    connection trajectory; ``observed`` replaces the record the schedule starts from.
-    Returns the energy and the peak averaged over the seeds, and the energy of each seed.
+    ``certify --brownfield`` draws its year, with the site's own scaling, the shipped
+    connection trajectory and, unless ``trajectory`` says otherwise, the village's own
+    growth; ``observed`` replaces the record the schedule starts from. Returns the energy
+    and the peak averaged over the seeds, and the energy of each seed.
     """
     from ..sites import get_site
     from . import archetypes
     from .connection import observed_state
     from .generator import simulate_demand_year
 
+    from .growth import own_trajectory
+
+    trajectory = trajectory or own_trajectory(site_name) or "central"
     site = get_site(site_name)
     record = observed_state(site_name) if observed is None else observed
     schedule = _brownfield_schedule(site, observed)
@@ -183,25 +189,29 @@ def grouped(energy: pd.DataFrame) -> pd.Series:
 
 
 def held_out_state(site_name: str, last: str = HELD_OUT_LAST):
-    """The record with its productive users' levels taken from the readings up to ``last``.
+    """The record with every customer's level taken from the readings up to ``last``.
 
-    The classes are the shipped table's; a user connected after ``last`` has no level and
-    draws its class's profile.
+    The shapes are the shipped table's; a customer connected after ``last`` has no level and
+    is drawn from the model's laws.
     """
-    from .build_productive_profiles import own_levels, record_users
-    from .connection import observed_state, productive_users
+    from .build_own_levels import filled_spreads, own_levels, record_users
+    from .connection import observed_state
+    from .connection import record_users as as_users
 
     observed = observed_state(site_name)
     users = record_users()
     users = users[users.site_name == site_name]
-    shipped = pd.read_csv(REFERENCE_DIR / "pue_own_levels.csv")
-    classes = shipped.set_index("customer_code")["activity_class"]
-    table = own_levels(users, classes, last=last).fillna("")
-    return replace(observed, productive_users=productive_users(table,
-                                                               observed.origin_month))
+    shipped = pd.read_csv(REFERENCE_DIR / "own_levels.csv", dtype={"shape": str})
+    shapes = shipped.set_index("customer_code")["shape"]
+    table = filled_spreads(own_levels(users, shapes, last=last)).fillna("")
+    origin = observed.origin_month
+    return replace(observed,
+                   productive_users=as_users(table, origin, ("PUE",)),
+                   household_users=as_users(table, origin, tuple(HOUSEHOLD_TYPES)),
+                   community_users=as_users(table, origin, ("CHU",)))
 
 
-def check(site_name: str, seeds: int = SEEDS, trajectory: str = "central",
+def check(site_name: str, seeds: int = SEEDS, trajectory: str | None = None,
           held_out: bool = False) -> dict:
     """S4ter-A1 at one village, or its held-out version."""
     if held_out:
@@ -213,6 +223,9 @@ def check(site_name: str, seeds: int = SEEDS, trajectory: str = "central",
     meter_energy, meter_peak = metered(site_name, months)
     model_energy, model_peak, by_seed = simulated(site_name, months, seeds, trajectory,
                                                   observed)
+    from .growth import own_trajectory
+
+    trajectory = trajectory or own_trajectory(site_name) or "central"
     meters, model = grouped(meter_energy), grouped(model_energy)
     gaps = {k: (model.get(k, 0.0) / meters[k] - 1.0) if meters.get(k, 0.0) > 0 else None
             for k in ("total", *GROUPS)}
@@ -253,8 +266,8 @@ def household_energy_by_age(site_name: str) -> dict[str, pd.DataFrame]:
     connection. Every household on the grid in a month counts, a month without a reading
     counting as none; the share of household-months with a reading is given beside it.
     """
-    from .build_meter_archive import timed_readings
     from .connection import curve_row
+    from .readings import timed_readings
 
     row = curve_row(site_name, "estimate")
     origin, last = pd.Period(row.origin_month, freq="M"), pd.Period(row.last_month, freq="M")
@@ -292,7 +305,8 @@ def class_levels() -> pd.DataFrame:
 
     profiles = ProductiveCalibration.load().profiles
     per_day = profiles[[h for h in range(24) if h in profiles.columns]].sum(axis=1)
-    levels = pd.read_csv(REFERENCE_DIR / "pue_own_levels.csv")
+    levels = pd.read_csv(REFERENCE_DIR / "own_levels.csv", dtype={"shape": str})
+    levels = levels[levels.customer_type == "PUE"].rename(columns={"shape": "activity_class"})
     table = levels.groupby(["activity_class", "site_name"]).agg(
         units=("customer_code", "size"), mean_kwh_per_day=("kwh_per_day", "mean"),
         median_kwh_per_day=("kwh_per_day", "median"))
@@ -305,18 +319,20 @@ def main(argv: list[str] | None = None) -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--site", action="append", choices=REFERENCE_SITES, default=None)
     parser.add_argument("--seeds", type=int, default=SEEDS)
-    parser.add_argument("--trajectory", default="central",
+    parser.add_argument("--trajectory", default="own",
                         choices=["slow", "central", "fast", "own"],
-                        help="growth trajectory of the households; 'own' is each village's "
-                             "own law, slow at Samionta and fast at Gbowele")
+                        help="growth trajectory of the households; 'own', the default, is "
+                             "each village's own law, slow at Samionta and fast at Gbowele, "
+                             "which a brownfield run follows")
     parser.add_argument("--held-out", action="store_true")
     parser.add_argument("--out", type=Path, default=None, help="a JSON of the results")
     args = parser.parse_args(argv)
 
-    own = {"Samionta": "slow", "Gbowele": "fast"}
+    from .growth import own_trajectory
+
     results = []
     for site in args.site or REFERENCE_SITES:
-        trajectory = own[site] if args.trajectory == "own" else args.trajectory
+        trajectory = own_trajectory(site) if args.trajectory == "own" else args.trajectory
         result = check(site, args.seeds, trajectory, args.held_out)
         results.append(result)
         print(f"\n{site}, {result['months'][0]} to {result['months'][1]}"

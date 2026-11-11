@@ -21,7 +21,7 @@ import pandas as pd
 import pytest
 
 from microgrid_expansion.demand import connection as conn
-from microgrid_expansion.demand.connection import ConnectionSchedule, ProductiveUser
+from microgrid_expansion.demand.connection import ConnectionSchedule, RecordUser
 from microgrid_expansion.sites import Site
 
 REFERENCE_SITES = ("Samionta", "Gbowele")
@@ -89,8 +89,8 @@ def test_a_user_draws_its_own_level_and_its_own_months(monkeypatch) -> None:
     pattern = tuple(0.5 + m / 12 for m in range(12))
     pattern = tuple(f / (sum(f * calendar.monthrange(2025, m + 1)[1]
                              for m, f in enumerate(pattern)) / 365) for f in pattern)
-    users = [ProductiveUser("milling", 0, None, 14.0, pattern, daily_cv=0.0),
-             ProductiveUser("small_trade", 2, None, 0.3)]
+    users = [RecordUser("milling", 0, None, 14.0, pattern, daily_cv=0.0),
+             RecordUser("small_trade", 2, None, 0.3)]
     site = Site(name="Samionta", census={"HH1": 40})
     year = generator.simulate_demand_year(site, 2025, seed=1, maturity_months=0,
                                           trajectory="central", connection=_schedule(users))
@@ -112,7 +112,7 @@ def test_a_user_without_a_level_draws_its_class_profile(monkeypatch) -> None:
     _quiet(monkeypatch)
     steady = _steady(monkeypatch)
     _no_rule(monkeypatch)
-    users = [ProductiveUser("refrigeration", 0, None, None)]
+    users = [RecordUser("refrigeration", 0, None, None)]
     site = Site(name="Samionta", census={"HH1": 40})
     year = generator.simulate_demand_year(site, 2025, seed=2, maturity_months=0,
                                           trajectory="central", connection=_schedule(users))
@@ -134,7 +134,7 @@ def test_the_users_the_rule_adds_after_the_record_keep_the_class_profile(monkeyp
 
     monkeypatch.setattr(productive, "sample_units", added)
     # A record of six months and a household more after it, so that the rule adds users.
-    users = [ProductiveUser("small_trade", 0, None, 1.0, daily_cv=0.0)]
+    users = [RecordUser("small_trade", 0, None, 1.0, daily_cv=0.0)]
     schedule = ConnectionSchedule(("HH1",), (40,), ((4,),) * 6 + ((40,),),
                                   productive=(1,) * 6, productive_users=tuple(users))
     site = Site(name="Samionta", census={"HH1": 40})
@@ -186,28 +186,28 @@ def test_the_classes_drawn_apart_add_up_to_the_load_drawn_before() -> None:
 
 # ---------------------------------------------------------------- the schedule
 def test_the_levels_enter_the_digest_and_only_where_there_are_some() -> None:
-    users = (ProductiveUser("milling", 0, None, 14.0),)
+    users = (RecordUser("milling", 0, None, 14.0),)
     with_levels = _schedule(users)
-    other = _schedule((ProductiveUser("milling", 0, None, 13.0),))
+    other = _schedule((RecordUser("milling", 0, None, 13.0),))
     bare = ConnectionSchedule(("HH1",), (40,), ((4,),) * 6, productive=(1,) * 6)
     assert with_levels.digest(11) != other.digest(11)
     assert with_levels.digest(11) != bare.digest(11)
     assert not with_levels.is_whole_census
     # A user joining after the year's last month does not move its key.
-    late = _schedule((ProductiveUser("milling", 0, None, 14.0),
-                      ProductiveUser("milling", 5, None, 1.0)))
+    late = _schedule((RecordUser("milling", 0, None, 14.0),
+                      RecordUser("milling", 5, None, 1.0)))
     assert late.digest(3) == with_levels.digest(3) and late.digest(5) != with_levels.digest(5)
 
 
 def test_a_schedule_refuses_levels_that_disagree_with_its_count() -> None:
     with pytest.raises(ValueError, match="listed one by one"):
         ConnectionSchedule(("HH1",), (40,), ((4,),) * 3, productive=(2, 2, 2),
-                           productive_users=(ProductiveUser("milling", 0, None, 1.0),))
+                           productive_users=(RecordUser("milling", 0, None, 1.0),))
 
 
 def test_beyond_the_record_the_users_of_its_last_month_stay() -> None:
-    users = (ProductiveUser("milling", 0, None, 1.0), ProductiveUser("milling", 1, 3, 1.0),
-             ProductiveUser("small_trade", 4, None, 1.0))
+    users = (RecordUser("milling", 0, None, 1.0), RecordUser("milling", 1, 3, 1.0),
+             RecordUser("small_trade", 4, None, 1.0))
     schedule = _schedule(users)
     assert len(schedule.held_users(2)) == 2 and len(schedule.held_users(3)) == 1
     assert schedule.held_users(30) == schedule.held_users(5)
@@ -222,8 +222,14 @@ def test_the_shipped_levels_are_the_users_the_record_holds(name) -> None:
     assert users, f"{name} has no productive user at its own level"
     for age, count in enumerate(observed.productive):
         assert sum(u.present(age) for u in users) == count
-    for user in users:
-        assert user.kwh_per_day is not None, "every user of the record has a reading"
+    for age in range(observed.last_age + 1):
+        stock = dict(zip(observed.categories, observed.connected(age)))
+        for kind, n in stock.items():
+            assert sum(u.present(age) for u in observed.household_users
+                       if u.kind == kind) == n
+    assert observed.community_users, f"{name}'s places of worship are on its record"
+    for user in (*users, *observed.household_users, *observed.community_users):
+        assert user.kwh_per_day is not None, "every customer of the record has a reading"
         if user.monthly:
             # The level is the year's mean: the factors average to one over its days.
             days = [calendar.monthrange(2025, m)[1] for m in range(1, 13)]
@@ -246,7 +252,8 @@ def test_each_reading_counts_over_its_own_period() -> None:
 
 
 def test_a_level_is_the_mean_over_the_time_the_readings_cover(monkeypatch) -> None:
-    from microgrid_expansion.demand import build_meter_archive, build_productive_profiles as B
+    from microgrid_expansion.demand import build_own_levels as B
+    from microgrid_expansion.demand import readings
 
     # Two users: one at 100 W through a whole year, twice as much in March, one connected
     # four months before the record's end with a gap of an hour every day.
@@ -256,12 +263,13 @@ def test_a_level_is_the_mean_over_the_time_the_readings_cover(monkeypatch) -> No
     late = pd.date_range("2026-07-01 00:15", "2026-10-31 23:45", freq="15min")
     late = late[(late.hour != 3) | (late.minute == 45)]
     gappy = pd.DataFrame({"timestamp": late, "customer_code": "0002SAM", "power_W": 50.0})
-    archive = build_meter_archive.with_periods(pd.concat([steady, gappy]))
-    monkeypatch.setattr(build_meter_archive, "timed_readings", lambda site: archive)
+    archive = readings.with_periods(pd.concat([steady, gappy]))
+    monkeypatch.setattr(readings, "timed_readings", lambda site: archive)
     users = pd.DataFrame({"site_name": "Samionta", "customer_code": ["0001SAM", "0002SAM"],
                           "connection_month": ["2025-06", "2026-07"],
                           "departure_month": ["", ""], "record_end": "2026-10"})
-    table = B.own_levels(users, pd.Series(dtype=str)).set_index("customer_code")
+    table = B.own_levels(users, pd.Series({"0001SAM": "small_trade"})).set_index(
+        "customer_code")
     days = np.array([30, 31, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31])     # Nov to Oct
     expected = (100.0 * days.sum() + 100.0 * 31) / days.sum() * 24 / 1000
     assert table.at["0001SAM", "kwh_per_day"] == pytest.approx(expected, rel=1e-6)
@@ -269,7 +277,10 @@ def test_a_level_is_the_mean_over_the_time_the_readings_cover(monkeypatch) -> No
     # The gap's catch-up reading carries the hour, so the level is the meter's 50 W.
     assert table.at["0002SAM", "kwh_per_day"] == pytest.approx(1.2, rel=1e-6)
     assert np.isnan(table.at["0002SAM", "f01"]), "four months make no seasonal pattern"
-    assert table.at["0001SAM", "activity_class"] == "small_trade"
+    assert table.at["0001SAM", "shape"] == "small_trade" and table.at["0002SAM", "shape"] == ""
+    assert table.at["0001SAM", "customer_type"] == "PUE"
+    # The peak is the highest hourly mean of the readings: March's 200 W.
+    assert table.at["0001SAM", "peak_kw"] == pytest.approx(0.2)
 
 
 def test_a_held_out_level_stops_where_it_is_told() -> None:
@@ -283,3 +294,8 @@ def test_a_held_out_level_stops_where_it_is_told() -> None:
         "a user connected after the levels' last month draws its class's profile"
     assert any(a.kwh_per_day != b.kwh_per_day
                for a, b in zip(observed.productive_users, shipped.productive_users))
+    # Gbowele connected 35 households in May 2026.
+    gbowele = record_check.held_out_state("Gbowele", last="2026-04")
+    homes = [u for u in gbowele.household_users if u.joined > gbowele.age_in("2026-04")]
+    assert homes and all(u.kwh_per_day is None for u in homes), \
+        "a household connected after the levels' last month is drawn from the mixture law"

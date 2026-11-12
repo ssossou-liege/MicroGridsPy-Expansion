@@ -188,13 +188,15 @@ def grouped(energy: pd.DataFrame) -> pd.Series:
     return pd.Series(out)
 
 
-def held_out_state(site_name: str, last: str = HELD_OUT_LAST):
+def held_out_state(site_name: str, last: str = HELD_OUT_LAST, min_days: float | None = None):
     """The record with every customer's level taken from the readings up to ``last``.
 
     The shapes are the shipped table's; a customer connected after ``last`` has no level and
-    is drawn from the model's laws.
+    is drawn from the model's laws, as is one whose readings up to ``last`` cover fewer than
+    ``min_days`` days (default ``build_own_levels.MIN_LEVEL_DAYS``; zero is the check before
+    that rule, which was found through this check).
     """
-    from .build_own_levels import filled_spreads, own_levels, record_users
+    from .build_own_levels import MIN_LEVEL_DAYS, filled_spreads, own_levels, record_users
     from .connection import observed_state
     from .connection import record_users as as_users
 
@@ -203,7 +205,8 @@ def held_out_state(site_name: str, last: str = HELD_OUT_LAST):
     users = users[users.site_name == site_name]
     shipped = pd.read_csv(REFERENCE_DIR / "own_levels.csv", dtype={"shape": str})
     shapes = shipped.set_index("customer_code")["shape"]
-    table = filled_spreads(own_levels(users, shapes, last=last)).fillna("")
+    days = MIN_LEVEL_DAYS if min_days is None else float(min_days)
+    table = filled_spreads(own_levels(users, shapes, last=last, min_days=days)).fillna("")
     origin = observed.origin_month
     return replace(observed,
                    productive_users=as_users(table, origin, ("PUE",)),
@@ -212,12 +215,13 @@ def held_out_state(site_name: str, last: str = HELD_OUT_LAST):
 
 
 def check(site_name: str, seeds: int = SEEDS, trajectory: str | None = None,
-          held_out: bool = False) -> dict:
-    """S4ter-A1 at one village, or its held-out version."""
+          held_out: bool = False, min_days: float | None = None) -> dict:
+    """S4ter-A1 at one village, or its held-out version, whose levels need ``min_days``
+    days of readings (``held_out_state``)."""
     if held_out:
         months = pd.period_range(pd.Period(HELD_OUT_LAST, freq="M") + 1,
                                  record_months(site_name)[-1], freq="M")
-        observed = held_out_state(site_name)
+        observed = held_out_state(site_name, min_days=min_days)
     else:
         months, observed = record_months(site_name), None
     meter_energy, meter_peak = metered(site_name, months)
@@ -325,6 +329,9 @@ def main(argv: list[str] | None = None) -> int:
                              "each village's own law, slow at Samionta and fast at Gbowele, "
                              "which a brownfield run follows")
     parser.add_argument("--held-out", action="store_true")
+    parser.add_argument("--min-days", type=float, default=None,
+                        help="held out: the days of readings a level needs, by default "
+                             "the shipped rule's 28; 0 is the check before the rule")
     parser.add_argument("--out", type=Path, default=None, help="a JSON of the results")
     args = parser.parse_args(argv)
 
@@ -333,7 +340,7 @@ def main(argv: list[str] | None = None) -> int:
     results = []
     for site in args.site or REFERENCE_SITES:
         trajectory = own_trajectory(site) if args.trajectory == "own" else args.trajectory
-        result = check(site, args.seeds, trajectory, args.held_out)
+        result = check(site, args.seeds, trajectory, args.held_out, args.min_days)
         results.append(result)
         print(f"\n{site}, {result['months'][0]} to {result['months'][1]}"
               f"{' (held out)' if args.held_out else ''}, growth {trajectory}, "

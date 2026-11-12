@@ -55,6 +55,14 @@ MONTH_COVERAGE = 0.5
 DAY_COVERAGE = 0.9
 DAY_EXCESS = 1.1
 MIN_DAYS = 28
+#: The time a customer's readings must cover within its level's window for the level to be
+#: its own, in days. A customer still on the grid whose readings cover less is drawn from
+#: the model's laws from its own connection month, as a household connected after the
+#: record or as a unit of its class. Found through the held-out check: 0052SAM, connected
+#: on 29 April 2026, took 3.9 kWh a day from 1.6 days of readings, probably its
+#: installation, where its next six months gave 0.15, and alone made Samionta's households
+#: fail there. A customer that left the stock keeps its level, whatever it covers.
+MIN_LEVEL_DAYS = 28.0
 
 _FACTORS = tuple(f"f{m:02d}" for m in range(1, 13))
 
@@ -81,7 +89,8 @@ def record_users(kinds=KINDS) -> pd.DataFrame:
 
 
 def own_levels(users: pd.DataFrame, shapes: pd.Series | None = None,
-               last: str | None = None) -> pd.DataFrame:
+               last: str | None = None, min_days: float = MIN_LEVEL_DAYS,
+               season: pd.Series | None = None) -> pd.DataFrame:
     """Each customer's own level, from the readings up to ``last`` (default: its record's end).
 
     The level is the mean power over the customer's last ``LEVEL_MONTHS`` months of readings
@@ -89,11 +98,25 @@ def own_levels(users: pd.DataFrame, shapes: pd.Series | None = None,
     own period (``readings.timed_readings``), as energy per day. Where every one of those
     twelve months is covered at ``MONTH_COVERAGE``, the level is the mean of the twelve
     months, each weighted by its days, and the customer keeps a factor per calendar month,
-    its month's mean over the year's; otherwise the factors are left empty. Its day-to-day
-    spread is measured over the same readings (``daily_spread``), and its peak is the highest
-    hourly mean of its readings over them, each clock hour's readings averaged as the
-    comparison with the meters averages them. A customer with no reading up to ``last`` has
-    no level, and the generator draws it from the model's laws.
+    its month's mean over the year's (``factor_source`` ``own``). Its day-to-day spread is
+    measured over the same readings (``daily_spread``), and its peak is the highest hourly
+    mean of its readings over them, each clock hour's readings averaged as the comparison
+    with the meters averages them. ``days_read`` is the time the readings of the window
+    cover, in days.
+
+    A household without a year of its own takes the residual seasonal index of the
+    households (``growth.seasonal_index``, or ``season``), normalised so that its mean over
+    the months it was read, each weighted by the time its readings cover in it as the level
+    weights them, is one: its draw over those months is its measured level, and the months
+    it was not read follow the index (``factor_source`` ``season``). A productive user or a
+    place of worship without a year keeps no factors, the index being the households'.
+
+    A customer still on the grid at its record's end whose readings cover fewer than
+    ``min_days`` days has no level of its own (``level_source`` ``laws``): the generator
+    draws it from the model's laws from its own connection month. One that left the stock
+    keeps its level whatever its readings cover. A customer with no reading up to ``last``
+    has no level either (``level_source`` empty), and is drawn the same way. ``min_days``
+    zero is the table before the rule, kept for the held-out check.
 
     ``shapes`` gives each code its shape; a code it does not name is left empty there.
     """
@@ -102,6 +125,10 @@ def own_levels(users: pd.DataFrame, shapes: pd.Series | None = None,
     shapes = pd.Series(dtype=str) if shapes is None else shapes
     kinds = (users.customer_type if "customer_type" in users.columns
              else pd.Series("PUE", index=users.index))
+    if season is None and kinds.isin(HOUSEHOLD_TYPES).any():
+        from .growth import seasonal_index
+
+        season = seasonal_index()
     rows = []
     for site_name, group in users.assign(customer_type=kinds).groupby("site_name", sort=True):
         readings = timed_readings(site_name)
@@ -116,8 +143,9 @@ def own_levels(users: pd.DataFrame, shapes: pd.Series | None = None,
                    "connection_month": user.connection_month,
                    "departure_month": user.departure_month,
                    "level_from": "", "level_to": "", "months_read": 0,
+                   "days_read": 0.0, "level_source": "",
                    "kwh_per_day": np.nan, "daily_cv": np.nan, "peak_kw": np.nan,
-                   **{f: np.nan for f in _FACTORS}}
+                   "factor_source": "", **{f: np.nan for f in _FACTORS}}
             own = by_code.get(user.customer_code)
             own = (own[(own.month >= joined) & (own.month <= until)]
                    if own is not None else None)
@@ -141,13 +169,37 @@ def own_levels(users: pd.DataFrame, shapes: pd.Series | None = None,
                 else:
                     mean = float(window.kwh.sum() * 3.6e6 / window.seconds.sum())
                 hourly = window.groupby(window.timestamp.dt.floor("h")).power_W.mean()
+                days_read = float(window.seconds.sum()) / 86_400.0
                 row.update(level_from=str(start), level_to=str(end),
-                           months_read=int(len(months)),
+                           months_read=int(len(months)), days_read=days_read,
+                           level_source="own",
                            kwh_per_day=mean * 24.0 / 1000.0,
                            daily_cv=daily_spread(window, by_month=full),
-                           peak_kw=float(hourly.max()) / 1000.0)
+                           peak_kw=float(hourly.max()) / 1000.0,
+                           factor_source="own" if full else "")
+                if days_read < min_days and not user.departure_month:
+                    row.update(level_source="laws", kwh_per_day=np.nan, daily_cv=np.nan,
+                               peak_kw=np.nan, factor_source="",
+                               **{f: np.nan for f in _FACTORS})
+                elif not full and user.customer_type in HOUSEHOLD_TYPES:
+                    row.update(factor_source="season",
+                               **seasonal_factors(season, months.seconds))
             rows.append(row)
     return pd.DataFrame(rows)
+
+
+def seasonal_factors(season: pd.Series, covered: pd.Series) -> dict[str, float]:
+    """A household's twelve factors from the households' seasonal index, ``f01`` first.
+
+    ``covered`` is the time its readings cover in each month of its level's window, in
+    seconds, indexed by month. The index is divided by its mean over those months, each
+    weighted by that time, so that what the household draws over the months it was read is
+    its measured level, which the same readings weighted the same way gave.
+    """
+    weights = covered[covered > 0]
+    norm = float(sum(w * float(season[p.month]) for p, w in weights.items())
+                 / weights.sum())
+    return {f"f{m:02d}": float(season[m]) / norm for m in range(1, 13)}
 
 
 def daily_spread(readings: pd.DataFrame, by_month: bool) -> float:
@@ -291,11 +343,16 @@ def main(argv: list[str] | None = None) -> int:
     table = levels_table(args.survey)
     args.out.mkdir(parents=True, exist_ok=True)
     table.round(6).to_csv(args.out / LEVELS_FILE, index=False)
-    summary = table.assign(year=table.f01.notna()).groupby(["site_name", "customer_type"]).agg(
+    summary = table.assign(year=table.factor_source == "own",
+                           laws=table.level_source == "laws").groupby(
+        ["site_name", "customer_type"]).agg(
         customers=("customer_code", "size"), with_a_year=("year", "sum"),
-        kwh_per_day=("kwh_per_day", "sum"))
-    print(f"{len(table)} customers of the record at their own levels")
+        from_the_laws=("laws", "sum"), kwh_per_day=("kwh_per_day", "sum"))
+    print(f"{len(table)} customers of the record, "
+          f"{int((table.level_source == 'own').sum())} at their own levels")
     print(summary.round(2).to_string())
+    print("levels by source:", table.level_source.value_counts().to_dict())
+    print("factors by source:", table.factor_source.value_counts().to_dict())
     print("shapes by source:", table.shape_source.value_counts().to_dict())
     print("spreads by source:", table.cv_source.value_counts().to_dict())
     return 0

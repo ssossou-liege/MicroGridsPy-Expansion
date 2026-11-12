@@ -1,0 +1,1775 @@
+{
+  "site": "Samionta",
+  "commit": "c710e03",
+  "config": {
+    "n_mc_paths": 1000,
+    "n_rep_days": 64,
+    "stage_years": [
+      0,
+      5,
+      10,
+      15,
+      20
+    ],
+    "branching": [
+      1,
+      3,
+      2,
+      2,
+      2
+    ],
+    "solver": "gurobi"
+  },
+  "cases": {
+    "noise_seed0": {
+      "name": "noise_seed0",
+      "weights": [
+        0.3333333333333333,
+        0.3333333333333333,
+        0.3333333333333333
+      ],
+      "seed": 0,
+      "fixed_root": null,
+      "fixed_root_from": "",
+      "note": "default weights; the spread over these is the sampling noise",
+      "mean_value": false,
+      "nodes": 46,
+      "leaves": 9,
+      "reduction_error": {
+        "0": 2.2784,
+        "5": 2.1769,
+        "10": 2.1445,
+        "15": 2.1793,
+        "20": 2.1441
+      },
+      "solver_options": {},
+      "seconds_building": 1181.4,
+      "seconds_total": 1790.0,
+      "architecture": "mixed",
+      "programme": {
+        "expected_usd": 61871.00747851189,
+        "bound_usd": 61865.558405984244,
+        "root": {
+          "pv_kw": 29.0,
+          "pv_ac_kw": 21.0,
+          "battery_kwh": 115.0,
+          "inverter_kw": 22.5,
+          "generator_kw": 8.0
+        },
+        "unserved": {
+          "unserved_kwh": 0.0,
+          "demand_kwh": 1234077.0,
+          "share_pct": 0.0
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "5": 0.367,
+            "10": 0.077
+          },
+          "earliest_year": 5,
+          "never_pct": 55.6,
+          "expected_year_when_it_happens": 5.87
+        },
+        "seconds": 506.1
+      },
+      "automaton": {
+        "expected_usd": 66491.95844162068,
+        "root": {
+          "pv_kw": 29.0,
+          "pv_ac_kw": 21.0,
+          "battery_kwh": 125.0,
+          "inverter_kw": 22.5,
+          "generator_kw": 12.0
+        },
+        "unserved": {
+          "unserved_kwh": 17.9,
+          "demand_kwh": 1235153.7,
+          "share_pct": 0.0014
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "5": 0.367,
+            "20": 0.077
+          },
+          "earliest_year": 5,
+          "never_pct": 55.6,
+          "expected_year_when_it_happens": 7.6
+        },
+        "seconds": 102.5,
+        "evaluations": 10757
+      }
+    },
+    "noise_seed1": {
+      "name": "noise_seed1",
+      "weights": [
+        0.3333333333333333,
+        0.3333333333333333,
+        0.3333333333333333
+      ],
+      "seed": 1,
+      "fixed_root": null,
+      "fixed_root_from": "",
+      "note": "default weights; the spread over these is the sampling noise",
+      "mean_value": false,
+      "nodes": 46,
+      "leaves": 9,
+      "reduction_error": {
+        "0": 2.1936,
+        "5": 2.1603,
+        "10": 2.2327,
+        "15": 2.1654,
+        "20": 2.1912
+      },
+      "solver_options": {},
+      "seconds_building": 1202.1,
+      "seconds_total": 1625.4,
+      "architecture": "mixed",
+      "programme": {
+        "expected_usd": 59313.096485927264,
+        "bound_usd": 59309.409303854365,
+        "root": {
+          "pv_kw": 29.0,
+          "pv_ac_kw": 22.5,
+          "battery_kwh": 115.0,
+          "inverter_kw": 22.5,
+          "generator_kw": 8.0
+        },
+        "unserved": {
+          "unserved_kwh": 0.0,
+          "demand_kwh": 1233015.7,
+          "share_pct": 0.0
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "5": 0.331,
+            "10": 0.138,
+            "15": 0.069
+          },
+          "earliest_year": 5,
+          "never_pct": 46.2,
+          "expected_year_when_it_happens": 7.57
+        },
+        "seconds": 349.5
+      },
+      "automaton": {
+        "expected_usd": 63027.72824058839,
+        "root": {
+          "pv_kw": 29.0,
+          "pv_ac_kw": 22.5,
+          "battery_kwh": 125.0,
+          "inverter_kw": 22.5,
+          "generator_kw": 8.0
+        },
+        "unserved": {
+          "unserved_kwh": 372.1,
+          "demand_kwh": 1234252.9,
+          "share_pct": 0.0301
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "5": 0.331,
+            "15": 0.069
+          },
+          "earliest_year": 5,
+          "never_pct": 60.0,
+          "expected_year_when_it_happens": 6.73
+        },
+        "seconds": 73.8,
+        "evaluations": 10385
+      }
+    },
+    "noise_seed2": {
+      "name": "noise_seed2",
+      "weights": [
+        0.3333333333333333,
+        0.3333333333333333,
+        0.3333333333333333
+      ],
+      "seed": 2,
+      "fixed_root": null,
+      "fixed_root_from": "",
+      "note": "default weights; the spread over these is the sampling noise",
+      "mean_value": false,
+      "nodes": 46,
+      "leaves": 9,
+      "reduction_error": {
+        "0": 2.2808,
+        "5": 2.1606,
+        "10": 2.0697,
+        "15": 2.161,
+        "20": 2.04
+      },
+      "solver_options": {},
+      "seconds_building": 733.7,
+      "seconds_total": 1115.6,
+      "architecture": "mixed",
+      "programme": {
+        "expected_usd": 61465.75278652501,
+        "bound_usd": 61459.682416554686,
+        "root": {
+          "pv_kw": 26.0,
+          "pv_ac_kw": 20.0,
+          "battery_kwh": 105.0,
+          "inverter_kw": 20.0,
+          "generator_kw": 8.0
+        },
+        "unserved": {
+          "unserved_kwh": 22.8,
+          "demand_kwh": 1270165.0,
+          "share_pct": 0.0018
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "5": 0.552
+          },
+          "earliest_year": 5,
+          "never_pct": 44.8,
+          "expected_year_when_it_happens": 5.0
+        },
+        "seconds": 308.6
+      },
+      "automaton": {
+        "expected_usd": 66497.64815288315,
+        "root": {
+          "pv_kw": 26.0,
+          "pv_ac_kw": 20.0,
+          "battery_kwh": 115.0,
+          "inverter_kw": 20.0,
+          "generator_kw": 12.0
+        },
+        "unserved": {
+          "unserved_kwh": 72.0,
+          "demand_kwh": 1271654.0,
+          "share_pct": 0.0057
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "5": 0.552
+          },
+          "earliest_year": 5,
+          "never_pct": 44.8,
+          "expected_year_when_it_happens": 5.0
+        },
+        "seconds": 73.3,
+        "evaluations": 10385
+      }
+    },
+    "noise_seed3": {
+      "name": "noise_seed3",
+      "weights": [
+        0.3333333333333333,
+        0.3333333333333333,
+        0.3333333333333333
+      ],
+      "seed": 3,
+      "fixed_root": null,
+      "fixed_root_from": "",
+      "note": "default weights; the spread over these is the sampling noise",
+      "mean_value": false,
+      "nodes": 46,
+      "leaves": 9,
+      "reduction_error": {
+        "0": 2.2711,
+        "5": 2.1945,
+        "10": 2.1871,
+        "15": 2.206,
+        "20": 2.1853
+      },
+      "solver_options": {},
+      "seconds_building": 824.9,
+      "seconds_total": 1267.8,
+      "architecture": "mixed",
+      "programme": {
+        "expected_usd": 57430.40264188176,
+        "bound_usd": 57426.88853202878,
+        "root": {
+          "pv_kw": 26.0,
+          "pv_ac_kw": 20.0,
+          "battery_kwh": 110.0,
+          "inverter_kw": 20.0,
+          "generator_kw": 8.0
+        },
+        "unserved": {
+          "unserved_kwh": 6.8,
+          "demand_kwh": 1168928.0,
+          "share_pct": 0.0006
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "5": 0.499
+          },
+          "earliest_year": 5,
+          "never_pct": 50.1,
+          "expected_year_when_it_happens": 5.0
+        },
+        "seconds": 374.5
+      },
+      "automaton": {
+        "expected_usd": 61752.12597578978,
+        "root": {
+          "pv_kw": 26.0,
+          "pv_ac_kw": 20.0,
+          "battery_kwh": 110.0,
+          "inverter_kw": 20.0,
+          "generator_kw": 12.0
+        },
+        "unserved": {
+          "unserved_kwh": 32.0,
+          "demand_kwh": 1169108.3,
+          "share_pct": 0.0027
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "5": 0.499
+          },
+          "earliest_year": 5,
+          "never_pct": 50.1,
+          "expected_year_when_it_happens": 5.0
+        },
+        "seconds": 68.4,
+        "evaluations": 10015
+      }
+    },
+    "noise_seed4": {
+      "name": "noise_seed4",
+      "weights": [
+        0.3333333333333333,
+        0.3333333333333333,
+        0.3333333333333333
+      ],
+      "seed": 4,
+      "fixed_root": null,
+      "fixed_root_from": "",
+      "note": "default weights; the spread over these is the sampling noise",
+      "mean_value": false,
+      "nodes": 46,
+      "leaves": 9,
+      "reduction_error": {
+        "0": 2.2791,
+        "5": 2.1651,
+        "10": 2.1209,
+        "15": 2.1829,
+        "20": 2.135
+      },
+      "solver_options": {},
+      "seconds_building": 729.2,
+      "seconds_total": 1088.3,
+      "architecture": "mixed",
+      "programme": {
+        "expected_usd": 58438.151772039586,
+        "bound_usd": 58432.675387545954,
+        "root": {
+          "pv_kw": 29.0,
+          "pv_ac_kw": 21.0,
+          "battery_kwh": 120.0,
+          "inverter_kw": 22.5,
+          "generator_kw": 8.0
+        },
+        "unserved": {
+          "unserved_kwh": 0.0,
+          "demand_kwh": 1215142.8,
+          "share_pct": 0.0
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "5": 0.453
+          },
+          "earliest_year": 5,
+          "never_pct": 54.7,
+          "expected_year_when_it_happens": 5.0
+        },
+        "seconds": 278.3
+      },
+      "automaton": {
+        "expected_usd": 61596.275500278934,
+        "root": {
+          "pv_kw": 32.0,
+          "pv_ac_kw": 21.5,
+          "battery_kwh": 135.0,
+          "inverter_kw": 25.0,
+          "generator_kw": 8.0
+        },
+        "unserved": {
+          "unserved_kwh": 0.0,
+          "demand_kwh": 1216077.2,
+          "share_pct": 0.0
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "5": 0.453
+          },
+          "earliest_year": 5,
+          "never_pct": 54.7,
+          "expected_year_when_it_happens": 5.0
+        },
+        "seconds": 80.8,
+        "evaluations": 12240
+      }
+    },
+    "slow_half": {
+      "name": "slow_half",
+      "weights": [
+        0.5,
+        0.25,
+        0.25
+      ],
+      "seed": 0,
+      "fixed_root": null,
+      "fixed_root_from": "",
+      "note": "half the mass on one trajectory",
+      "mean_value": false,
+      "nodes": 46,
+      "leaves": 9,
+      "reduction_error": {
+        "0": 2.35,
+        "5": 2.2138,
+        "10": 2.1907,
+        "15": 2.2217,
+        "20": 2.1919
+      },
+      "solver_options": {},
+      "seconds_building": 644.3,
+      "seconds_total": 973.2,
+      "architecture": "mixed",
+      "programme": {
+        "expected_usd": 56214.97648345865,
+        "bound_usd": 56209.716925232075,
+        "root": {
+          "pv_kw": 26.0,
+          "pv_ac_kw": 20.0,
+          "battery_kwh": 110.0,
+          "inverter_kw": 20.0,
+          "generator_kw": 8.0
+        },
+        "unserved": {
+          "unserved_kwh": 0.0,
+          "demand_kwh": 1108121.5,
+          "share_pct": 0.0
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "5": 0.451
+          },
+          "earliest_year": 5,
+          "never_pct": 54.9,
+          "expected_year_when_it_happens": 5.0
+        },
+        "seconds": 254.0
+      },
+      "automaton": {
+        "expected_usd": 59775.50546262482,
+        "root": {
+          "pv_kw": 26.0,
+          "pv_ac_kw": 20.0,
+          "battery_kwh": 120.0,
+          "inverter_kw": 20.0,
+          "generator_kw": 8.0
+        },
+        "unserved": {
+          "unserved_kwh": 11.6,
+          "demand_kwh": 1108755.9,
+          "share_pct": 0.001
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "5": 0.451
+          },
+          "earliest_year": 5,
+          "never_pct": 54.9,
+          "expected_year_when_it_happens": 5.0
+        },
+        "seconds": 74.8,
+        "evaluations": 11869
+      }
+    },
+    "central_half": {
+      "name": "central_half",
+      "weights": [
+        0.25,
+        0.5,
+        0.25
+      ],
+      "seed": 0,
+      "fixed_root": null,
+      "fixed_root_from": "",
+      "note": "half the mass on one trajectory",
+      "mean_value": false,
+      "nodes": 46,
+      "leaves": 9,
+      "reduction_error": {
+        "0": 2.2825,
+        "5": 2.1267,
+        "10": 2.1109,
+        "15": 2.1028,
+        "20": 2.1345
+      },
+      "solver_options": {},
+      "seconds_building": 670.3,
+      "seconds_total": 987.1,
+      "architecture": "mixed",
+      "programme": {
+        "expected_usd": 61820.93227220432,
+        "bound_usd": 61819.03769887526,
+        "root": {
+          "pv_kw": 29.0,
+          "pv_ac_kw": 22.5,
+          "battery_kwh": 125.0,
+          "inverter_kw": 22.5,
+          "generator_kw": 8.0
+        },
+        "unserved": {
+          "unserved_kwh": 0.0,
+          "demand_kwh": 1249180.6,
+          "share_pct": 0.0
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "5": 0.412
+          },
+          "earliest_year": 5,
+          "never_pct": 58.8,
+          "expected_year_when_it_happens": 5.0
+        },
+        "seconds": 223.1
+      },
+      "automaton": {
+        "expected_usd": 65942.16675291052,
+        "root": {
+          "pv_kw": 32.5,
+          "pv_ac_kw": 21.5,
+          "battery_kwh": 140.0,
+          "inverter_kw": 25.0,
+          "generator_kw": 8.0
+        },
+        "unserved": {
+          "unserved_kwh": 0.0,
+          "demand_kwh": 1250214.4,
+          "share_pct": 0.0
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "5": 0.412
+          },
+          "earliest_year": 5,
+          "never_pct": 58.8,
+          "expected_year_when_it_happens": 5.0
+        },
+        "seconds": 93.7,
+        "evaluations": 14467
+      }
+    },
+    "fast_half": {
+      "name": "fast_half",
+      "weights": [
+        0.25,
+        0.25,
+        0.5
+      ],
+      "seed": 0,
+      "fixed_root": null,
+      "fixed_root_from": "",
+      "note": "half the mass on one trajectory",
+      "mean_value": false,
+      "nodes": 46,
+      "leaves": 9,
+      "reduction_error": {
+        "0": 2.3045,
+        "5": 2.1373,
+        "10": 2.1154,
+        "15": 2.1929,
+        "20": 2.1509
+      },
+      "solver_options": {},
+      "seconds_building": 654.0,
+      "seconds_total": 1275.9,
+      "architecture": "mixed",
+      "programme": {
+        "expected_usd": 68876.58405338111,
+        "bound_usd": 68869.77223119,
+        "root": {
+          "pv_kw": 32.5,
+          "pv_ac_kw": 23.5,
+          "battery_kwh": 125.0,
+          "inverter_kw": 25.0,
+          "generator_kw": 8.0
+        },
+        "unserved": {
+          "unserved_kwh": 0.0,
+          "demand_kwh": 1415067.4,
+          "share_pct": 0.0
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "5": 0.497
+          },
+          "earliest_year": 5,
+          "never_pct": 50.3,
+          "expected_year_when_it_happens": 5.0
+        },
+        "seconds": 532.4
+      },
+      "automaton": {
+        "expected_usd": 73882.25676762525,
+        "root": {
+          "pv_kw": 32.5,
+          "pv_ac_kw": 21.5,
+          "battery_kwh": 130.0,
+          "inverter_kw": 25.0,
+          "generator_kw": 12.0
+        },
+        "unserved": {
+          "unserved_kwh": 7.4,
+          "demand_kwh": 1415987.8,
+          "share_pct": 0.0005
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "5": 0.497
+          },
+          "earliest_year": 5,
+          "never_pct": 50.3,
+          "expected_year_when_it_happens": 5.0
+        },
+        "seconds": 89.5,
+        "evaluations": 12983
+      }
+    },
+    "slow_known": {
+      "name": "slow_known",
+      "weights": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "seed": 0,
+      "fixed_root": null,
+      "fixed_root_from": "",
+      "note": "that trajectory known in advance",
+      "mean_value": false,
+      "nodes": 46,
+      "leaves": 9,
+      "reduction_error": {
+        "0": 2.4213,
+        "5": 2.2064,
+        "10": 2.1859,
+        "15": 2.2109,
+        "20": 2.1835
+      },
+      "solver_options": {},
+      "seconds_building": 659.2,
+      "seconds_total": 966.2,
+      "architecture": "mixed",
+      "programme": {
+        "expected_usd": 42592.72036261468,
+        "bound_usd": 42588.55648858628,
+        "root": {
+          "pv_kw": 19.5,
+          "pv_ac_kw": 13.5,
+          "battery_kwh": 85.0,
+          "inverter_kw": 15.0,
+          "generator_kw": 8.0
+        },
+        "unserved": {
+          "unserved_kwh": 0.0,
+          "demand_kwh": 835841.2,
+          "share_pct": 0.0
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "5": 0.322,
+            "20": 0.226
+          },
+          "earliest_year": 5,
+          "never_pct": 45.2,
+          "expected_year_when_it_happens": 11.19
+        },
+        "seconds": 253.5
+      },
+      "automaton": {
+        "expected_usd": 44709.2959582251,
+        "root": {
+          "pv_kw": 19.5,
+          "pv_ac_kw": 15.0,
+          "battery_kwh": 95.0,
+          "inverter_kw": 15.0,
+          "generator_kw": 8.0
+        },
+        "unserved": {
+          "unserved_kwh": 3.6,
+          "demand_kwh": 837713.7,
+          "share_pct": 0.0004
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "5": 0.322,
+            "20": 0.113
+          },
+          "earliest_year": 5,
+          "never_pct": 56.5,
+          "expected_year_when_it_happens": 8.9
+        },
+        "seconds": 53.5,
+        "evaluations": 7046
+      }
+    },
+    "central_known": {
+      "name": "central_known",
+      "weights": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "seed": 0,
+      "fixed_root": null,
+      "fixed_root_from": "",
+      "note": "that trajectory known in advance",
+      "mean_value": false,
+      "nodes": 46,
+      "leaves": 9,
+      "reduction_error": {
+        "0": 2.2415,
+        "5": 2.2032,
+        "10": 2.1649,
+        "15": 2.1846,
+        "20": 2.1391
+      },
+      "solver_options": {
+        "MIPGap": 0.001,
+        "NodefileStart": 8.0
+      },
+      "seconds_building": 657.2,
+      "seconds_total": 981.2,
+      "architecture": "mixed",
+      "programme": {
+        "expected_usd": 59231.78456065823,
+        "bound_usd": 59174.28296652924,
+        "root": {
+          "pv_kw": 29.0,
+          "pv_ac_kw": 20.0,
+          "battery_kwh": 120.0,
+          "inverter_kw": 22.5,
+          "generator_kw": 8.0
+        },
+        "unserved": {
+          "unserved_kwh": 0.0,
+          "demand_kwh": 1241574.4,
+          "share_pct": 0.0
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "5": 0.322,
+            "20": 0.113
+          },
+          "earliest_year": 5,
+          "never_pct": 56.5,
+          "expected_year_when_it_happens": 8.9
+        },
+        "seconds": 227.6
+      },
+      "automaton": {
+        "expected_usd": 63025.52393178881,
+        "root": {
+          "pv_kw": 29.0,
+          "pv_ac_kw": 22.5,
+          "battery_kwh": 130.0,
+          "inverter_kw": 22.5,
+          "generator_kw": 8.0
+        },
+        "unserved": {
+          "unserved_kwh": 1.9,
+          "demand_kwh": 1242237.0,
+          "share_pct": 0.0001
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "5": 0.322
+          },
+          "earliest_year": 5,
+          "never_pct": 67.8,
+          "expected_year_when_it_happens": 5.0
+        },
+        "seconds": 96.4,
+        "evaluations": 15209
+      }
+    },
+    "fast_known": {
+      "name": "fast_known",
+      "weights": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "seed": 0,
+      "fixed_root": null,
+      "fixed_root_from": "",
+      "note": "that trajectory known in advance",
+      "mean_value": false,
+      "nodes": 46,
+      "leaves": 9,
+      "reduction_error": {
+        "0": 2.2467,
+        "5": 2.2149,
+        "10": 2.1992,
+        "15": 2.2099,
+        "20": 2.2027
+      },
+      "solver_options": {
+        "MIPGap": 0.001,
+        "NodefileStart": 8.0
+      },
+      "seconds_building": 670.2,
+      "seconds_total": 958.9,
+      "architecture": "mixed",
+      "programme": {
+        "expected_usd": 76813.74659399247,
+        "bound_usd": 76762.1453976057,
+        "root": {
+          "pv_kw": 39.0,
+          "pv_ac_kw": 26.0,
+          "battery_kwh": 155.0,
+          "inverter_kw": 30.0,
+          "generator_kw": 8.0
+        },
+        "unserved": {
+          "unserved_kwh": 0.0,
+          "demand_kwh": 1659590.2,
+          "share_pct": 0.0
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "5": 0.322,
+            "10": 0.113,
+            "15": 0.106
+          },
+          "earliest_year": 5,
+          "never_pct": 45.9,
+          "expected_year_when_it_happens": 8.0
+        },
+        "seconds": 208.7
+      },
+      "automaton": {
+        "expected_usd": 81792.4271688348,
+        "root": {
+          "pv_kw": 39.0,
+          "pv_ac_kw": 25.0,
+          "battery_kwh": 160.0,
+          "inverter_kw": 30.0,
+          "generator_kw": 12.0
+        },
+        "unserved": {
+          "unserved_kwh": 0.0,
+          "demand_kwh": 1660496.8,
+          "share_pct": 0.0
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "5": 0.435,
+            "20": 0.106
+          },
+          "earliest_year": 5,
+          "never_pct": 45.9,
+          "expected_year_when_it_happens": 7.94
+        },
+        "seconds": 80.0,
+        "evaluations": 12611
+      }
+    },
+    "mean_value": {
+      "name": "mean_value",
+      "weights": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "seed": 0,
+      "fixed_root": null,
+      "fixed_root_from": "",
+      "note": "every axis degenerate at its central value; its root is the plant the mean-value problem would build",
+      "mean_value": true,
+      "nodes": 6,
+      "leaves": 1,
+      "reduction_error": {
+        "0": 2.1454,
+        "5": 2.2351,
+        "10": 2.2577,
+        "15": 2.2091,
+        "20": 2.1886
+      },
+      "solver_options": {
+        "MIPGap": 0.001,
+        "NodefileStart": 8.0
+      },
+      "seconds_building": 266.6,
+      "seconds_total": 276.7,
+      "architecture": "mixed",
+      "programme": {
+        "expected_usd": 49075.73254342195,
+        "bound_usd": 49052.82737165789,
+        "root": {
+          "pv_kw": 26.0,
+          "pv_ac_kw": 20.0,
+          "battery_kwh": 105.0,
+          "inverter_kw": 20.0,
+          "generator_kw": 8.0
+        },
+        "unserved": {
+          "unserved_kwh": 0.0,
+          "demand_kwh": 1260186.5,
+          "share_pct": 0.0
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "5": 1.0
+          },
+          "earliest_year": 5,
+          "never_pct": 0.0,
+          "expected_year_when_it_happens": 5.0
+        },
+        "seconds": 8.9
+      },
+      "automaton": {
+        "expected_usd": 51090.996311464696,
+        "root": {
+          "pv_kw": 26.0,
+          "pv_ac_kw": 20.0,
+          "battery_kwh": 120.0,
+          "inverter_kw": 20.0,
+          "generator_kw": 8.0
+        },
+        "unserved": {
+          "unserved_kwh": 0.0,
+          "demand_kwh": 1258664.9,
+          "share_pct": 0.0
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "10": 1.0
+          },
+          "earliest_year": 10,
+          "never_pct": 0.0,
+          "expected_year_when_it_happens": 10.0
+        },
+        "seconds": 1.3,
+        "evaluations": 405
+      }
+    },
+    "fixed_certified_slow": {
+      "name": "fixed_certified_slow",
+      "weights": [
+        0.3333333333333333,
+        0.3333333333333333,
+        0.3333333333333333
+      ],
+      "seed": 0,
+      "fixed_root": {
+        "pv_kw": 19.5,
+        "pv_ac_kw": 12.0,
+        "battery_kwh": 85.0,
+        "inverter_kw": 15.0,
+        "generator_kw": 8.0
+      },
+      "fixed_root_from": "certified_slow",
+      "note": "",
+      "mean_value": false,
+      "nodes": 46,
+      "leaves": 9,
+      "reduction_error": {
+        "0": 2.2784,
+        "5": 2.1769,
+        "10": 2.1445,
+        "15": 2.1793,
+        "20": 2.1441
+      },
+      "solver_options": {
+        "MIPGap": 0.001,
+        "NodefileStart": 8.0
+      },
+      "seconds_building": 639.8,
+      "seconds_total": 795.8,
+      "architecture": "mixed",
+      "programme": {
+        "expected_usd": 66833.77003936075,
+        "bound_usd": 66833.77003935492,
+        "root": {
+          "pv_kw": 19.5,
+          "pv_ac_kw": 12.0,
+          "battery_kwh": 85.0,
+          "inverter_kw": 15.0,
+          "generator_kw": 8.0
+        },
+        "unserved": {
+          "unserved_kwh": 651.3,
+          "demand_kwh": 1234077.0,
+          "share_pct": 0.0528
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "5": 0.854
+          },
+          "earliest_year": 5,
+          "never_pct": 14.6,
+          "expected_year_when_it_happens": 5.0
+        },
+        "seconds": 74.0
+      },
+      "automaton": {
+        "expected_usd": 77458.43625389635,
+        "root": {
+          "pv_kw": 19.5,
+          "pv_ac_kw": 12.0,
+          "battery_kwh": 85.0,
+          "inverter_kw": 15.0,
+          "generator_kw": 8.0
+        },
+        "unserved": {
+          "unserved_kwh": 4791.0,
+          "demand_kwh": 1235153.7,
+          "share_pct": 0.3879
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "5": 0.699,
+            "20": 0.155
+          },
+          "earliest_year": 5,
+          "never_pct": 14.6,
+          "expected_year_when_it_happens": 7.72
+        },
+        "seconds": 82.0,
+        "evaluations": 13717
+      }
+    },
+    "fixed_certified_central": {
+      "name": "fixed_certified_central",
+      "weights": [
+        0.3333333333333333,
+        0.3333333333333333,
+        0.3333333333333333
+      ],
+      "seed": 0,
+      "fixed_root": {
+        "pv_kw": 26.0,
+        "pv_ac_kw": 19.0,
+        "battery_kwh": 115.0,
+        "inverter_kw": 20.0,
+        "generator_kw": 8.0
+      },
+      "fixed_root_from": "certified_central",
+      "note": "",
+      "mean_value": false,
+      "nodes": 46,
+      "leaves": 9,
+      "reduction_error": {
+        "0": 2.2784,
+        "5": 2.1769,
+        "10": 2.1445,
+        "15": 2.1793,
+        "20": 2.1441
+      },
+      "solver_options": {
+        "MIPGap": 0.001,
+        "NodefileStart": 8.0
+      },
+      "seconds_building": 615.7,
+      "seconds_total": 750.3,
+      "architecture": "mixed",
+      "programme": {
+        "expected_usd": 62302.893213260635,
+        "bound_usd": 62279.07702917498,
+        "root": {
+          "pv_kw": 26.0,
+          "pv_ac_kw": 19.0,
+          "battery_kwh": 115.0,
+          "inverter_kw": 20.0,
+          "generator_kw": 8.0
+        },
+        "unserved": {
+          "unserved_kwh": 12.2,
+          "demand_kwh": 1234077.0,
+          "share_pct": 0.001
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "5": 0.444
+          },
+          "earliest_year": 5,
+          "never_pct": 55.6,
+          "expected_year_when_it_happens": 5.0
+        },
+        "seconds": 62.5
+      },
+      "automaton": {
+        "expected_usd": 67921.12301529724,
+        "root": {
+          "pv_kw": 26.0,
+          "pv_ac_kw": 19.0,
+          "battery_kwh": 115.0,
+          "inverter_kw": 20.0,
+          "generator_kw": 8.0
+        },
+        "unserved": {
+          "unserved_kwh": 906.5,
+          "demand_kwh": 1235153.7,
+          "share_pct": 0.0734
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "5": 0.444
+          },
+          "earliest_year": 5,
+          "never_pct": 55.6,
+          "expected_year_when_it_happens": 5.0
+        },
+        "seconds": 72.1,
+        "evaluations": 11910
+      }
+    },
+    "fixed_certified_fast": {
+      "name": "fixed_certified_fast",
+      "weights": [
+        0.3333333333333333,
+        0.3333333333333333,
+        0.3333333333333333
+      ],
+      "seed": 0,
+      "fixed_root": {
+        "pv_kw": 39.0,
+        "pv_ac_kw": 25.5,
+        "battery_kwh": 150.0,
+        "inverter_kw": 30.0,
+        "generator_kw": 8.0
+      },
+      "fixed_root_from": "certified_fast",
+      "note": "",
+      "mean_value": false,
+      "nodes": 46,
+      "leaves": 9,
+      "reduction_error": {
+        "0": 2.2784,
+        "5": 2.1769,
+        "10": 2.1445,
+        "15": 2.1793,
+        "20": 2.1441
+      },
+      "solver_options": {
+        "MIPGap": 0.001,
+        "NodefileStart": 8.0
+      },
+      "seconds_building": 584.9,
+      "seconds_total": 743.6,
+      "architecture": "mixed",
+      "programme": {
+        "expected_usd": 65951.92828757079,
+        "bound_usd": 65932.14202692777,
+        "root": {
+          "pv_kw": 39.0,
+          "pv_ac_kw": 25.5,
+          "battery_kwh": 150.0,
+          "inverter_kw": 30.0,
+          "generator_kw": 8.0
+        },
+        "unserved": {
+          "unserved_kwh": 0.0,
+          "demand_kwh": 1234077.0,
+          "share_pct": 0.0
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "5": 0.232,
+            "10": 0.135
+          },
+          "earliest_year": 5,
+          "never_pct": 63.3,
+          "expected_year_when_it_happens": 6.84
+        },
+        "seconds": 107.2
+      },
+      "automaton": {
+        "expected_usd": 68334.08443505109,
+        "root": {
+          "pv_kw": 39.0,
+          "pv_ac_kw": 25.5,
+          "battery_kwh": 150.0,
+          "inverter_kw": 30.0,
+          "generator_kw": 8.0
+        },
+        "unserved": {
+          "unserved_kwh": 35.9,
+          "demand_kwh": 1235153.7,
+          "share_pct": 0.0029
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "5": 0.367
+          },
+          "earliest_year": 5,
+          "never_pct": 63.3,
+          "expected_year_when_it_happens": 5.0
+        },
+        "seconds": 51.5,
+        "evaluations": 8300
+      }
+    },
+    "fixed_mean_value": {
+      "name": "fixed_mean_value",
+      "weights": [
+        0.3333333333333333,
+        0.3333333333333333,
+        0.3333333333333333
+      ],
+      "seed": 0,
+      "fixed_root": {
+        "pv_kw": 26.0,
+        "pv_ac_kw": 20.0,
+        "battery_kwh": 105.0,
+        "inverter_kw": 20.0,
+        "generator_kw": 8.0
+      },
+      "fixed_root_from": "mean_value",
+      "note": "",
+      "mean_value": false,
+      "nodes": 46,
+      "leaves": 9,
+      "reduction_error": {
+        "0": 2.2784,
+        "5": 2.1769,
+        "10": 2.1445,
+        "15": 2.1793,
+        "20": 2.1441
+      },
+      "solver_options": {
+        "MIPGap": 0.001,
+        "NodefileStart": 8.0
+      },
+      "seconds_building": 538.6,
+      "seconds_total": 683.5,
+      "architecture": "mixed",
+      "programme": {
+        "expected_usd": 61944.541413494575,
+        "bound_usd": 61919.361329967265,
+        "root": {
+          "pv_kw": 26.0,
+          "pv_ac_kw": 20.0,
+          "battery_kwh": 105.0,
+          "inverter_kw": 20.0,
+          "generator_kw": 8.0
+        },
+        "unserved": {
+          "unserved_kwh": 15.9,
+          "demand_kwh": 1234077.0,
+          "share_pct": 0.0013
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "5": 0.444
+          },
+          "earliest_year": 5,
+          "never_pct": 55.6,
+          "expected_year_when_it_happens": 5.0
+        },
+        "seconds": 89.8
+      },
+      "automaton": {
+        "expected_usd": 67940.64437255096,
+        "root": {
+          "pv_kw": 26.0,
+          "pv_ac_kw": 20.0,
+          "battery_kwh": 105.0,
+          "inverter_kw": 20.0,
+          "generator_kw": 8.0
+        },
+        "unserved": {
+          "unserved_kwh": 800.8,
+          "demand_kwh": 1235153.7,
+          "share_pct": 0.0648
+        },
+        "first_extension": {
+          "probability_by_year": {
+            "5": 0.444
+          },
+          "earliest_year": 5,
+          "never_pct": 55.6,
+          "expected_year_when_it_happens": 5.0
+        },
+        "seconds": 55.1,
+        "evaluations": 10827
+      }
+    }
+  },
+  "wait_and_see_everything": {
+    "weights": [
+      0.3333333333333333,
+      0.3333333333333333,
+      0.3333333333333333
+    ],
+    "seed": 0,
+    "leaves": 9,
+    "solver_options": {
+      "MIPGap": 0.001,
+      "NodefileStart": 8.0
+    },
+    "seconds_building": 797.7,
+    "seconds_total": 908.0,
+    "by_leaf": {
+      "37": {
+        "probability": 0.077,
+        "programme": {
+          "expected_usd": 46498.579990058075,
+          "bound_usd": 46458.770494056036,
+          "root": {
+            "pv_kw": 29.0,
+            "pv_ac_kw": 18.0,
+            "battery_kwh": 110.0,
+            "inverter_kw": 22.5,
+            "generator_kw": 8.0
+          }
+        },
+        "automaton": {
+          "expected_usd": 47790.69591570188,
+          "root": {
+            "pv_kw": 29.0,
+            "pv_ac_kw": 19.0,
+            "battery_kwh": 120.0,
+            "inverter_kw": 22.5,
+            "generator_kw": 8.0
+          }
+        }
+      },
+      "38": {
+        "probability": 0.135,
+        "programme": {
+          "expected_usd": 66797.32254718819,
+          "bound_usd": 66737.47102606363,
+          "root": {
+            "pv_kw": 35.5,
+            "pv_ac_kw": 24.0,
+            "battery_kwh": 140.0,
+            "inverter_kw": 27.5,
+            "generator_kw": 8.0
+          }
+        },
+        "automaton": {
+          "expected_usd": 69445.34792476217,
+          "root": {
+            "pv_kw": 35.5,
+            "pv_ac_kw": 24.0,
+            "battery_kwh": 155.0,
+            "inverter_kw": 27.5,
+            "generator_kw": 8.0
+          }
+        }
+      },
+      "39": {
+        "probability": 0.115,
+        "programme": {
+          "expected_usd": 35356.26444836292,
+          "bound_usd": 35345.190316224835,
+          "root": {
+            "pv_kw": 19.5,
+            "pv_ac_kw": 13.5,
+            "battery_kwh": 85.0,
+            "inverter_kw": 15.0,
+            "generator_kw": 8.0
+          }
+        },
+        "automaton": {
+          "expected_usd": 35902.85239115656,
+          "root": {
+            "pv_kw": 19.5,
+            "pv_ac_kw": 13.5,
+            "battery_kwh": 90.0,
+            "inverter_kw": 15.0,
+            "generator_kw": 8.0
+          }
+        }
+      },
+      "40": {
+        "probability": 0.14,
+        "programme": {
+          "expected_usd": 37947.76226858566,
+          "bound_usd": 37926.32371405037,
+          "root": {
+            "pv_kw": 19.5,
+            "pv_ac_kw": 12.0,
+            "battery_kwh": 75.0,
+            "inverter_kw": 15.0,
+            "generator_kw": 8.0
+          }
+        },
+        "automaton": {
+          "expected_usd": 38649.255945599376,
+          "root": {
+            "pv_kw": 19.5,
+            "pv_ac_kw": 10.5,
+            "battery_kwh": 80.0,
+            "inverter_kw": 15.0,
+            "generator_kw": 8.0
+          }
+        }
+      },
+      "41": {
+        "probability": 0.158,
+        "programme": {
+          "expected_usd": 71526.71957654975,
+          "bound_usd": 71461.76566284517,
+          "root": {
+            "pv_kw": 35.5,
+            "pv_ac_kw": 26.5,
+            "battery_kwh": 165.0,
+            "inverter_kw": 27.5,
+            "generator_kw": 8.0
+          }
+        },
+        "automaton": {
+          "expected_usd": 74218.26381270401,
+          "root": {
+            "pv_kw": 35.5,
+            "pv_ac_kw": 27.5,
+            "battery_kwh": 175.0,
+            "inverter_kw": 27.5,
+            "generator_kw": 8.0
+          }
+        }
+      },
+      "42": {
+        "probability": 0.07400000000000001,
+        "programme": {
+          "expected_usd": 84574.27828938876,
+          "bound_usd": 84528.17101563314,
+          "root": {
+            "pv_kw": 48.5,
+            "pv_ac_kw": 37.5,
+            "battery_kwh": 210.0,
+            "inverter_kw": 37.5,
+            "generator_kw": 8.0
+          }
+        },
+        "automaton": {
+          "expected_usd": 88601.76078209662,
+          "root": {
+            "pv_kw": 51.0,
+            "pv_ac_kw": 37.5,
+            "battery_kwh": 220.0,
+            "inverter_kw": 40.0,
+            "generator_kw": 8.0
+          }
+        }
+      },
+      "43": {
+        "probability": 0.074,
+        "programme": {
+          "expected_usd": 25953.364415486918,
+          "bound_usd": 25947.88757381341,
+          "root": {
+            "pv_kw": 16.0,
+            "pv_ac_kw": 9.0,
+            "battery_kwh": 55.0,
+            "inverter_kw": 12.5,
+            "generator_kw": 8.0
+          }
+        },
+        "automaton": {
+          "expected_usd": 26568.36245656889,
+          "root": {
+            "pv_kw": 16.0,
+            "pv_ac_kw": 9.0,
+            "battery_kwh": 65.0,
+            "inverter_kw": 12.5,
+            "generator_kw": 8.0
+          }
+        }
+      },
+      "44": {
+        "probability": 0.15500000000000003,
+        "programme": {
+          "expected_usd": 35348.46505809078,
+          "bound_usd": 35342.54984914898,
+          "root": {
+            "pv_kw": 19.5,
+            "pv_ac_kw": 11.5,
+            "battery_kwh": 65.0,
+            "inverter_kw": 15.0,
+            "generator_kw": 8.0
+          }
+        },
+        "automaton": {
+          "expected_usd": 35611.82206146934,
+          "root": {
+            "pv_kw": 19.5,
+            "pv_ac_kw": 13.0,
+            "battery_kwh": 75.0,
+            "inverter_kw": 15.0,
+            "generator_kw": 8.0
+          }
+        }
+      },
+      "45": {
+        "probability": 0.072,
+        "programme": {
+          "expected_usd": 22246.655007796253,
+          "bound_usd": 22246.655007796253,
+          "root": {
+            "pv_kw": 9.5,
+            "pv_ac_kw": 7.5,
+            "battery_kwh": 40.0,
+            "inverter_kw": 7.5,
+            "generator_kw": 8.0
+          }
+        },
+        "automaton": {
+          "expected_usd": 21719.14715158617,
+          "root": {
+            "pv_kw": 9.5,
+            "pv_ac_kw": 7.5,
+            "battery_kwh": 45.0,
+            "inverter_kw": 7.5,
+            "generator_kw": 8.0
+          }
+        }
+      }
+    },
+    "programme": {
+      "wait_and_see": 48537.72483008966
+    },
+    "automaton": {
+      "wait_and_see": 49927.41522922929
+    }
+  },
+  "derived": {
+    "weights_for_evpi": [
+      0.3333333333333333,
+      0.3333333333333333,
+      0.3333333333333333
+    ],
+    "programme": {
+      "RP": 61871.00747851189,
+      "RP_unserved": {
+        "unserved_kwh": 0.0,
+        "demand_kwh": 1234077.0,
+        "share_pct": 0.0
+      },
+      "RP_first_extension": {
+        "probability_by_year": {
+          "5": 0.367,
+          "10": 0.077
+        },
+        "earliest_year": 5,
+        "never_pct": 55.6,
+        "expected_year_when_it_happens": 5.87
+      },
+      "vss": {
+        "certified_slow": {
+          "EEV": 66833.77003936075,
+          "VSS": 4962.76256084886,
+          "VSS_pct": 8.021143930091087,
+          "ordering_holds": true,
+          "unserved": {
+            "unserved_kwh": 651.3,
+            "demand_kwh": 1234077.0,
+            "share_pct": 0.0528
+          },
+          "first_extension": {
+            "probability_by_year": {
+              "5": 0.854
+            },
+            "earliest_year": 5,
+            "never_pct": 14.6,
+            "expected_year_when_it_happens": 5.0
+          }
+        },
+        "certified_central": {
+          "EEV": 62302.893213260635,
+          "VSS": 431.88573474874283,
+          "VSS_pct": 0.6980421886595897,
+          "ordering_holds": true,
+          "unserved": {
+            "unserved_kwh": 12.2,
+            "demand_kwh": 1234077.0,
+            "share_pct": 0.001
+          },
+          "first_extension": {
+            "probability_by_year": {
+              "5": 0.444
+            },
+            "earliest_year": 5,
+            "never_pct": 55.6,
+            "expected_year_when_it_happens": 5.0
+          }
+        },
+        "certified_fast": {
+          "EEV": 65951.92828757079,
+          "VSS": 4080.9208090588945,
+          "VSS_pct": 6.595853171578334,
+          "ordering_holds": true,
+          "unserved": {
+            "unserved_kwh": 0.0,
+            "demand_kwh": 1234077.0,
+            "share_pct": 0.0
+          },
+          "first_extension": {
+            "probability_by_year": {
+              "5": 0.232,
+              "10": 0.135
+            },
+            "earliest_year": 5,
+            "never_pct": 63.3,
+            "expected_year_when_it_happens": 6.84
+          }
+        },
+        "mean_value": {
+          "EEV": 61944.541413494575,
+          "VSS": 73.5339349826827,
+          "VSS_pct": 0.11885039209717313,
+          "ordering_holds": true,
+          "unserved": {
+            "unserved_kwh": 15.9,
+            "demand_kwh": 1234077.0,
+            "share_pct": 0.0013
+          },
+          "first_extension": {
+            "probability_by_year": {
+              "5": 0.444
+            },
+            "earliest_year": 5,
+            "never_pct": 55.6,
+            "expected_year_when_it_happens": 5.0
+          }
+        }
+      },
+      "RP_by_trajectory": {
+        "slow": 42592.72036261468,
+        "central": 59231.78456065823,
+        "fast": 76813.74659399247
+      },
+      "wait_and_see": 59546.08383908846,
+      "EVPI_growth": 2324.923639423432,
+      "EVPI_growth_pct": 3.7576948140546924,
+      "ordering_holds": true,
+      "wait_and_see_everything": 48537.72483008966,
+      "EVPI_total": 13333.282648422231,
+      "EVPI_total_pct": 21.550130168888792,
+      "ordering_holds_total": true,
+      "noise_usd": {
+        "min": 57430.40264188176,
+        "max": 61871.00747851189,
+        "span": 4440.604836630133,
+        "span_pct": 7.732149928184158
+      }
+    },
+    "automaton": {
+      "RP": 66491.95844162068,
+      "RP_unserved": {
+        "unserved_kwh": 17.9,
+        "demand_kwh": 1235153.7,
+        "share_pct": 0.0014
+      },
+      "RP_first_extension": {
+        "probability_by_year": {
+          "5": 0.367,
+          "20": 0.077
+        },
+        "earliest_year": 5,
+        "never_pct": 55.6,
+        "expected_year_when_it_happens": 7.6
+      },
+      "vss": {
+        "certified_slow": {
+          "EEV": 77458.43625389635,
+          "VSS": 10966.477812275669,
+          "VSS_pct": 16.492938498576688,
+          "ordering_holds": true,
+          "unserved": {
+            "unserved_kwh": 4791.0,
+            "demand_kwh": 1235153.7,
+            "share_pct": 0.3879
+          },
+          "first_extension": {
+            "probability_by_year": {
+              "5": 0.699,
+              "20": 0.155
+            },
+            "earliest_year": 5,
+            "never_pct": 14.6,
+            "expected_year_when_it_happens": 7.72
+          }
+        },
+        "certified_central": {
+          "EEV": 67921.12301529724,
+          "VSS": 1429.164573676564,
+          "VSS_pct": 2.1493795748719857,
+          "ordering_holds": true,
+          "unserved": {
+            "unserved_kwh": 906.5,
+            "demand_kwh": 1235153.7,
+            "share_pct": 0.0734
+          },
+          "first_extension": {
+            "probability_by_year": {
+              "5": 0.444
+            },
+            "earliest_year": 5,
+            "never_pct": 55.6,
+            "expected_year_when_it_happens": 5.0
+          }
+        },
+        "certified_fast": {
+          "EEV": 68334.08443505109,
+          "VSS": 1842.1259934304107,
+          "VSS_pct": 2.770449294327494,
+          "ordering_holds": true,
+          "unserved": {
+            "unserved_kwh": 35.9,
+            "demand_kwh": 1235153.7,
+            "share_pct": 0.0029
+          },
+          "first_extension": {
+            "probability_by_year": {
+              "5": 0.367
+            },
+            "earliest_year": 5,
+            "never_pct": 63.3,
+            "expected_year_when_it_happens": 5.0
+          }
+        },
+        "mean_value": {
+          "EEV": 67940.64437255096,
+          "VSS": 1448.6859309302818,
+          "VSS_pct": 2.178738549567937,
+          "ordering_holds": true,
+          "unserved": {
+            "unserved_kwh": 800.8,
+            "demand_kwh": 1235153.7,
+            "share_pct": 0.0648
+          },
+          "first_extension": {
+            "probability_by_year": {
+              "5": 0.444
+            },
+            "earliest_year": 5,
+            "never_pct": 55.6,
+            "expected_year_when_it_happens": 5.0
+          }
+        }
+      },
+      "RP_by_trajectory": {
+        "slow": 44709.2959582251,
+        "central": 63025.52393178881,
+        "fast": 81792.4271688348
+      },
+      "wait_and_see": 63175.74901961623,
+      "EVPI_growth": 3316.2094220044455,
+      "EVPI_growth_pct": 4.987384188594845,
+      "ordering_holds": true,
+      "wait_and_see_everything": 49927.41522922929,
+      "EVPI_total": 16564.543212391385,
+      "EVPI_total_pct": 24.91210005031646,
+      "ordering_holds_total": true,
+      "noise_usd": {
+        "min": 61596.275500278934,
+        "max": 66497.64815288315,
+        "span": 4901.372652604216,
+        "span_pct": 7.957254903475487
+      }
+    }
+  }
+}

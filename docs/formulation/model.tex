@@ -1015,7 +1015,10 @@ connection has reached its plateau settles once its last cohort reaches the term
 \paragraph{Productive uses.} Enterprises are counted rather than composed. Six activity
 classes---refrigeration, milling, incubation, tailoring, sawmill and small trade---carry
 their measured mean day and its day-to-day spread, since a mill that runs hard two days in
-three is not a mill running steadily at two thirds. The number of enterprises in a month is
+three is not a mill running steadily at two thirds. A busy day of a unit runs longer rather
+than harder, within a ceiling of its class: the unit's mean hourly power times the median,
+over the class's metered units, of the ratio of the highest hourly power each recorded to its
+mean hourly power. The number of enterprises in a month is
 \begin{equation}
   U(a) \sim \operatorname{Poisson}\Big(\Phi_\gamma\big(\band(a)\big)
   \sum_{k\in\mathcal{K}} N_k(a)\Big),
@@ -1076,11 +1079,15 @@ What the record's customers draw is taken from it as well. Each household, produ
 and place of worship on the grid by $a^{\mathrm{obs}}$ draws the level its own meter
 measured: its mean daily energy over its last year of readings, each reading over its own
 period, with its own month-to-month pattern where the year is covered, on the hourly shape
-of its archetype or class. A busy day runs longer rather than harder: its draw scales the
-share of each hour the customer runs, an hour already full passing the rest to the others,
-within the highest hourly power its meter recorded. The mixture law composes only the
-households that connect after $a^{\mathrm{obs}}$, and the productive-use rule draws only the
-users it adds after it. Beyond $a^{\mathrm{obs}}$ an anchored household's level grows as
+of its archetype or class. A household without a year of readings follows the residual
+seasonal index, rescaled so that over the months it was read it draws its measured level. A
+level needs four weeks of readings: a customer still on the grid whose readings cover fewer
+than 28 days is drawn from the model's laws from its own connection month, as a household
+connected after the record or a unit of its class. A busy day runs longer rather than
+harder: its draw scales the share of each hour the customer runs, an hour already full
+passing the rest to the others, within the highest hourly power its meter recorded. The
+mixture law composes only the households that connect after $a^{\mathrm{obs}}$ and those of
+the record it draws, and the productive-use rule draws only the users it adds after it. Beyond $a^{\mathrm{obs}}$ an anchored household's level grows as
 the expected energy of a household under the growth trajectory's law grows from its age at
 $a^{\mathrm{obs}}$, both ages held at 24 months; and a brownfield plan holds the village's
 own growth trajectory, $\gamma$ fixed on every path, as its connection follows the village's
@@ -1175,8 +1182,8 @@ cost-optimal operation. Its integer variables are the module counts $b^{\mathrm{
 $b^{\mathrm{pva}}_n$, $b^{\mathrm{batt}}_n$ and $b^{\mathrm{inv}}_n$, the generator state
 $z^{\mathrm{ge}}_{n,s}$, and one generator-commitment variable per operating time step,
 which the lower bound relaxes to $[0,1]$: the relaxation keeps the bound valid and makes it
-far cheaper. On the reference tree of forty-six nodes and sixty-four representative days the
-programme has some seven hundred and eighty thousand columns. The non-anticipativity of the
+far cheaper. On the reference tree of forty-nine nodes and sixty-four representative days the
+programme has some one million two hundred thousand columns. The non-anticipativity of the
 investment policy is, as noted, embedded in the tree indexing and requires no explicit
 constraints. The model is implemented in an algebraic modelling layer over labelled
 multidimensional arrays and solved by an open-source branch-and-cut solver, or by a

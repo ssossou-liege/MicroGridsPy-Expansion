@@ -665,6 +665,8 @@ def test_the_defaults_are_the_progressive_model() -> None:
         == "progressive"
     assert (cfg.tree_mode, cfg.node_year, cfg.centre_features) == ("persistent", "last",
                                                                    True)
+    assert (cfg.regime_branches, cfg.fan()) == (3, (1, 1, 2, 2, 2)), \
+        "a fan within each regime, as the formulation's tree has it"
     assert cfg.maturity_months == settings.maturity_months == 0, "a site being energised"
     with pytest.raises(ValueError, match="'both' is not built"):
         ModelConfig(node_year="both").validate()

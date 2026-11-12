@@ -248,9 +248,14 @@ class CommunityCalibration:
         path = REFERENCE_DIR / "community_class_profiles.csv"
         if not path.exists():
             return None
+        from .productive import with_ceilings
+
         profiles = pd.read_csv(path, index_col="community_class")
         profiles.columns = [int(c) if str(c).isdigit() else c for c in profiles.columns]
-        return cls(profiles=profiles)
+        # A busy day of a building of a class runs longer, not harder, under the ceiling
+        # its class's metered buildings set; the plant's own supply has none and keeps the
+        # plain scaling.
+        return cls(profiles=with_ceilings(profiles))
 
     @property
     def measured_powerhouse_kwh_per_day(self) -> float | None:

@@ -47,6 +47,50 @@ UNSURVEYED = "small_trade"
 
 HOURS = tuple(range(24))
 
+#: The customers of the reference villages' records at their own levels, whose recorded
+#: peaks bound what a busy day of a unit of their class draws (``peak_ratios``).
+OWN_LEVELS_FILE = "own_levels.csv"
+#: The record's types whose units a class's ceiling is read from: productive users and
+#: places of worship. Households have no class.
+UNIT_TYPES = ("PUE", "CHU")
+
+
+def peak_ratios(path=None) -> pd.DataFrame:
+    """Each class's ceiling on a busy day, as a ratio to a unit's mean hourly power.
+
+    For every metered unit of the class on the reference villages' records, a productive
+    user or a place of worship with a level of its own, the ratio of the highest hourly
+    power its meter recorded over its level's months to its mean hourly power; the class's
+    ratio is the median over its units. One row per class: ``units``, ``codes`` and
+    ``peak_ratio``. Empty where the table is absent.
+
+    A unit of a class has no meter of its own to bound its busy days, and the plain
+    scaling of its mean day gave the test bench's mills four times their mean hour on a busy
+    day, 15 kW for the class where 7 before the class tables read Samionta's second mill as
+    one. The median is what the class's own units recorded, the ones that run hardest and
+    the ones that barely run alike.
+    """
+    path = REFERENCE_DIR / OWN_LEVELS_FILE if path is None else path
+    if not path.exists():
+        return pd.DataFrame(columns=["units", "codes", "peak_ratio"])
+    levels = pd.read_csv(path, dtype={"shape": str})
+    units = levels[levels.customer_type.isin(UNIT_TYPES)
+                   & (levels.kwh_per_day > 0) & (levels.peak_kw > 0)]
+    ratio = units.peak_kw * 24.0 / units.kwh_per_day
+    table = units.assign(ratio=ratio).groupby("shape").agg(
+        units=("customer_code", "size"), codes=("customer_code", " ".join),
+        peak_ratio=("ratio", "median"))
+    table.index.name = "class"
+    return table
+
+
+def with_ceilings(profiles: pd.DataFrame, path=None) -> pd.DataFrame:
+    """A class table with each class's ``peak_ratio`` (``peak_ratios``), empty where its
+    units recorded none."""
+    profiles = profiles.copy()
+    profiles["peak_ratio"] = peak_ratios(path).peak_ratio.reindex(profiles.index)
+    return profiles
+
 
 def classify(activity: str) -> str:
     """Map a declared economic activity to one of the modelled classes."""
@@ -81,6 +125,8 @@ class ProductiveCalibration:
         # Hour columns arrive as strings; anything else — the day-to-day spread — keeps
         # its name.
         profiles.columns = [int(c) if str(c).isdigit() else c for c in profiles.columns]
+        # The ceiling on a busy day of a unit of each class, from its metered units.
+        profiles = with_ceilings(profiles)
         mix = pd.read_csv(d / "pue_class_mix.csv", index_col="activity_class")
         # The table is stored rounded; a multinomial draw needs probabilities that sum to
         # one exactly, and one part in a million the wrong way makes it refuse.
@@ -146,6 +192,21 @@ def _class_day(calibration, klass: str) -> tuple[np.ndarray, float]:
     return shape, float(np.sqrt(np.log1p(spread ** 2)))
 
 
+def class_cap(calibration, klass: str, mean_day: np.ndarray) -> float | None:
+    """The highest hourly power a unit of ``klass`` with mean day ``mean_day`` draws [kW].
+
+    Its mean hourly power times the class's ``peak_ratio`` (``peak_ratios``); ``None`` for a
+    class whose units recorded no peak, which keeps the plain scaling.
+    """
+    if "peak_ratio" not in calibration.profiles.columns:
+        return None
+    ratio = calibration.profiles.loc[klass, "peak_ratio"]
+    if ratio is None or not np.isfinite(float(ratio)) or float(ratio) <= 0.0:
+        return None
+    cap = float(ratio) * float(np.sum(mean_day)) / 24.0
+    return cap if cap > 0.0 else None
+
+
 def monthly_profile_parts(counts: dict[str, int], calibration,
                           days: int, rng: np.random.Generator) -> dict[str, np.ndarray]:
     """Hourly load of the connected enterprises over one month [kW], class by class.
@@ -155,9 +216,11 @@ def monthly_profile_parts(counts: dict[str, int], calibration,
     unchanged would flatten exactly the peaks a storage sizing is most sensitive to; a mill
     that runs hard two days in three is not a mill running steadily at two thirds.
 
-    Added from a zero array in the order they come, the parts give the whole load to the
-    last bit as the single sum this replaced did, so that a year drawn class by class is the
-    year drawn before.
+    A busy day of a unit runs longer, not harder, as a customer of a record's does
+    (``longer_days``), under its class's ceiling (``class_cap``): a day on which some unit
+    would pass it is drawn unit by unit, and every other day is the units' factors summed
+    times the mean day. Where no unit passes its ceiling, the parts give the whole load to
+    the last bit as the single sum this replaced did, the draws being the same.
     """
     parts: dict[str, np.ndarray] = {}
     for klass, n in counts.items():
@@ -166,7 +229,16 @@ def monthly_profile_parts(counts: dict[str, int], calibration,
         shape, sigma = _class_day(calibration, klass)
         # Log-normal about a unit mean, so the drawn days average to the measured day.
         factors = rng.lognormal(-0.5 * sigma ** 2, sigma, size=(n, days))
-        parts[klass] = (factors.sum(axis=0)[:, None] * shape[None, :]).ravel()
+        load = factors.sum(axis=0)[:, None] * shape[None, :]
+        cap = class_cap(calibration, klass, shape)
+        if cap is not None:
+            busy = (factors * float(shape.max()) > cap).any(axis=0)
+            if busy.any():
+                held = np.zeros((int(busy.sum()), shape.size))
+                for unit in factors[:, busy]:
+                    held += longer_days(shape, unit, cap)
+                load[busy] = held
+        parts[klass] = load.ravel()
     return parts
 
 
@@ -228,15 +300,17 @@ def own_level_parts(users, calibration, month: int, days: int,
     ``calibration``, with its own day-to-day spread where it was measured and its shape's
     otherwise. A busy day runs longer and not harder, within the highest hourly power its
     meter recorded (``longer_days``). A customer without a measured level draws its shape's
-    mean day, which is what a unit of its class draws in ``monthly_profile_parts``. Customers
-    come in the order given, one draw of ``days`` factors each; the parts are keyed by shape.
+    mean day under its class's ceiling, which is what a unit of its class draws in
+    ``monthly_profile_parts``. Customers come in the order given, one draw of ``days``
+    factors each; the parts are keyed by shape.
     """
     parts: dict[str, np.ndarray] = {}
     for i, user in enumerate(users):
         if user.klass not in calibration.profiles.index:
             raise ValueError(f"no profile for the shape {user.klass!r}")
         shape, sigma = _class_day(calibration, user.klass)
-        cap = None
+        cap = class_cap(calibration, user.klass, shape) if user.kwh_per_day is None \
+            else None
         if user.kwh_per_day is not None:
             total = float(shape.sum())
             unit = shape / total if total > 0 else np.full(shape.size, 1.0 / shape.size)

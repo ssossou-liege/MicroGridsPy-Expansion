@@ -3,7 +3,7 @@
 The reference year is certified by exhaustion: its design space is a lattice of some six
 hundred thousand points, a bound removes two thirds of them for nothing, and the rest are
 simulated. A *plan* over the tree admits no such treatment — it is a capacity vector at each
-of forty-six nodes, and the product of forty-six lattices is not a set anyone enumerates.
+of forty-nine nodes, and the product of forty-nine lattices is not a set anyone enumerates.
 That is why the plan has been reported from a coordinated descent, which is an honest upper
 bound and no more.
 
@@ -498,7 +498,7 @@ def certify_first_stage(
     box of least bound means that once the head of the queue is no better than the incumbent
     nothing left can be, and the search stops with a proof rather than an exhausted budget.
 
-    The costless bound is tried first on every box, because a programme over forty-six nodes
+    The costless bound is tried first on every box, because a programme over forty-nine nodes
     is the expensive object here and the whole point of the capital floor is to avoid
     solving one. ``max_programmes`` and ``max_seconds`` bound the effort; exhausting either
     returns ``proven=False`` with the gap that was reached, which is a weaker claim honestly

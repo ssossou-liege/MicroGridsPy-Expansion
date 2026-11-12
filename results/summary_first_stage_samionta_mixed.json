@@ -1,7 +1,7 @@
 {
   "site": "Samionta",
   "architecture": "mixed",
-  "commit": "c710e03",
+  "commit": "7afbffd",
   "seed": 0,
   "settings": {
     "stage_years": [
@@ -30,86 +30,86 @@
     "resumed_from_record": false
   },
   "tree": {
-    "nodes": 46,
-    "leaves": 9,
-    "operating_nodes": 45,
+    "nodes": 49,
+    "leaves": 24,
+    "operating_nodes": 48,
     "tree_mode": "persistent",
     "node_year": "last",
-    "regime_branches": 9,
+    "regime_branches": 3,
     "regime_fan": [
       1,
       1,
-      1,
-      1,
-      1
+      2,
+      2,
+      2
     ],
     "root_period": "regimes",
     "reduction_error": {
-      "0": 2.2784,
-      "5": 2.1769,
-      "10": 2.1445,
-      "15": 2.1793,
-      "20": 2.1441
+      "0": 2.347,
+      "5": 2.26,
+      "10": 1.3481,
+      "15": 1.3379,
+      "20": 1.4047
     },
     "distortion": {
       "stage": {
-        "0": 1.4983064987909998,
-        "5": 1.7162790667844923,
-        "10": 1.6935084130245124,
-        "15": 1.7085735305893113,
-        "20": 1.6880303924104014
+        "0": 2.069500085623911,
+        "5": 2.3304770683573715,
+        "10": 1.918966601874754,
+        "15": 1.9716772026412834,
+        "20": 1.9838176515384975
       },
-      "regime": 2.431800960964102,
-      "coverage": 3.845086543645253,
-      "plausibility": 1.6532373654595058,
+      "regime": 4.376253072310784,
+      "coverage": 4.740558852541825,
+      "plausibility": 1.7313051549722844,
       "persistence_violations": 0,
       "violations_by_kind": {
         "connected_stock": 0,
         "regime": 0,
         "grid": 0
       },
-      "tree_paths": 9,
+      "tree_paths": 24,
       "regimes": 27,
-      "regimes_held": 9,
-      "regime_reduction_error": 2.431800960964102
+      "regimes_held": 3,
+      "regime_reduction_error": 4.376253072310784
     }
   },
   "incumbent": {
-    "z_rule_usd": 66491.95844162068,
-    "programme_bound_usd": 61865.558405984244,
+    "z_rule_usd": 64322.959549446336,
+    "programme_bound_usd": 62255.42027881707,
     "root": {
-      "pv_kw": 29.0,
-      "pv_ac_kw": 21.0,
-      "battery_kwh": 125.0,
-      "inverter_kw": 22.5,
+      "pv_kw": 26.0,
+      "pv_ac_kw": 20.0,
+      "battery_kwh": 115.0,
+      "inverter_kw": 20.0,
       "generator_kw": 12.0
     }
   },
   "certificate": {
     "root": {
-      "pv_kw": 29.0,
-      "pv_ac_kw": 21.0,
-      "battery_kwh": 125.0,
-      "inverter_kw": 22.5,
+      "pv_kw": 26.0,
+      "pv_ac_kw": 20.0,
+      "battery_kwh": 115.0,
+      "inverter_kw": 20.0,
       "generator_kw": 12.0
     },
-    "z_rule": 66491.95844162068,
-    "lower_bound": 62376.067678489664,
+    "z_rule": 64322.959549446336,
+    "lower_bound": 62730.71836002442,
     "proven": false,
-    "gap_abs_usd": 4115.890763131014,
-    "gap_rel_pct": 6.190057955270979,
+    "gap_abs_usd": 1592.2411894219185,
+    "gap_rel_pct": 2.4753854620105455,
     "boxes_opened": 40,
     "boxes_pruned_free": 0,
-    "boxes_pruned_programme": 9,
+    "boxes_pruned_programme": 6,
     "programmes_solved": 40,
-    "descents": 2,
-    "unresolved": 2,
-    "lattice_size": 278586
+    "descents": 1,
+    "unresolved": 1,
+    "lattice_size": 352512
   },
   "seconds": {
-    "building_the_tree": 543.2,
-    "the_incumbent": 378.3,
-    "the_search": 4031.0,
-    "total": 4952.5
+    "building_the_tree": 681.7,
+    "the_incumbent": 260.0,
+    "the_search": 3637.1,
+    "total": 4578.8
   }
 }

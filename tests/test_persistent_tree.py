@@ -89,7 +89,7 @@ def test_a_tree_path_keeps_its_regime() -> None:
     any milestone, so that the grid split of the construction is exercised as well.
     """
     paths = _ensemble(n=150, grid_hazard=0.3)
-    tree = build_tree(paths, _persistent(regime_fan=(1, 2, 1, 2, 1)))
+    tree = build_tree(paths, _persistent(regime_branches=9, regime_fan=(1, 2, 1, 2, 1)))
     assert tree.tree_mode == "persistent"
     arrived = set()
     for leaf in tree.leaves:
@@ -322,6 +322,28 @@ def test_the_tree_shapes_are_refused_when_they_do_not_fit() -> None:
                   dict(tree_mode="persistent", root_period="nobody")):
         with pytest.raises(ValueError):
             ModelConfig(**wrong).validate()
+
+
+def test_the_default_tree_branches_within_every_regime() -> None:
+    """Three regimes, and every node from year 5 on splits in two within its regime.
+
+    The formulation clusters a regime's own outcomes at each stage and nests them as a fan,
+    so that climate and the year-to-year variability branch freely within the regime. The
+    default of session 4 bis, nine regimes and one child a milestone, built no fan at all.
+    """
+    cfg = ModelConfig(n_rep_days=2)
+    assert (cfg.tree_mode, cfg.regime_branches, cfg.fan()) == ("persistent", 3,
+                                                               (1, 1, 2, 2, 2))
+    tree = build_tree(_ensemble(n=400, seed=3), cfg)
+    assert len(tree.nodes) == 49 and len(tree.leaves) == 24
+    assert len(tree.children[0]) == 3
+    for node in tree.nodes:
+        year = cfg.stage_years[tree.stage[node]]
+        if tree.children[node] and year >= 5:
+            assert len(tree.children[node]) >= 2, f"node {node} at year {year} does not branch"
+    assert tree.distortion["persistence_violations"] == 0
+    # On a calendar of two milestones the default is one child at each, as it always was.
+    assert ModelConfig(stage_years=(0, 5), branching=(1, 2)).fan() == (1, 1)
 
 
 @pytest.mark.parametrize("branches, fan, nodes", [

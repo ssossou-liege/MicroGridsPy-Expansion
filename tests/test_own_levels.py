@@ -160,6 +160,8 @@ def test_the_parts_add_up_to_the_billed_load() -> None:
 
 
 def test_the_classes_drawn_apart_add_up_to_the_load_drawn_before() -> None:
+    """Where no unit passes its class's ceiling, as on these thirty days, the parts are the
+    single sum the generator drew before them, to the last bit."""
     from microgrid_expansion.demand import productive
 
     calibration = productive.ProductiveCalibration.load()
@@ -228,12 +230,36 @@ def test_the_shipped_levels_are_the_users_the_record_holds(name) -> None:
             assert sum(u.present(age) for u in observed.household_users
                        if u.kind == kind) == n
     assert observed.community_users, f"{name}'s places of worship are on its record"
-    for user in (*users, *observed.household_users, *observed.community_users):
-        assert user.kwh_per_day is not None, "every customer of the record has a reading"
-        if user.monthly:
+    table = conn.load_levels(name).set_index("customer_code")
+    from microgrid_expansion.demand.build_own_levels import MIN_LEVEL_DAYS
+    from microgrid_expansion.demand.growth import seasonal_index
+
+    season = seasonal_index().to_numpy()
+    for code, row in table.iterrows():
+        if row.level_source == "laws":
+            # Too few days for a level of its own: drawn from the laws, never one that left.
+            assert row.kwh_per_day == "" and float(row.days_read) < MIN_LEVEL_DAYS
+            assert row.departure_month == ""
+        else:
+            assert row.level_source == "own" and row.kwh_per_day != ""
+            assert row.departure_month != "" or float(row.days_read) >= MIN_LEVEL_DAYS
+    drawn = sum(u.kwh_per_day is None for u in (*users, *observed.household_users,
+                                                *observed.community_users))
+    assert drawn == int((table.level_source == "laws").sum()), \
+        "the customers without a level are those drawn from the laws"
+    days = [calendar.monthrange(2025, m)[1] for m in range(1, 13)]
+    for code, row in table.iterrows():
+        factors = np.array([float(row[f"f{m:02d}"]) for m in range(1, 13)]) \
+            if row.factor_source else None
+        if row.factor_source == "own":
             # The level is the year's mean: the factors average to one over its days.
-            days = [calendar.monthrange(2025, m)[1] for m in range(1, 13)]
-            assert np.average(user.monthly, weights=days) == pytest.approx(1.0, abs=1e-5)
+            assert np.average(factors, weights=days) == pytest.approx(1.0, abs=1e-5)
+        elif row.factor_source == "season":
+            # A household without a year follows the households' index, rescaled.
+            assert row.customer_type in ("HH1", "HH2", "HH3")
+            np.testing.assert_allclose(factors / season, factors[0] / season[0], rtol=1e-5)
+        else:
+            assert row.customer_type in ("PUE", "CHU") or row.level_source != "own"
 
 
 def test_each_reading_counts_over_its_own_period() -> None:

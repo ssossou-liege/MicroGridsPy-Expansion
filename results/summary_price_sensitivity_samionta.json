@@ -1,6 +1,6 @@
 {
   "site": "Samionta",
-  "commit": "c710e03",
+  "commit": "7afbffd",
   "config": {
     "seed": 0,
     "noise_seeds": [
@@ -57,132 +57,132 @@
     "central": {
       "architecture": "mixed",
       "programme": {
-        "expected_usd": 61871.00747851189,
-        "bound_usd": 61865.558405984244,
+        "expected_usd": 62260.54387787236,
+        "bound_usd": 62255.42027881707,
         "root": {
-          "pv_kw": 29.0,
-          "pv_ac_kw": 21.0,
-          "battery_kwh": 115.0,
-          "inverter_kw": 22.5,
+          "pv_kw": 26.0,
+          "pv_ac_kw": 20.0,
+          "battery_kwh": 110.0,
+          "inverter_kw": 20.0,
           "generator_kw": 8.0
         },
-        "seconds": 311.4
+        "seconds": 246.5
       },
       "automaton": {
-        "expected_usd": 66491.95844162068,
+        "expected_usd": 64322.959549446336,
         "root": {
-          "pv_kw": 29.0,
-          "pv_ac_kw": 21.0,
-          "battery_kwh": 125.0,
-          "inverter_kw": 22.5,
+          "pv_kw": 26.0,
+          "pv_ac_kw": 20.0,
+          "battery_kwh": 115.0,
+          "inverter_kw": 20.0,
           "generator_kw": 12.0
         },
-        "evaluations": 10757,
-        "seconds": 74.4
+        "evaluations": 9217,
+        "seconds": 64.0
       },
-      "seconds_total": 1004.2
+      "seconds_total": 1039.6
     },
     "low": {
       "architecture": "mixed",
       "programme": {
-        "expected_usd": 57609.294007043536,
-        "bound_usd": 57603.74726658662,
+        "expected_usd": 58139.61525171388,
+        "bound_usd": 58137.941066904816,
         "root": {
-          "pv_kw": 32.5,
-          "pv_ac_kw": 18.5,
-          "battery_kwh": 120.0,
-          "inverter_kw": 25.0,
+          "pv_kw": 26.0,
+          "pv_ac_kw": 20.0,
+          "battery_kwh": 115.0,
+          "inverter_kw": 20.0,
           "generator_kw": 8.0
         },
-        "seconds": 230.7
+        "seconds": 189.0
       },
       "automaton": {
-        "expected_usd": 61827.66092484199,
+        "expected_usd": 59958.68090115337,
         "root": {
-          "pv_kw": 32.5,
-          "pv_ac_kw": 18.5,
-          "battery_kwh": 125.0,
-          "inverter_kw": 25.0,
+          "pv_kw": 26.0,
+          "pv_ac_kw": 20.0,
+          "battery_kwh": 115.0,
+          "inverter_kw": 20.0,
           "generator_kw": 12.0
         },
-        "evaluations": 14097,
-        "seconds": 95.1
+        "evaluations": 15671,
+        "seconds": 103.7
       },
-      "seconds_total": 889.8
+      "seconds_total": 1022.5
     },
     "high": {
       "architecture": "mixed",
       "programme": {
-        "expected_usd": 111426.81475838705,
-        "bound_usd": 111417.14096919511,
-        "root": {
-          "pv_kw": 19.5,
-          "pv_ac_kw": 15.0,
-          "battery_kwh": 75.0,
-          "inverter_kw": 15.0,
-          "generator_kw": 8.0
-        },
-        "seconds": 279.2
-      },
-      "automaton": {
-        "expected_usd": 120997.66887668375,
+        "expected_usd": 112725.72482133075,
+        "bound_usd": 112715.7987351249,
         "root": {
           "pv_kw": 22.5,
-          "pv_ac_kw": 17.5,
+          "pv_ac_kw": 15.0,
           "battery_kwh": 85.0,
           "inverter_kw": 17.5,
           "generator_kw": 8.0
         },
-        "evaluations": 14839,
-        "seconds": 93.3
+        "seconds": 335.3
       },
-      "seconds_total": 944.1
+      "automaton": {
+        "expected_usd": 117035.80420587686,
+        "root": {
+          "pv_kw": 22.5,
+          "pv_ac_kw": 16.5,
+          "battery_kwh": 90.0,
+          "inverter_kw": 17.5,
+          "generator_kw": 8.0
+        },
+        "evaluations": 16134,
+        "seconds": 110.6
+      },
+      "seconds_total": 1175.6
     },
     "byd": {
       "architecture": "mixed",
       "programme": {
-        "expected_usd": 84529.54695959302,
-        "bound_usd": 84521.62584644677,
+        "expected_usd": 85637.84122076434,
+        "bound_usd": 85632.18634964201,
         "root": {
           "pv_kw": 26.0,
           "pv_ac_kw": 16.5,
-          "battery_kwh": 80.0,
+          "battery_kwh": 90.0,
           "inverter_kw": 20.0,
           "generator_kw": 8.0
         },
-        "seconds": 740.8
+        "seconds": 264.5
       },
       "automaton": {
-        "expected_usd": 90642.31073260782,
+        "expected_usd": 88222.32051018163,
         "root": {
           "pv_kw": 26.0,
           "pv_ac_kw": 16.0,
-          "battery_kwh": 80.0,
+          "battery_kwh": 90.0,
           "inverter_kw": 20.0,
           "generator_kw": 12.0
         },
-        "evaluations": 15582,
-        "seconds": 106.8
+        "evaluations": 9217,
+        "seconds": 67.0
       },
-      "seconds_total": 1390.0
+      "seconds_total": 1052.7
     }
   },
   "noise": {
     "programme": {
       "expected_usd": {
-        "least": 59313.096485927264,
-        "most": 61871.00747851189,
-        "span": 2557.910992584628,
-        "span_pct": 4.312556828307763
+        "least": 54590.733600046624,
+        "most": 62260.54387787236,
+        "span": 7669.810277825738,
+        "span_pct": 14.049655998429719
       },
       "field_kw": {
         "least": 46.0,
-        "most": 51.5,
-        "span": 5.5
+        "most": 49.5,
+        "span": 3.5
       },
       "storage_kwh": {
-        "least": 105.0,
-        "most": 115.0,
+        "least": 110.0,
+        "most": 120.0,
         "span": 10.0
       },
       "conversion_kw": {
@@ -198,20 +198,20 @@
     },
     "automaton": {
       "expected_usd": {
-        "least": 63027.72824058839,
-        "most": 66497.64815288315,
-        "span": 3469.919912294761,
-        "span_pct": 5.505386294504287
+        "least": 53937.47103038035,
+        "most": 64322.959549446336,
+        "span": 10385.488519065984,
+        "span_pct": 19.254681987622934
       },
       "field_kw": {
-        "least": 46.0,
-        "most": 51.5,
-        "span": 5.5
+        "least": 45.0,
+        "most": 49.0,
+        "span": 4.0
       },
       "storage_kwh": {
         "least": 115.0,
-        "most": 125.0,
-        "span": 10.0
+        "most": 130.0,
+        "span": 15.0
       },
       "conversion_kw": {
         "least": 20.0,
@@ -229,45 +229,45 @@
     "0": {
       "programme": {
         "root": {
-          "pv_kw": 29.0,
-          "pv_ac_kw": 21.0,
-          "battery_kwh": 115.0,
-          "inverter_kw": 22.5,
+          "pv_kw": 26.0,
+          "pv_ac_kw": 20.0,
+          "battery_kwh": 110.0,
+          "inverter_kw": 20.0,
           "generator_kw": 8.0
         },
-        "expected_usd": 61871.00747851189
+        "expected_usd": 62260.54387787236
       },
       "automaton": {
         "root": {
-          "pv_kw": 29.0,
-          "pv_ac_kw": 21.0,
-          "battery_kwh": 125.0,
-          "inverter_kw": 22.5,
+          "pv_kw": 26.0,
+          "pv_ac_kw": 20.0,
+          "battery_kwh": 115.0,
+          "inverter_kw": 20.0,
           "generator_kw": 12.0
         },
-        "expected_usd": 66491.95844162068
+        "expected_usd": 64322.959549446336
       }
     },
     "1": {
       "programme": {
         "root": {
           "pv_kw": 29.0,
-          "pv_ac_kw": 22.5,
-          "battery_kwh": 115.0,
+          "pv_ac_kw": 20.5,
+          "battery_kwh": 120.0,
           "inverter_kw": 22.5,
           "generator_kw": 8.0
         },
-        "expected_usd": 59313.096485927264
+        "expected_usd": 57336.72520788111
       },
       "automaton": {
         "root": {
           "pv_kw": 29.0,
-          "pv_ac_kw": 22.5,
-          "battery_kwh": 125.0,
+          "pv_ac_kw": 20.0,
+          "battery_kwh": 130.0,
           "inverter_kw": 22.5,
           "generator_kw": 8.0
         },
-        "expected_usd": 63027.72824058839
+        "expected_usd": 57509.48929816465
       }
     },
     "2": {
@@ -275,21 +275,21 @@
         "root": {
           "pv_kw": 26.0,
           "pv_ac_kw": 20.0,
-          "battery_kwh": 105.0,
+          "battery_kwh": 110.0,
           "inverter_kw": 20.0,
           "generator_kw": 8.0
         },
-        "expected_usd": 61465.75278652501
+        "expected_usd": 54590.733600046624
       },
       "automaton": {
         "root": {
           "pv_kw": 26.0,
-          "pv_ac_kw": 20.0,
+          "pv_ac_kw": 19.0,
           "battery_kwh": 115.0,
           "inverter_kw": 20.0,
-          "generator_kw": 12.0
+          "generator_kw": 8.0
         },
-        "expected_usd": 66497.64815288315
+        "expected_usd": 53937.47103038035
       }
     }
   },
@@ -297,19 +297,19 @@
     "programme": {
       "noise": {
         "expected_usd": {
-          "least": 59313.096485927264,
-          "most": 61871.00747851189,
-          "span": 2557.910992584628,
-          "span_pct": 4.312556828307763
+          "least": 54590.733600046624,
+          "most": 62260.54387787236,
+          "span": 7669.810277825738,
+          "span_pct": 14.049655998429719
         },
         "field_kw": {
           "least": 46.0,
-          "most": 51.5,
-          "span": 5.5
+          "most": 49.5,
+          "span": 3.5
         },
         "storage_kwh": {
-          "least": 105.0,
-          "most": 115.0,
+          "least": 110.0,
+          "most": 120.0,
           "span": 10.0
         },
         "conversion_kw": {
@@ -325,22 +325,22 @@
       },
       "sets": {
         "central": {
-          "expected_usd": 61871.00747851189,
+          "expected_usd": 62260.54387787236,
           "parts": {
             "field_kw": {
-              "value": 50.0,
+              "value": 46.0,
               "shift_from_reference": 0.0,
-              "noise_span": 5.5,
+              "noise_span": 3.5,
               "beyond_the_noise": false
             },
             "storage_kwh": {
-              "value": 115.0,
+              "value": 110.0,
               "shift_from_reference": 0.0,
               "noise_span": 10.0,
               "beyond_the_noise": false
             },
             "conversion_kw": {
-              "value": 22.5,
+              "value": 20.0,
               "shift_from_reference": 0.0,
               "noise_span": 2.5,
               "beyond_the_noise": false
@@ -355,23 +355,23 @@
           "any_part_beyond_the_noise": false
         },
         "low": {
-          "expected_usd": 57609.294007043536,
+          "expected_usd": 58139.61525171388,
           "parts": {
             "field_kw": {
-              "value": 51.0,
-              "shift_from_reference": 1.0,
-              "noise_span": 5.5,
+              "value": 46.0,
+              "shift_from_reference": 0.0,
+              "noise_span": 3.5,
               "beyond_the_noise": false
             },
             "storage_kwh": {
-              "value": 120.0,
+              "value": 115.0,
               "shift_from_reference": 5.0,
               "noise_span": 10.0,
               "beyond_the_noise": false
             },
             "conversion_kw": {
-              "value": 25.0,
-              "shift_from_reference": 2.5,
+              "value": 20.0,
+              "shift_from_reference": 0.0,
               "noise_span": 2.5,
               "beyond_the_noise": false
             },
@@ -385,25 +385,25 @@
           "any_part_beyond_the_noise": false
         },
         "high": {
-          "expected_usd": 111426.81475838705,
+          "expected_usd": 112725.72482133075,
           "parts": {
             "field_kw": {
-              "value": 34.5,
-              "shift_from_reference": 15.5,
-              "noise_span": 5.5,
+              "value": 37.5,
+              "shift_from_reference": 8.5,
+              "noise_span": 3.5,
               "beyond_the_noise": true
             },
             "storage_kwh": {
-              "value": 75.0,
-              "shift_from_reference": 40.0,
+              "value": 85.0,
+              "shift_from_reference": 25.0,
               "noise_span": 10.0,
               "beyond_the_noise": true
             },
             "conversion_kw": {
-              "value": 15.0,
-              "shift_from_reference": 7.5,
+              "value": 17.5,
+              "shift_from_reference": 2.5,
               "noise_span": 2.5,
-              "beyond_the_noise": true
+              "beyond_the_noise": false
             },
             "generator_kw": {
               "value": 8.0,
@@ -415,23 +415,23 @@
           "any_part_beyond_the_noise": true
         },
         "byd": {
-          "expected_usd": 84529.54695959302,
+          "expected_usd": 85637.84122076434,
           "parts": {
             "field_kw": {
               "value": 42.5,
-              "shift_from_reference": 7.5,
-              "noise_span": 5.5,
-              "beyond_the_noise": true
+              "shift_from_reference": 3.5,
+              "noise_span": 3.5,
+              "beyond_the_noise": false
             },
             "storage_kwh": {
-              "value": 80.0,
-              "shift_from_reference": 35.0,
+              "value": 90.0,
+              "shift_from_reference": 20.0,
               "noise_span": 10.0,
               "beyond_the_noise": true
             },
             "conversion_kw": {
               "value": 20.0,
-              "shift_from_reference": 2.5,
+              "shift_from_reference": 0.0,
               "noise_span": 2.5,
               "beyond_the_noise": false
             },
@@ -449,20 +449,20 @@
     "automaton": {
       "noise": {
         "expected_usd": {
-          "least": 63027.72824058839,
-          "most": 66497.64815288315,
-          "span": 3469.919912294761,
-          "span_pct": 5.505386294504287
+          "least": 53937.47103038035,
+          "most": 64322.959549446336,
+          "span": 10385.488519065984,
+          "span_pct": 19.254681987622934
         },
         "field_kw": {
-          "least": 46.0,
-          "most": 51.5,
-          "span": 5.5
+          "least": 45.0,
+          "most": 49.0,
+          "span": 4.0
         },
         "storage_kwh": {
           "least": 115.0,
-          "most": 125.0,
-          "span": 10.0
+          "most": 130.0,
+          "span": 15.0
         },
         "conversion_kw": {
           "least": 20.0,
@@ -477,22 +477,22 @@
       },
       "sets": {
         "central": {
-          "expected_usd": 66491.95844162068,
+          "expected_usd": 64322.959549446336,
           "parts": {
             "field_kw": {
-              "value": 50.0,
+              "value": 46.0,
               "shift_from_reference": 0.0,
-              "noise_span": 5.5,
+              "noise_span": 4.0,
               "beyond_the_noise": false
             },
             "storage_kwh": {
-              "value": 125.0,
+              "value": 115.0,
               "shift_from_reference": 0.0,
-              "noise_span": 10.0,
+              "noise_span": 15.0,
               "beyond_the_noise": false
             },
             "conversion_kw": {
-              "value": 22.5,
+              "value": 20.0,
               "shift_from_reference": 0.0,
               "noise_span": 2.5,
               "beyond_the_noise": false
@@ -507,23 +507,23 @@
           "any_part_beyond_the_noise": false
         },
         "low": {
-          "expected_usd": 61827.66092484199,
+          "expected_usd": 59958.68090115337,
           "parts": {
             "field_kw": {
-              "value": 51.0,
-              "shift_from_reference": 1.0,
-              "noise_span": 5.5,
+              "value": 46.0,
+              "shift_from_reference": 0.0,
+              "noise_span": 4.0,
               "beyond_the_noise": false
             },
             "storage_kwh": {
-              "value": 125.0,
+              "value": 115.0,
               "shift_from_reference": 0.0,
-              "noise_span": 10.0,
+              "noise_span": 15.0,
               "beyond_the_noise": false
             },
             "conversion_kw": {
-              "value": 25.0,
-              "shift_from_reference": 2.5,
+              "value": 20.0,
+              "shift_from_reference": 0.0,
               "noise_span": 2.5,
               "beyond_the_noise": false
             },
@@ -537,25 +537,25 @@
           "any_part_beyond_the_noise": false
         },
         "high": {
-          "expected_usd": 120997.66887668375,
+          "expected_usd": 117035.80420587686,
           "parts": {
             "field_kw": {
-              "value": 40.0,
-              "shift_from_reference": 10.0,
-              "noise_span": 5.5,
+              "value": 39.0,
+              "shift_from_reference": 7.0,
+              "noise_span": 4.0,
               "beyond_the_noise": true
             },
             "storage_kwh": {
-              "value": 85.0,
-              "shift_from_reference": 40.0,
-              "noise_span": 10.0,
+              "value": 90.0,
+              "shift_from_reference": 25.0,
+              "noise_span": 15.0,
               "beyond_the_noise": true
             },
             "conversion_kw": {
               "value": 17.5,
-              "shift_from_reference": 5.0,
+              "shift_from_reference": 2.5,
               "noise_span": 2.5,
-              "beyond_the_noise": true
+              "beyond_the_noise": false
             },
             "generator_kw": {
               "value": 8.0,
@@ -567,23 +567,23 @@
           "any_part_beyond_the_noise": true
         },
         "byd": {
-          "expected_usd": 90642.31073260782,
+          "expected_usd": 88222.32051018163,
           "parts": {
             "field_kw": {
               "value": 42.0,
-              "shift_from_reference": 8.0,
-              "noise_span": 5.5,
-              "beyond_the_noise": true
+              "shift_from_reference": 4.0,
+              "noise_span": 4.0,
+              "beyond_the_noise": false
             },
             "storage_kwh": {
-              "value": 80.0,
-              "shift_from_reference": 45.0,
-              "noise_span": 10.0,
+              "value": 90.0,
+              "shift_from_reference": 25.0,
+              "noise_span": 15.0,
               "beyond_the_noise": true
             },
             "conversion_kw": {
               "value": 20.0,
-              "shift_from_reference": 2.5,
+              "shift_from_reference": 0.0,
               "noise_span": 2.5,
               "beyond_the_noise": false
             },
@@ -599,5 +599,5 @@
       }
     }
   },
-  "seconds_total": 6251.6
+  "seconds_total": 6552.6
 }

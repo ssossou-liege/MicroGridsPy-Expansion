@@ -128,3 +128,10 @@ file: its current counterpart is the pair of certificates and the pair of trees 
 village, greenfield and brownfield. Its own premise no longer holds either, since a
 village with its record now starts from that record and a new site from the curve, so the
 two halves of a pair no longer share a demand.
+
+## The records of 2026-11-11, set aside before the fan and the anchored demand
+
+`2026-11-11_before_fan_and_anchored_demand/` holds every result `results/` carried after
+session 4 bis, the sensitivities under its own `sensitivities/`. Its README says why they are
+superseded: the tree of those defaults built no fan within a regime, and the demand changed in
+sessions 4 ter, 4 quinquies and 4 quater, greenfield and brownfield alike.

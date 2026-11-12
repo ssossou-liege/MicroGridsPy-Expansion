@@ -1,6 +1,6 @@
 {
   "site": "Samionta",
-  "commit": "c710e03",
+  "commit": "7afbffd",
   "architecture": "mixed",
   "config": {
     "seed": 0,
@@ -32,319 +32,322 @@
   "flexible": {
     "architecture": "mixed",
     "programme": {
-      "expected_usd": 61871.00747851189,
-      "bound_usd": 61865.558405984244,
+      "expected_usd": 62260.54387787236,
+      "bound_usd": 62255.42027881707,
       "root": {
-        "pv_kw": 29.0,
-        "pv_ac_kw": 21.0,
-        "battery_kwh": 115.0,
-        "inverter_kw": 22.5,
+        "pv_kw": 26.0,
+        "pv_ac_kw": 20.0,
+        "battery_kwh": 110.0,
+        "inverter_kw": 20.0,
         "generator_kw": 8.0
       },
       "extensions": {
-        "nodes_after_the_root": 45,
-        "nodes_that_extend": 10,
-        "n": 1.036,
-        "n_discounted": 0.5189,
+        "nodes_after_the_root": 48,
+        "nodes_that_extend": 12,
+        "n": 1.1932,
+        "n_discounted": 0.5132,
         "equipment_usd": {
-          "least": 136.0,
-          "median": 960.5,
-          "most": 18456.7,
-          "total_if_every_node_were_visited": 38287.3
+          "least": 83.7,
+          "median": 380.5,
+          "most": 11745.4,
+          "total_if_every_node_were_visited": 17947.9
         },
         "root": 0,
         "where": [
           {
-            "node": 11,
+            "node": 5,
             "stage": 1,
-            "probability": 0.135,
+            "probability": 0.3390000000000001,
             "discount": 0.6805831970337529,
             "added": {
-              "pv_kw": 3.5,
-              "pv_ac_kw": 4.0,
-              "battery_kwh": 40.0,
-              "inverter_kw": 2.5
+              "pv_kw": 13.0,
+              "pv_ac_kw": 10.0,
+              "battery_kwh": 70.0,
+              "inverter_kw": 10.0
             },
-            "equipment_usd": 5805.9
+            "equipment_usd": 11745.4
           },
           {
-            "node": 14,
-            "stage": 1,
-            "probability": 0.158,
-            "discount": 0.6805831970337529,
+            "node": 9,
+            "stage": 2,
+            "probability": 0.2619545454545455,
+            "discount": 0.4631934880846842,
             "added": {
-              "pv_kw": 10.0,
-              "pv_ac_kw": 9.0,
-              "battery_kwh": 60.0,
-              "inverter_kw": 7.5
+              "pv_kw": 6.5,
+              "inverter_kw": 5.0
             },
-            "equipment_usd": 9893.6
+            "equipment_usd": 1201.5
           },
           {
-            "node": 15,
-            "stage": 1,
-            "probability": 0.07400000000000001,
-            "discount": 0.6805831970337529,
+            "node": 17,
+            "stage": 3,
+            "probability": 0.17860537190082645,
+            "discount": 0.3152417049658899,
             "added": {
-              "pv_kw": 23.0,
-              "pv_ac_kw": 14.0,
-              "battery_kwh": 125.0,
-              "inverter_kw": 17.5
+              "pv_ac_kw": 0.5
             },
-            "equipment_usd": 18456.7
+            "equipment_usd": 83.7
+          },
+          {
+            "node": 18,
+            "stage": 3,
+            "probability": 0.08334917355371901,
+            "discount": 0.3152417049658899,
+            "added": {
+              "pv_ac_kw": 2.0
+            },
+            "equipment_usd": 334.7
           },
           {
             "node": 19,
-            "stage": 2,
-            "probability": 0.077,
-            "discount": 0.4631934880846842,
+            "stage": 3,
+            "probability": 0.05253099173553719,
+            "discount": 0.3152417049658899,
             "added": {
-              "pv_ac_kw": 1.5
+              "pv_kw": 6.5,
+              "pv_ac_kw": 0.5,
+              "inverter_kw": 5.0
             },
-            "equipment_usd": 226.8
+            "equipment_usd": 1209.1
           },
           {
             "node": 20,
-            "stage": 2,
-            "probability": 0.135,
-            "discount": 0.4631934880846842,
-            "added": {
-              "pv_kw": 3.0,
-              "pv_ac_kw": 1.5,
-              "inverter_kw": 2.5
-            },
-            "equipment_usd": 960.5
-          },
-          {
-            "node": 23,
-            "stage": 2,
-            "probability": 0.158,
-            "discount": 0.4631934880846842,
-            "added": {
-              "pv_kw": 3.0,
-              "pv_ac_kw": 1.0,
-              "battery_kwh": 5.0,
-              "inverter_kw": 2.5
-            },
-            "equipment_usd": 1194.2
-          },
-          {
-            "node": 24,
-            "stage": 2,
-            "probability": 0.07400000000000001,
-            "discount": 0.4631934880846842,
-            "added": {
-              "pv_ac_kw": 3.0
-            },
-            "equipment_usd": 453.7
-          },
-          {
-            "node": 28,
             "stage": 3,
-            "probability": 0.077,
+            "probability": 0.02451446280991736,
             "discount": 0.3152417049658899,
             "added": {
-              "battery_kwh": 5.0
+              "pv_kw": 6.5,
+              "pv_ac_kw": 2.0,
+              "inverter_kw": 5.0
             },
-            "equipment_usd": 335.6
+            "equipment_usd": 1460.1
           },
           {
             "node": 33,
-            "stage": 3,
-            "probability": 0.07400000000000001,
-            "discount": 0.3152417049658899,
+            "stage": 4,
+            "probability": 0.14207245492111195,
+            "discount": 0.21454820740405647,
             "added": {
               "pv_ac_kw": 1.0
             },
-            "equipment_usd": 136.0
+            "equipment_usd": 156.7
           },
           {
-            "node": 42,
+            "node": 34,
             "stage": 4,
-            "probability": 0.07400000000000001,
+            "probability": 0.0365329169797145,
             "discount": 0.21454820740405647,
             "added": {
-              "pv_kw": 3.0,
-              "pv_ac_kw": 3.5,
-              "inverter_kw": 2.5
-            },
-            "equipment_usd": 824.4
-          }
-        ]
-      },
-      "seconds": 310.8
-    },
-    "automaton": {
-      "expected_usd": 66491.95844162068,
-      "root": {
-        "pv_kw": 29.0,
-        "pv_ac_kw": 21.0,
-        "battery_kwh": 125.0,
-        "inverter_kw": 22.5,
-        "generator_kw": 12.0
-      },
-      "extensions": {
-        "nodes_after_the_root": 45,
-        "nodes_that_extend": 11,
-        "n": 1.275,
-        "n_discounted": 0.5592,
-        "equipment_usd": {
-          "least": 183.7,
-          "median": 572.9,
-          "most": 19019.7,
-          "total_if_every_node_were_visited": 39345.9
-        },
-        "root": 0,
-        "where": [
-          {
-            "node": 11,
-            "stage": 1,
-            "probability": 0.135,
-            "discount": 0.6805831970337529,
-            "added": {
-              "pv_kw": 3.5,
-              "pv_ac_kw": 4.0,
-              "battery_kwh": 35.0,
-              "inverter_kw": 2.5
-            },
-            "equipment_usd": 5285.4
-          },
-          {
-            "node": 14,
-            "stage": 1,
-            "probability": 0.158,
-            "discount": 0.6805831970337529,
-            "added": {
-              "pv_kw": 10.0,
-              "pv_ac_kw": 9.0,
-              "battery_kwh": 60.0,
-              "inverter_kw": 7.5
-            },
-            "equipment_usd": 9893.6
-          },
-          {
-            "node": 15,
-            "stage": 1,
-            "probability": 0.07400000000000001,
-            "discount": 0.6805831970337529,
-            "added": {
-              "pv_kw": 23.0,
-              "pv_ac_kw": 17.0,
-              "battery_kwh": 125.0,
-              "inverter_kw": 17.5
-            },
-            "equipment_usd": 19019.7
-          },
-          {
-            "node": 20,
-            "stage": 2,
-            "probability": 0.135,
-            "discount": 0.4631934880846842,
-            "added": {
-              "pv_kw": 3.0,
-              "pv_ac_kw": 2.5,
-              "battery_kwh": 5.0,
-              "inverter_kw": 2.5
-            },
-            "equipment_usd": 1649.9
-          },
-          {
-            "node": 23,
-            "stage": 2,
-            "probability": 0.158,
-            "discount": 0.4631934880846842,
-            "added": {
-              "pv_kw": 3.0,
-              "inverter_kw": 2.5
-            },
-            "equipment_usd": 572.9
-          },
-          {
-            "node": 24,
-            "stage": 2,
-            "probability": 0.07400000000000001,
-            "discount": 0.4631934880846842,
-            "added": {
-              "pv_ac_kw": 1.0,
               "battery_kwh": 5.0
             },
-            "equipment_usd": 522.5
+            "equipment_usd": 380.5
           },
           {
-            "node": 32,
-            "stage": 3,
-            "probability": 0.158,
-            "discount": 0.3152417049658899,
+            "node": 36,
+            "stage": 4,
+            "probability": 0.017048694590533434,
+            "discount": 0.21454820740405647,
             "added": {
-              "pv_ac_kw": 0.5,
               "battery_kwh": 5.0
             },
-            "equipment_usd": 494.0
-          },
-          {
-            "node": 33,
-            "stage": 3,
-            "probability": 0.07400000000000001,
-            "discount": 0.3152417049658899,
-            "added": {
-              "pv_kw": 3.0,
-              "inverter_kw": 2.5
-            },
-            "equipment_usd": 438.8
+            "equipment_usd": 380.5
           },
           {
             "node": 37,
             "stage": 4,
-            "probability": 0.077,
+            "probability": 0.04178601615326822,
             "discount": 0.21454820740405647,
             "added": {
               "pv_ac_kw": 1.5
             },
-            "equipment_usd": 183.7
+            "equipment_usd": 235.0
           },
           {
-            "node": 41,
+            "node": 38,
             "stage": 4,
-            "probability": 0.158,
+            "probability": 0.010744975582268971,
             "discount": 0.21454820740405647,
             "added": {
-              "pv_kw": 3.5,
-              "inverter_kw": 2.5
+              "battery_kwh": 5.0
             },
-            "equipment_usd": 551.1
+            "equipment_usd": 380.5
           },
           {
-            "node": 42,
+            "node": 40,
             "stage": 4,
-            "probability": 0.07400000000000001,
+            "probability": 0.005014321938392187,
             "discount": 0.21454820740405647,
             "added": {
-              "pv_kw": 3.5,
-              "battery_kwh": 5.0,
-              "inverter_kw": 2.5
+              "battery_kwh": 5.0
             },
-            "equipment_usd": 734.3
+            "equipment_usd": 380.5
           }
         ]
       },
-      "evaluations": 10757,
-      "seconds": 72.7
+      "seconds": 199.5
+    },
+    "automaton": {
+      "expected_usd": 64322.959549446336,
+      "root": {
+        "pv_kw": 26.0,
+        "pv_ac_kw": 20.0,
+        "battery_kwh": 115.0,
+        "inverter_kw": 20.0,
+        "generator_kw": 12.0
+      },
+      "extensions": {
+        "nodes_after_the_root": 48,
+        "nodes_that_extend": 11,
+        "n": 1.0863,
+        "n_discounted": 0.5095,
+        "equipment_usd": {
+          "least": 83.7,
+          "median": 458.8,
+          "most": 11834.1,
+          "total_if_every_node_were_visited": 17897.4
+        },
+        "root": 0,
+        "where": [
+          {
+            "node": 5,
+            "stage": 1,
+            "probability": 0.3390000000000001,
+            "discount": 0.6805831970337529,
+            "added": {
+              "pv_kw": 13.0,
+              "pv_ac_kw": 8.0,
+              "battery_kwh": 75.0,
+              "inverter_kw": 10.0
+            },
+            "equipment_usd": 11834.1
+          },
+          {
+            "node": 9,
+            "stage": 2,
+            "probability": 0.2619545454545455,
+            "discount": 0.4631934880846842,
+            "added": {
+              "pv_kw": 6.5,
+              "inverter_kw": 5.0
+            },
+            "equipment_usd": 1201.5
+          },
+          {
+            "node": 10,
+            "stage": 2,
+            "probability": 0.07704545454545456,
+            "discount": 0.4631934880846842,
+            "added": {
+              "pv_ac_kw": 2.0
+            },
+            "equipment_usd": 357.5
+          },
+          {
+            "node": 17,
+            "stage": 3,
+            "probability": 0.17860537190082645,
+            "discount": 0.3152417049658899,
+            "added": {
+              "pv_ac_kw": 0.5
+            },
+            "equipment_usd": 83.7
+          },
+          {
+            "node": 18,
+            "stage": 3,
+            "probability": 0.08334917355371901,
+            "discount": 0.3152417049658899,
+            "added": {
+              "pv_ac_kw": 2.0
+            },
+            "equipment_usd": 334.7
+          },
+          {
+            "node": 19,
+            "stage": 3,
+            "probability": 0.05253099173553719,
+            "discount": 0.3152417049658899,
+            "added": {
+              "pv_kw": 6.5,
+              "inverter_kw": 5.0
+            },
+            "equipment_usd": 1125.4
+          },
+          {
+            "node": 20,
+            "stage": 3,
+            "probability": 0.02451446280991736,
+            "discount": 0.3152417049658899,
+            "added": {
+              "pv_kw": 6.5,
+              "inverter_kw": 5.0
+            },
+            "equipment_usd": 1125.4
+          },
+          {
+            "node": 34,
+            "stage": 4,
+            "probability": 0.0365329169797145,
+            "discount": 0.21454820740405647,
+            "added": {
+              "pv_ac_kw": 0.5,
+              "battery_kwh": 5.0
+            },
+            "equipment_usd": 458.8
+          },
+          {
+            "node": 36,
+            "stage": 4,
+            "probability": 0.017048694590533434,
+            "discount": 0.21454820740405647,
+            "added": {
+              "pv_ac_kw": 0.5,
+              "battery_kwh": 5.0
+            },
+            "equipment_usd": 458.8
+          },
+          {
+            "node": 38,
+            "stage": 4,
+            "probability": 0.010744975582268971,
+            "discount": 0.21454820740405647,
+            "added": {
+              "pv_ac_kw": 0.5,
+              "battery_kwh": 5.0
+            },
+            "equipment_usd": 458.8
+          },
+          {
+            "node": 40,
+            "stage": 4,
+            "probability": 0.005014321938392187,
+            "discount": 0.21454820740405647,
+            "added": {
+              "pv_ac_kw": 0.5,
+              "battery_kwh": 5.0
+            },
+            "equipment_usd": 458.8
+          }
+        ]
+      },
+      "evaluations": 9217,
+      "seconds": 63.2
     }
   },
   "built_once": {
     "architecture": "mixed",
     "programme": {
-      "expected_usd": 71511.70669601973,
-      "bound_usd": 71511.70669601206,
+      "expected_usd": 67944.82060671243,
+      "bound_usd": 67939.40758883437,
       "root": {
-        "pv_kw": 35.5,
-        "pv_ac_kw": 26.5,
+        "pv_kw": 32.5,
+        "pv_ac_kw": 25.0,
         "battery_kwh": 150.0,
-        "inverter_kw": 27.5,
+        "inverter_kw": 25.0,
         "generator_kw": 8.0
       },
       "extensions": {
-        "nodes_after_the_root": 45,
+        "nodes_after_the_root": 48,
         "nodes_that_extend": 0,
         "n": 0,
         "n_discounted": 0,
@@ -357,19 +360,19 @@
         "root": 0,
         "where": []
       },
-      "seconds": 134.3
+      "seconds": 343.5
     },
     "automaton": {
-      "expected_usd": 76440.79505676554,
+      "expected_usd": 70263.10586360205,
       "root": {
-        "pv_kw": 35.5,
-        "pv_ac_kw": 27.5,
+        "pv_kw": 32.5,
+        "pv_ac_kw": 25.0,
         "battery_kwh": 160.0,
-        "inverter_kw": 27.5,
-        "generator_kw": 12.0
+        "inverter_kw": 25.0,
+        "generator_kw": 8.0
       },
       "extensions": {
-        "nodes_after_the_root": 45,
+        "nodes_after_the_root": 48,
         "nodes_that_extend": 0,
         "n": 0,
         "n_discounted": 0,
@@ -382,91 +385,91 @@
         "root": 0,
         "where": []
       },
-      "evaluations": 74,
+      "evaluations": 52,
       "seconds": 12.1
     }
   },
   "derived": {
     "programme": {
-      "V_usd": 9640.7,
-      "V_pct_of_flexible": 15.582,
-      "n_discounted": 0.5189,
-      "F_star_usd": 18579.1,
+      "V_usd": 5684.3,
+      "V_pct_of_flexible": 9.13,
+      "n_discounted": 0.5132,
+      "F_star_usd": 11076.1,
       "table": [
         {
           "fixed_cost_usd": 0.0,
-          "flexible_charged_usd": 61871.0,
-          "built_once_usd": 71511.7,
+          "flexible_charged_usd": 62260.5,
+          "built_once_usd": 67944.8,
           "cheaper": "flexible"
         },
         {
           "fixed_cost_usd": 5000.0,
-          "flexible_charged_usd": 64465.5,
-          "built_once_usd": 71511.7,
+          "flexible_charged_usd": 64826.5,
+          "built_once_usd": 67944.8,
           "cheaper": "flexible"
         },
         {
           "fixed_cost_usd": 10000.0,
-          "flexible_charged_usd": 67060.0,
-          "built_once_usd": 71511.7,
+          "flexible_charged_usd": 67392.5,
+          "built_once_usd": 67944.8,
           "cheaper": "flexible"
         },
         {
           "fixed_cost_usd": 15000.0,
-          "flexible_charged_usd": 69654.5,
-          "built_once_usd": 71511.7,
-          "cheaper": "flexible"
+          "flexible_charged_usd": 69958.5,
+          "built_once_usd": 67944.8,
+          "cheaper": "built once"
         },
         {
           "fixed_cost_usd": 30000.0,
-          "flexible_charged_usd": 77438.0,
-          "built_once_usd": 71511.7,
+          "flexible_charged_usd": 77656.5,
+          "built_once_usd": 67944.8,
           "cheaper": "built once"
         }
       ],
-      "n": 1.036,
-      "nodes_that_extend": 10
+      "n": 1.1932,
+      "nodes_that_extend": 12
     },
     "automaton": {
-      "V_usd": 9948.8,
-      "V_pct_of_flexible": 14.962,
-      "n_discounted": 0.5592,
-      "F_star_usd": 17791.2,
+      "V_usd": 5940.1,
+      "V_pct_of_flexible": 9.235,
+      "n_discounted": 0.5095,
+      "F_star_usd": 11658.8,
       "table": [
         {
           "fixed_cost_usd": 0.0,
-          "flexible_charged_usd": 66492.0,
-          "built_once_usd": 76440.8,
+          "flexible_charged_usd": 64323.0,
+          "built_once_usd": 70263.1,
           "cheaper": "flexible"
         },
         {
           "fixed_cost_usd": 5000.0,
-          "flexible_charged_usd": 69288.0,
-          "built_once_usd": 76440.8,
+          "flexible_charged_usd": 66870.5,
+          "built_once_usd": 70263.1,
           "cheaper": "flexible"
         },
         {
           "fixed_cost_usd": 10000.0,
-          "flexible_charged_usd": 72084.0,
-          "built_once_usd": 76440.8,
+          "flexible_charged_usd": 69418.0,
+          "built_once_usd": 70263.1,
           "cheaper": "flexible"
         },
         {
           "fixed_cost_usd": 15000.0,
-          "flexible_charged_usd": 74880.0,
-          "built_once_usd": 76440.8,
-          "cheaper": "flexible"
+          "flexible_charged_usd": 71965.5,
+          "built_once_usd": 70263.1,
+          "cheaper": "built once"
         },
         {
           "fixed_cost_usd": 30000.0,
-          "flexible_charged_usd": 83268.0,
-          "built_once_usd": 76440.8,
+          "flexible_charged_usd": 79608.0,
+          "built_once_usd": 70263.1,
           "cheaper": "built once"
         }
       ],
-      "n": 1.275,
+      "n": 1.0863,
       "nodes_that_extend": 11
     }
   },
-  "seconds_total": 1273.4
+  "seconds_total": 1327.3
 }

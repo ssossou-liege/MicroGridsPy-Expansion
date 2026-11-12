@@ -176,7 +176,7 @@ function chartMonths(m) {
 }
 
 /* ------------------------------------------------------------------ the tree
-   A plan over a scenario tree is forty-six plants, and a table of forty-six rows is not a
+   A plan over a scenario tree is forty-nine plants, and a table of forty-nine rows is not a
    plan: what a developer needs to see is which branch leads where, and at which milestone
    the plant has to grow. So it is drawn. Stages run left to right at their milestone years,
    futures run top to bottom, every node carries the plant it holds, and a node that is

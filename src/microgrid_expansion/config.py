@@ -98,11 +98,14 @@ class ModelConfig:
     tree_mode: str = "persistent"
     # Regime branches below the root. When the ensemble holds more regimes, they are reduced
     # to this many medoid regimes, each carrying the mass of its cluster.
-    regime_branches: int = 9
-    # Children per stage within a regime, root first. ``None`` is one at every milestone of
-    # the calendar, whatever it holds: climate and the year-to-year variability then enter
-    # through each regime's medoid outcome, and on five milestones the programme keeps the
-    # forty-six nodes of the fan.
+    regime_branches: int = 3
+    # Children per stage within a regime, root first. ``None``, the default, is one child
+    # below the root's node of each regime and two below every node from the first milestone
+    # on, whatever the calendar holds: ``(1, 1, 2, 2, 2)`` on the five milestones, so that
+    # climate and the year-to-year variability branch within each regime as the formulation
+    # has them (its section on the tree), at 49 nodes and 24 futures, the size of the
+    # programme the fan had. A tuple of ones is the tree of session 4 bis, which built no fan
+    # within a regime.
     regime_fan: tuple[int, ...] | None = None
     # Who operates the root's span in a persistent tree. ``regimes``: one node per regime
     # branch, holding the root's plant and investing nothing, so the year-0 plant is
@@ -200,9 +203,13 @@ class ModelConfig:
                      for k, year in enumerate(years))
 
     def fan(self) -> tuple[int, ...]:
-        """Children per stage within a regime, one entry per milestone, root first."""
+        """Children per stage within a regime, one entry per milestone, root first.
+
+        Under ``regime_fan = None``: one at the root and at the first milestone, two at every
+        later one, ``(1, 1, 2, 2, 2)`` on the five milestones."""
         if self.regime_fan is None:
-            return (1,) * len(self.stage_years)
+            n = len(self.stage_years)
+            return (1,) * min(n, 2) + (2,) * max(n - 2, 0)
         return tuple(int(n) for n in self.regime_fan)
 
     def demand_year(self, stage: int) -> int:

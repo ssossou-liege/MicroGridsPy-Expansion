@@ -1,9 +1,15 @@
-# Sensitivities of session 4 bis
+# Sensitivities of sessions 4 bis and 4 quater
 
 Each directory holds the runs of one sensitivity of
 `docs/design/progressive_connection_and_persistence.md` (sections 12 and 14), computed under
-the shipped defaults with one reading changed. Nothing in `src/`, `data/` or `sites.py` was
-edited to produce them: the reading changed is given to the command, as an option or as a
+the shipped defaults with one reading changed. They were first computed in session 4 bis and
+computed again in session 4 quater, under the tree with a fan within each regime and the
+demand of sessions 4 ter to 4 quater; the runs of session 4 bis are in
+`results/superseded/2026-11-11_before_fan_and_anchored_demand/sensitivities/`. A
+certificate of a village with its plant is named after the village's own growth trajectory,
+which a brownfield run follows since session 4 quinquies: Gbowele's is
+`..._gbowele_fast_mixed_m67_..._brownfield.json`, where session 4 bis wrote `_central_`.
+Nothing in `src/`, `data/` or `sites.py` was edited to produce them: the reading changed is given to the command, as an option or as a
 project file, or, for the census of Gbowele, in memory by the short script below. The files
 keep the names the commands give them, so a sensitivity is told from the base case by its
 directory, and each certificate records the reading in its `connection` block

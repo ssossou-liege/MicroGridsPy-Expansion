@@ -243,3 +243,119 @@ def test_a_run_from_a_village_s_record_follows_its_own_growth() -> None:
     assert own_growth_space(space, "Gbowele", record).demand.trajectory_probabilities \
         == (0.0, 0.0, 1.0)
     assert own_growth_space(space, "Gbowele", bare) is space
+
+
+# ------------------------------------------------- session 4 quater: the author's rules
+def test_a_level_needs_four_weeks_of_readings_or_the_laws_draw_it(monkeypatch) -> None:
+    from microgrid_expansion.demand import build_own_levels as B
+    from microgrid_expansion.demand import readings
+
+    def meter(code, start, end, watts):
+        stamps = pd.date_range(start, end, freq="15min")
+        return pd.DataFrame({"timestamp": stamps, "customer_code": code, "power_W": watts})
+
+    archive = readings.with_periods(pd.concat([
+        meter("0001SAM", "2026-10-20 00:15", "2026-10-31 23:45", 500.0),   # twelve days
+        meter("0002SAM", "2026-09-01 00:15", "2026-10-31 23:45", 20.0),    # two months
+        meter("0003SAM", "2026-10-20 00:15", "2026-10-31 23:45", 90.0),    # twelve days
+        meter("0004SAM", "2026-09-10 00:15", "2026-09-14 23:45", 0.0),     # five, then gone
+    ]))
+    monkeypatch.setattr(readings, "timed_readings", lambda site: archive)
+    users = pd.DataFrame({"site_name": "Samionta",
+                          "customer_code": ["0001SAM", "0002SAM", "0003SAM", "0004SAM"],
+                          "customer_type": ["HH1", "HH1", "PUE", "HH1"],
+                          "connection_month": ["2026-10", "2026-09", "2026-10", "2026-09"],
+                          "departure_month": ["", "", "", "2026-10"],
+                          "record_end": "2026-10"})
+    season = pd.Series(np.linspace(1.3, 0.7, 12), index=range(1, 13))
+    table = B.own_levels(users, season=season).set_index("customer_code")
+    assert B.MIN_LEVEL_DAYS == 28
+    for code in ("0001SAM", "0003SAM"):
+        assert table.at[code, "level_source"] == "laws" and np.isnan(table.at[code,
+                                                                          "kwh_per_day"])
+        assert table.at[code, "days_read"] < 28 and np.isnan(table.at[code, "f01"])
+    assert table.at["0002SAM", "level_source"] == "own"
+    assert table.at["0002SAM", "kwh_per_day"] == pytest.approx(0.48, rel=1e-6)
+    assert table.at["0004SAM", "level_source"] == "own", "a customer that left keeps its level"
+    assert table.at["0004SAM", "kwh_per_day"] == 0.0
+    # Without the rule, the twelve days make a level.
+    loose = B.own_levels(users, season=season, min_days=0.0).set_index("customer_code")
+    assert loose.at["0001SAM", "kwh_per_day"] == pytest.approx(12.0, rel=1e-3)
+    assert loose.at["0001SAM", "level_source"] == "own"
+
+
+def test_a_household_without_a_year_follows_the_index_around_its_own_level(monkeypatch) -> None:
+    from microgrid_expansion.demand import build_own_levels as B
+    from microgrid_expansion.demand import readings
+
+    stamps = pd.date_range("2026-05-01 00:15", "2026-10-31 23:45", freq="15min")
+    stamps = stamps[(stamps.month != 7) | (stamps.day <= 10)]          # July read in part
+    archive = readings.with_periods(pd.DataFrame({"timestamp": stamps,
+                                                  "customer_code": "0001SAM",
+                                                  "power_W": 15.0}))
+    monkeypatch.setattr(readings, "timed_readings", lambda site: archive)
+    users = pd.DataFrame({"site_name": "Samionta", "customer_code": ["0001SAM"],
+                          "customer_type": ["HH1"], "connection_month": ["2026-05"],
+                          "departure_month": [""], "record_end": "2026-10"})
+    season = pd.Series([1.35, 1.26, 1.24, 1.11, 0.92, 0.82, 0.86, 0.77, 0.73, 0.91, 1.06, 0.96],
+                       index=range(1, 13))
+    row = B.own_levels(users, season=season).iloc[0]
+    factors = np.array([row[f"f{m:02d}"] for m in range(1, 13)])
+    assert row.factor_source == "season"
+    np.testing.assert_allclose(factors / season.to_numpy(), factors[0] / season[1])
+    # Over the months it was read, each weighted by the time its readings cover in it, the
+    # household draws its measured level; it draws more in the dry season it was not read.
+    covered = archive.groupby("month").seconds.sum()
+    weights = np.array([covered.get(pd.Period(f"2026-{m:02d}", freq="M"), 0.0)
+                        for m in range(1, 13)])
+    assert np.average(factors, weights=weights) == pytest.approx(1.0, rel=1e-9)
+    assert factors[0] > 1.4 and np.average(factors, weights=[
+        calendar.monthrange(2026, m)[1] for m in range(1, 13)]) > 1.1
+    # A productive user without a year keeps no factors: the index is the households'.
+    user = B.own_levels(users.assign(customer_type="PUE"), season=season).iloc[0]
+    assert user.factor_source == "" and np.isnan(user.f01)
+
+
+def test_a_class_unit_runs_longer_days_under_its_class_s_ceiling(tmp_path) -> None:
+    import dataclasses
+
+    from microgrid_expansion.demand import productive
+    from microgrid_expansion.demand.uses import CommunityCalibration
+
+    levels = pd.DataFrame({
+        "customer_code": ["0001SAM", "0002SAM", "0003SAM", "0004SAM", "0005SAM"],
+        "customer_type": ["PUE", "PUE", "PUE", "HH1", "PUE"],
+        "shape": ["milling", "milling", "milling", "1", "milling"],
+        "kwh_per_day": [2.4, 4.8, 1.2, 0.5, None],
+        "peak_kw": [0.5, 2.0, 1.0, 5.0, None]})
+    path = tmp_path / "own_levels.csv"
+    levels.to_csv(path, index=False)
+    ratios = productive.peak_ratios(path)
+    # Ratios 5, 10 and 20: the median of the class's metered units, households aside.
+    assert ratios.at["milling", "units"] == 3
+    assert ratios.at["milling", "peak_ratio"] == pytest.approx(10.0)
+
+    calibration = productive.ProductiveCalibration.load()
+    profiles = productive.with_ceilings(calibration.profiles, path)
+    profiles.loc["milling", "daily_cv"] = 3.0
+    busy = dataclasses.replace(calibration, profiles=profiles)
+    shape, sigma = productive._class_day(busy, "milling")
+    cap = productive.class_cap(busy, "milling", shape)
+    assert cap == pytest.approx(10.0 * shape.sum() / 24.0)
+    part = productive.monthly_profile_parts({"milling": 1}, busy, 365,
+                                            np.random.default_rng(3))["milling"]
+    days = part.reshape(365, 24)
+    factors = np.random.default_rng(3).lognormal(-0.5 * sigma ** 2, sigma, size=(1, 365))[0]
+    plain = factors[:, None] * shape[None, :]
+    assert plain.max() > cap and days.max() <= cap + 1e-9
+    within = (plain <= cap).all(axis=1)
+    np.testing.assert_array_equal(days[within], plain[within])
+    held = factors * shape.sum() >= cap * (shape > 0).sum()
+    np.testing.assert_allclose(days[~held].sum(axis=1), plain[~held].sum(axis=1), rtol=1e-9)
+    # A customer of the record without a level is a unit of its class, under the same cap.
+    unit = RecordUser("milling", 0, None, None)
+    drawn = productive.own_level_parts([unit], busy, 1, 365, np.random.default_rng(4))
+    assert drawn["milling"].max() <= cap + 1e-9
+    # The plant's own supply has no metered units, and keeps the plain scaling.
+    community = CommunityCalibration.load().profiles.peak_ratio
+    assert community["place_of_worship"] > 0 and np.isnan(community["powerhouse"])

@@ -1,7 +1,7 @@
 """The year-0 plant, and the machinery that would prove it optimal.
 
 The reference year is certified by exhaustion. A plan over the tree cannot be: it is a
-capacity vector at each of forty-six nodes, and the product of forty-six lattices is not a
+capacity vector at each of forty-nine nodes, and the product of forty-nine lattices is not a
 set anyone enumerates. But the plan is not what is decided -- only the root is bought -- so
 the object to certify is a single design, and that is a problem the size of the reference
 year's.

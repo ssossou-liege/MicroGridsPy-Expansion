@@ -886,10 +886,11 @@ nodes, all but the root operating. Today's fan, branching (1, 3, 2, 2, 2), has
 
 | R | Fan (f_1, f_2, f_3, f_4) | Nodes | Operating nodes | Remark |
 |---|---|---|---|---|
-| 9 | (1, 1, 1, 1) | 46 | 45 | **default**: today's size; climate and inter-annual variability enter through each regime's medoid outcome |
+| 9 | (1, 1, 1, 1) | 46 | 45 | the default of sessions 4 and 4 bis: the fan's size, but no fan within a regime; climate and inter-annual variability enter only through each regime's medoid outcome |
 | 6 | (1, 1, 1, 1) | 31 | 30 | |
 | 9 | (1, 2, 1, 1) | 73 | 72 | |
-| 3 | (1, 2, 2, 2) | 49 | 48 | |
+| 3 | (1, 2, 2, 2) | 49 | 48 | **default since session 4 quater**: 24 futures, a fan of two below every node from year 5 |
+| 9 | (1, 2, 2, 2) | 145 | 144 | the fan within each of nine regimes, about three times the programme |
 | 27 | (1, 1, 1, 1) | 136 | 135 | every regime of independent draws, about three times today's programme |
 
 Without operating-only children (the alternative of decision 6), subtract R. The programme grows
@@ -903,6 +904,21 @@ ones. Fields: `ModelConfig.tree_mode` (`"fan"` or `"persistent"`, default `"fan"
 root first. Since session 4 `regime_fan` defaults to `None`, one child at every milestone of
 the calendar, so that the default tree accepts any stage calendar; on the five milestones it is
 `(1, 1, 1, 1, 1)`, and `ModelConfig.fan()` returns the tuple.
+
+*Revised (2026-11-11, session 4 quater), the author's decision.* That default dropped the fan
+within a regime, and the formulation requires it: below each regime the stage-wise outcomes of
+that regime's own paths are clustered and nested as a fan, so that climate and inter-annual
+variability branch freely within the regime (its section on Monte-Carlo sampling, scenario
+reduction and tree construction). Nine regimes with one child a milestone build no fan at all:
+every regime is a single chain from year 5 to year 20, and the uncertainty within a regime
+reaches the plan only through one medoid outcome per milestone. The default is now R = 3 with
+the fan `(1, 1, 2, 2, 2)`, root first: the root branches into three regimes, below each the
+operating-only node of the root's span, and every node from year 5 on splits in two within
+its regime, 1 + 3 + 3 x (1 + 2 + 4 + 8) = 49 nodes and 24 futures, the size of the programme
+the fan had (46 nodes). Nine regimes with the same fan would give 145 nodes. `regime_branches`
+defaults to 3, and `regime_fan = None` now means one child at the root and at the first
+milestone and two at every later one, whatever the calendar holds, so that a calendar of two
+milestones keeps `(1, 1)`; `(1, 1, 1, 1, 1)` with nine branches is the tree of session 4 bis.
 
 ### 9.7 As built (session 3)
 
@@ -1970,6 +1986,429 @@ The full suite, run once at the end in `mgpy_dev`: 506 passed and 1 skipped, in 
 It built the Samionta pools it reads at the new fingerprint, 33 new files in the cache, and
 modified or deleted none.
 
+### Session 4 quater
+
+Session 4 quater (2026-11-11 and 12) is done when the author's three last decisions on the
+demand are applied and S4ter-A1 still holds at both villages under each village's own
+trajectory, in total and for the households and the productive users (the gate); when the
+default tree has the fan within each regime that the formulation's section on the tree
+describes; and when every stored result is archived, computed again under the new defaults
+and drawn again. The gate held.
+
+#### Part A: the author's decisions on the demand
+
+**A1, a level taken over few days (point 29).** A customer's own level needs at least 28 days
+of readings in its window, the time its readings cover counted as the level counts it
+(`build_own_levels.MIN_LEVEL_DAYS`). A customer still on the grid with fewer has no level
+(`level_source` `laws`) and is drawn from the model's laws from its own connection month: a
+household through the mixture law of its cohort, as a household connected after `T`, a
+productive user or a place of worship as a unit of its class, under its class's ceiling (A2).
+A customer that left the stock keeps its level whatever its readings cover. **The rule was
+found through the held-out check**, where 0052SAM's 1.6 days of readings made Samionta's
+households fail; it was then applied to the shipped table, and the held-out version is
+reported with and without it below. The sixteen customers of point 29:
+
+| Customer | Type | Connected | Left | Days of readings | Level before (kWh a day) | Drawn now as |
+|---|---|---|---|---|---|---|
+| 0050GBO | HH1 | 2026-05 | 2026-06 | 0.9 | 0.00 | unchanged: left the stock |
+| 0056GBO | CHU | 2026-05 | 2026-06 | 1.2 | 0.00 | unchanged: left the stock |
+| 0133GBO | HH1 | 2026-05 | | 20.4 | 0.04 | a household of May 2026, Gbowele's law |
+| 0137GBO | HH1 | 2026-05 | 2026-07 | 16.2 | 0.00 | unchanged: left the stock |
+| 0146GBO | HH1 | 2026-05 | | 16.6 | 0.00 | a household of May 2026, Gbowele's law |
+| 0195GBO | HH3 | 2026-05 | 2026-07 | 15.6 | 0.00 | unchanged: left the stock |
+| 0196GBO | HH1 | 2026-05 | | 16.7 | 0.00 | a household of May 2026, Gbowele's law |
+| 0198GBO | HH1 | 2026-05 | | 14.9 | 0.00 | a household of May 2026, Gbowele's law |
+| 0208GBO | HH1 | 2026-10 | | 8.0 | 0.02 | a household of October 2026, Gbowele's law |
+| 0209GBO | HH1 | 2026-10 | | 8.0 | 0.00 | the same |
+| 0210GBO | HH1 | 2026-10 | | 5.4 | 0.11 | the same |
+| 0211GBO | HH1 | 2026-10 | | 5.4 | 0.00 | the same |
+| 0212GBO | PUE | 2026-10 | | 5.2 | 2.23 | a unit of `small_trade`, 0.50 kWh a day |
+| 0267SAM | PUE | 2026-10 | | 11.3 | 0.01 | a unit of `small_trade` |
+| 0268SAM | HH1 | 2026-10 | | 24.2 | 0.35 | a household of October 2026, Samionta's law |
+| 0269SAM | PUE | 2026-10 | | 23.6 | 0.33 | a unit of `small_trade` |
+
+Twelve are drawn from the laws, four keep their level. Under Gbowele's own law (fast) a
+household of HH1 is expected at 0.18 kWh a day in its first three months and 0.21 at four to
+six, and in the brownfield certified year, past 24 months, at 0.60; under Samionta's (slow),
+0.25 and 0.30. *The silent meters at zero.* Four of Gbowele's households of point 13 stopped
+reporting a level of zero or nearly (0146, 0196 and 0198GBO at zero over 15 to 17 days,
+0133GBO at 0.04 kWh a day over 20) and stay in the stock, being silent for less than three
+months. Under the rule each has fewer than 28 days, so each is drawn as a household of May
+2026: over the record's last months the law gives the four about 140 kWh their meters never
+recorded, and in the certified year about 880. 0137GBO and 0195GBO, silent at zero too, left
+the stock in July 2026 and are unaffected. Whether the four draw anything is the operator's
+question of point 13; known to draw nothing, they would leave the stock as those two did.
+
+The shipped table, rebuilt by `build_own_levels` from the activity survey that reproduces the
+shipped classes code for code, is the table of session 4 quinquies to the byte in every
+column but for these twelve customers and the factors of A3 (`days_read`, `level_source` and
+`factor_source` are new columns).
+
+**A2, a busy day of a class unit (point 30).** A unit of a productive or community class, on a
+new site or added after `T`, and a customer of the record without a level, runs longer days,
+not harder (`productive.longer_days`), under a ceiling per class: the unit's mean hourly power
+times the class's `peak_ratio`, the median over the class's metered units of the ratio of the
+highest hourly power each recorded to its mean hourly power (`productive.peak_ratios`, read
+from `own_levels.csv` by both calibrations). A day on which some unit passes the ceiling is
+drawn unit by unit; every other day is the plain sum, the draws unchanged. The plant's own
+supply has no metered units and keeps the plain scaling.
+
+| Class | Units (the record's, with a level) | Ratio | Unit's day (kWh) | Ceiling (kW) | Day's draw at which it binds |
+|---|---|---|---|---|---|
+| `refrigeration` | 5: 0158GBO, 0002, 0044, 0242, 0245SAM | 24.3 | 1.22 | 1.23 | 18.0 |
+| `milling` | 4: 0016, 0163GBO, 0043, 0097SAM | 25.4 | 7.13 | 7.54 | 9.3 |
+| `incubation` | 2: 0064GBO, 0241SAM | 4.3 | 1.77 | 0.32 | 3.2 |
+| `tailoring` | 2: 0161GBO, 0243SAM | 80.5 | 0.56 | 1.87 | 34.7 |
+| `sawmill` | 1: 0008GBO | 35.3 | 2.95 | 4.34 | 17.8 |
+| `small_trade` | 43, 37 at Gbowele and 6 at Samionta | 16.0 | 0.50 | 0.33 | 10.7 |
+| `place_of_worship` | 4: 0150, 0153GBO, 0004, 0007SAM | 44.1 | 0.55 | 1.02 | 29.4 |
+
+The last column is the factor on a day's energy beyond which the busiest hour of the class's
+mean day would pass the ceiling. The medians are high because a class's units run in short
+bursts: one of Gbowele's mills draws 0.15 kWh a day with a 1.5 kW hour, a ratio of 233, where
+Samionta's two run at 10 and 11. So the ceiling binds in the far tail of the draws, and moves
+the bench's peak by a tenth (below). Its known error is point 34: a day run longer is spread
+over the hours the class's mean day uses, so a motor that runs an hour at its rating is drawn
+below it. Recorded as the limit; nothing changed for it.
+
+**A3, the seasonality of anchored households without a year (new point 35).** An anchored
+household whose window does not give it a year of its own takes the households' residual
+seasonal index (`growth.seasonal_index`, 0.73 in September to 1.35 in January), divided by its
+mean over the months the household was read, each weighted by the time its readings cover in
+it as the level weights them (`build_own_levels.seasonal_factors`, `factor_source` `season`):
+over those months it draws its measured level, and the months it was not read follow the
+index. Households only, the index being theirs. At Samionta 37 of the 50 households have a year
+of their own; of the other 13, one is drawn from the laws (0268SAM) and 12 take the index. At
+Gbowele 38 of the 99 have twelve months of readings and 33 a year of their own, the other five
+having a month covered less than half; of the 66 without, eight are drawn from the laws and 58
+take the index. *Decided here:* those five take the index too, having no pattern of their own
+under section 5.3's rule. A household of the campaign of May 2026, read from May to October,
+is now drawn some 16 % above its measured level over the year and at its level over the months
+it was read.
+
+**S4ter-A1 after part A**, built as in session 4 quinquies, mean of four seeds, each village's
+own growth trajectory, November 2025 to October 2026 (kWh):
+
+| Village | Meters | Session 4 quinquies | Session 4 quater |
+|---|---|---|---|
+| Samionta, total | 17 473 | +1.7 % | **+1.0 %** (17 656) |
+| Samionta, households | 3 845 | +2.7 % | **+2.5 %** (3 943) |
+| Samionta, productive users | 13 236 | +0.6 % | **−0.1 %** (13 222) |
+| Gbowele, total | 19 559 | +0.6 % | **+0.6 %** (19 667) |
+| Gbowele, households | 9 921 | −0.4 % | **+0.7 %** (9 994) |
+| Gbowele, productive users | 9 489 | +1.6 % | **+0.4 %** (9 523) |
+
+**The gate holds**: every gap lies within 3 % at both villages. Seed to seed the twelve
+months' total spans 17 380 to 17 848 kWh at Samionta and 19 518 to 19 821 at Gbowele. Every
+class lies within 6 % of its meters; the places of worship draw 491 kWh against 392 at
+Samionta (point 31) and 150 against 149 at Gbowele. Gbowele's households gain about 110 kWh,
+the four silent households of May 2026 now drawn from the law.
+
+| Held out, May to October 2026 | Meters | Session 4 quinquies | A2 and A3, without A1 | With A1, shipped |
+|---|---|---|---|---|
+| Samionta, total | 8 445 | +13.1 % | +10.2 % | +9.9 % |
+| Samionta, households | 1 627 | +44.8 % | +29.7 % | +11.6 % |
+| Samionta, productive users | 6 732 | +3.3 % | +3.3 % | +7.4 % |
+| Gbowele, total | 9 490 | +6.6 % | +2.5 % | +2.5 % |
+| Gbowele, households | 4 853 | +2.7 % | −5.3 % | −3.4 % |
+| Gbowele, productive users | 4 553 | +10.8 % | +10.8 % | +8.8 % |
+
+Nothing was tuned on it. Taken up to April 2026, the rule sends 17 customers to the laws, all
+connected in April 2026 but 0048SAM (2.4 days since February 2025): at Samionta 0052SAM and
+five more households with 0.03 to 1.6 days of readings, and three small traders, 0054 to
+0056SAM, at zero over a day and a half; at Gbowele eight households with 0.4 to 9.5 days. At
+Samionta the households fall from +29.7 % to +11.6 %, still beyond the tolerance, and the
+productive users rise from +3.3 to +7.4 %, the three small traders now drawn as units of their
+class at 0.50 kWh a day. From session 4 quinquies to the column without A1, Samionta's
+households fall from +44.8 % to +29.7 % through A3: a household read only from late 2025 to
+April 2026 took its level from the dry season and was drawn at it all year, and the index now
+draws it lower from May to October. The places of worship of Samionta draw 242 kWh against 86
+in the held-out months (point 31).
+
+*The brownfield peak*, the billed load's over the record's last twelve months, the highest of
+the monthly peaks, mean of four seeds: 9.8 kW at Samionta against the meters' 11.2 (10.4 in
+session 4 quinquies), 5.6 at Gbowele against 7.0 (5.7); the mean of the twelve monthly peaks
+is 7.3 against 9.2 and 4.7 against 5.8. Samionta's fall comes from its mills, 8.7 kW against
+9.4, whose busiest month is October 2026, the month in which the three customers of October
+now drawn from the laws move the stream of draws. The peaks still lie below the meters' (point
+34).
+
+**The bench's certified year** (`certify --site Samionta`, greenfield, village age 48, 113
+households connected in its first month, the central connection trajectory), measured on the
+year itself, without a certificate or a tree, four seeds (kWh, kW):
+
+| Four seeds | Central, session 4 quinquies | Central, now | Slow, then and now | Fast, then and now |
+|---|---|---|---|---|
+| Energy | 44 232 | 44 232 | 34 772 and 34 772 | 53 158 and 53 158 |
+| Peak | 23.00 | 20.62 (−10.3 %) | 19.98 and 19.00 | 24.57 and 21.40 |
+| Peak, seed 0 | 20.75 | 18.37 | | |
+| Households | 17 597 | 17 597 | 12 098 | 22 942 |
+| Productive users | 20 988 | 20 988 | 17 006 | 24 565 |
+| of which `milling` | 9 860 | 9 860 | 9 842 | 9 988 |
+| Peak of the mills | 15.35 | 12.46 (−18.8 %) | 14.11 | 12.44 |
+
+A new site has no record, so A1 and A3 do not reach it, and the ceiling moves no energy to the
+kilowatt-hour (a day held at its ceiling in every hour it runs is the only loss, far in the
+tail). It brings the peak back by a tenth and the mills' by a fifth, still well above the
+16.9 kW of session 4 ter, since a mill of a new site is now 7.1 kWh a day with a spread of
+1.19.
+
+**Point 33, Gbowele's brownfield certified year against its meters** (plan year 4, village
+age 67, Gbowele's own law, the own bracket's central connection: 140 households in the
+year's first month against 96 at `T`), mean of four seeds (kWh):
+
+| Who draws it | Meters, Nov. 2025 to Oct. 2026 | The certified year | Over the meters |
+|---|---|---|---|
+| The record's households at their own levels | 9 921 | 11 167 | +1 246: a whole year for every household, the 35 of May 2026 among them, whom the meters' twelve months hold for six |
+| Their growth beyond `T` | | 2 261 | +2 261 |
+| The record's households drawn from the laws (A1, eight) | | 1 737 | +1 737 |
+| The households connected after `T` (44) | | 9 250 | +9 250 |
+| Households, in all | 9 921 | 24 415 | ×2.46 |
+| The record's productive users at their own levels | 9 489 | 9 972 | +483 |
+| The productive units the rule adds after `T` | | 9 043 | +9 043 |
+| The places of worship | 149 | 145 | −4 |
+| Billed, in all | 19 559 | 43 574 | ×2.23 (×2.16 in session 4 quinquies) |
+
+Of the 24 015 kWh by which the year passes the meters, 39 % are the households connected
+after `T` and 38 % the productive units added with them: the count, 44 households more under
+the own bracket's central trajectory and the productive rule's intensity on them (point 14),
+does most of it, and the growth of the record's households a tenth. What a household draws by
+the age of its connection, Gbowele's record against Gbowele's own law, the fast one, at the
+census's mix of categories (kWh a day per connected household; the record's household-months
+in brackets):
+
+| Own age, months | 0-3 | 4-6 | 7-12 | 13-24 | 25 and more |
+|---|---|---|---|---|---|
+| Record | 0.191 (375) | 0.372 (239) | 0.439 (272) | 0.572 (354) | 0.540 (28, all within 25-36) |
+| Fast law | 0.187 | 0.211 | 0.315 | 0.397 | 0.605 |
+
+The law holds the first quarter, lies 28 to 43 % below the record from four to 24 months, and
+12 % above it past two years, on 28 household-months. Two reasons are likely and neither was
+checked here: each band of the law is drawn toward the balanced law of both villages
+(`maturity.PRIOR_STRENGTH`), and the archetypes' energies are the means of both villages. A
+household connected after `T` reaches the 25+ band within two years, so the certified year
+draws the 44 at 0.605, 12 % above what Gbowele's first cohorts drew there; the anchored
+households, held at 24 months, grow at the law's 13-24 band, which lies below the record's.
+Point 33 stands as a limit; nothing changed for it.
+
+**The cache.** The demand fingerprint moves from bb9ca917c9ae to 39e98b68431e: every pool and
+every certified year is built again on first use, and nothing in the cache was deleted.
+
+#### Part B: the shape of the tree
+
+**The author's decision.** `regime_branches = 3` and the fan `(1, 1, 2, 2, 2)`, root first
+(section 9.6, decision 7 revised): the root branches into three regimes at year 5, below each
+the operating-only node of the root's span, and every node from year 5 on splits in two within
+its regime, 49 nodes and 24 futures. Within a regime the fan is reduced over that regime's own
+paths only, as section 9.2's step 4 already did; nothing in the builder changed.
+`regime_fan = None` is read as that fan on five milestones and as `(1, 1)` on two
+(`ModelConfig.fan`), so that every calendar the tests and the commands draw stays valid;
+*decided here*, the alternative being a literal tuple that every two-milestone run would have
+had to override. The programme of Samionta's tree has 1 204 616 columns and 1 180 008 rows at 64 days, as the solver reads it (section 9.6 gives 777 538 over 46 nodes, a count from session 3 not taken again since; the two are not compared here).
+
+**The two trees on Samionta's default ensemble** (1 000 paths, seed 0, 27 regimes in the
+ensemble, the smallest of 26 paths; distances in the ensemble's own scale, section 9.7):
+
+| | Session 4 bis: 9 regimes, no fan | Session 4 quater: 3 regimes, fan (1, 1, 2, 2, 2) |
+|---|---|---|
+| Nodes, operating nodes, leaves | 46, 45, 9 | 49, 48, 24 |
+| Children of a node from year 5 on, fewest | 1 | 2 |
+| Stage distortion at years 0, 5, 10, 15, 20 | 1.54, 1.65, 1.64, 1.64, 1.63 | 2.07, 2.33, 1.92, 1.97, 1.98 |
+| Regime distortion | 2.48 | 4.38 |
+| Coverage | 3.72 | 4.74 |
+| Plausibility | 1.52 | 1.73 |
+| Persistence violations | 0 | 0 |
+| Representative regimes (connection, growth, cost) and masses | nine, 0.07 to 0.17 each | central, slow, low (0.354); high, central, central (0.339); low, fast, high (0.307) |
+| Paths of each representative | 37 to 46 | 43, 44 and 37 |
+
+The new tree branches at every node from year 5 and keeps every path persistent, and it is
+coarser on all five measures. Three regimes stand for the ensemble's 27 where nine did, so a
+path lies further from the regime that represents it, and further from its branch's nodes at
+each stage, than two medoids of that regime's own outcomes bring back: the fan within a regime
+covers climate and the year-to-year variability, which vary less across the paths of one
+regime than the regimes do across the ensemble. The reduction across regimes dominates the
+distortion, and nine regimes with the same fan, 145 nodes, would hold both; at the size of
+today's programme the formulation's fan costs a coarser choice of regimes. Each representative
+holds at least 37 paths, so two medoids are drawn from distinct outcomes at every stage.
+
+*The other ensembles* (1 000 paths each). Gbowele's on bare ground holds 27 regimes, the
+smallest of 26 paths; the new tree keeps (high, central, central), (low, central, high) and
+(low, central, low), of 44, 37 and 41 paths, masses 0.41, 0.23 and 0.36. A brownfield ensemble
+holds the village's own growth on every path, so nine regimes, the smallest of 98 paths. The
+tree of session 4 bis kept all nine, with a regime distortion of zero; the new one keeps three,
+the same at both villages, their growth aside, the stream of draws being the same: (high,
+central cost), (low, central cost) and (low, high cost), of 116, 115 and 119 paths, masses
+0.32, 0.45 and 0.23. Neither brownfield tree keeps a future of low prices or the village's
+central connection trajectory. The five measures move as on Samionta's ensemble: on Gbowele's,
+regime 2.53 to 4.45, coverage 3.75 to 4.64, plausibility 1.51 to 1.88; on the two brownfield
+ensembles regime 0 to 2.80 and 3.14, coverage 4.39 to 4.64 and 4.17 to 4.57, plausibility 2.38
+to 2.32 and 1.98 to 2.01. No tree has a persistence violation.
+
+#### The results, computed again
+
+Step by step as the author asked: part A and its checks; the two trees on Samionta's ensemble;
+every result `results/` held archived in
+`results/superseded/2026-11-11_before_fan_and_anchored_demand/` (its README says why); every
+result computed again under the new defaults with the stored settings (1 000 paths, 64
+representative days, seed 0, the stored programme budgets, Gurobi), on the working tree of
+commit 7afbffd with this session's changes; the figures drawn again by the commands that write
+them. The studies that record a commit record 7afbffd. Plants as array on the battery's bus +
+array on the load's bus, storage, conversion, generating set. For a single year the cost is
+the annual cost under the controller, the gap is to the cost-optimal bound over the proven
+lattice, and the price of the controller is `price_rel_pct`; for a tree the cost is the
+expected cost under the controller, the bound is the programme's and the price is against it.
+
+| Result | Session 4 bis | Session 4 quater |
+|---|---|---|
+| Bench, Samionta central, VOLL 1 | 26 + 19 kWp, 115 kWh, 20 kW, 8 kW; 4 262 $/yr; proven, 5.5 %; controller 233 $/yr, 5.8 %; 0.0896 $/kWh | 29.25 + 21.25 kWp, 125 kWh, 22.5 kW, 8 kW; 4 691 $/yr; proven, 6.0 %; controller 280 $/yr, 6.4 %; 0.0971 $/kWh |
+| Bench, VOLL 0.5 and 3 | as at VOLL 1, to the dollar | the same plant; 4 678 and 4 745 $/yr; proven; controller 6.1 % and 7.6 % |
+| Bench, slow growth | 19.5 + 12 kWp, 85 kWh, 15 kW, 8 kW; 3 139 $/yr; proven, 5.5 %; 5.8 % | 22.75 + 15.75 kWp, 100 kWh, 17.5 kW, 8 kW; 3 758 $/yr; proven, 6.5 %; 7.0 % |
+| Bench, fast growth | 39 + 25.5 kWp, 150 kWh, 30 kW, 8 kW; 5 512 $/yr; proven, 4.4 %; 4.7 % | 35.75 + 25.75 kWp, 145 kWh, 27.5 kW, 8 kW; 5 408 $/yr; proven, 4.8 %; 5.0 % |
+| Bench, Gbowele central | 19.5 + 14.5 kWp, 80 kWh, 15 kW, 8 kW; 3 150 $/yr; proven, 6.2 %; 6.6 % | 19.5 + 11.5 kWp, 85 kWh, 15 kW, 8 kW; 3 139 $/yr; proven, 6.2 %; 6.6 % |
+| Samionta with its plant, one year | the standing plant, nothing added; 2 057 $/yr; proven; 0.9 %; central growth, 15 608 kWh billed | 28 + 0 kWp (2 kWp added), the rest standing; 2 221 $/yr; proven, 2.1 %; 2.2 %; slow growth (its own), 18 144 kWh billed; `..._samionta_slow_mixed_m79_..._brownfield.json` |
+| Gbowele with its plant, one year | 42.25 + 12.75 kWp, 150 kWh, 32.5 kW, 16 kW; 4 341 $/yr; proven, 5.9 %; 6.2 %; central growth | 42.25 + 10.75 kWp, 145 kWh, 32.5 kW, 16 kW; 4 276 $/yr; proven, 5.2 %; 5.5 %; fast growth (its own), 43 835 kWh billed; `..._gbowele_fast_mixed_m67_..._brownfield.json` |
+| Tree, Samionta | root 29 + 21 kWp, 125 kWh, 22.5 kW, 12 kW; 66 492 $ against 61 871 $; controller 7.5 %; 0.1013 $/kWh; 9 leaves | root 26 + 20 kWp, 115 kWh, 20 kW, 12 kW; 64 323 $ against 62 261 $; controller **3.3 %**; 0.0991 $/kWh; 24 leaves |
+| Tree, Gbowele | root 19.5 + 15 kWp, 95 kWh, 15 kW, 8 kW; 44 461 $ against 41 991 $; 5.9 %; 0.0961 $/kWh | root 19.5 + 15 kWp, 90 kWh, 15 kW, 8 kW; 51 644 $ against 48 788 $; 5.9 %; 0.1163 $/kWh |
+| Tree, Samionta with its plant | nothing added at any node; 48 $ against 41 $, 0.02 %; 0.0859 $/kWh | root the standing plant and 2 kWp; 2 335 $ against 3 268 $, **−3.0 %**; 0.0828 $/kWh |
+| Tree, Gbowele with its plant | root 30.81 + 23.64 kWp, 155 kWh, 24 kW, 16 kW; 43 294 $ against 39 433 $; 6.9 %; 0.0728 $/kWh | root 30.81 + 17.64 kWp, 135 kWh, 24 kW, 16 kW; 35 599 $ against 33 981 $; 3.2 %; 0.0716 $/kWh |
+| Value of the tree, Samionta: the certified central plant at year 0 against the tree's root, under the controller | 67 921 $ against 66 492 $, **2.15 %** | 64 218 $ against 64 323 $, **−0.16 %**: the ordering fails; under the programme 62 824 $ against 62 261 $, 0.90 % |
+| Value of the tree, the other fixed roots (slow, fast, mean value), under the controller | 16.5 %, 2.8 %, 2.2 % | 4.3 %, 3.2 %, 1.5 % |
+| Value of perfect information (growth; everything), under the controller | 5.0 %; 24.9 % | −5.3 %, the ordering failing; 18.3 % |
+| Seed to seed, five seeds | 8.0 % of the expected cost (controller), 7.7 % (programme) | 19.3 % (controller), 14.1 % (programme) |
+| Build once, Samionta | flexibility worth 9 949 $ (15.0 %); a campaign above 17 791 $ makes building once cheaper | 5 940 $ (9.2 %); above 11 659 $ |
+| Build once, Gbowele | 2 684 $ (6.0 %); above 4 003 $ | 3 004 $ (5.8 %); above 5 106 $ |
+| Price sensitivity, Samionta | noise 5.5 %; the high and the landed-battery sets move the root beyond it | noise 19.3 %; the high set moves the array and the storage beyond it (39 kWp and 90 kWh against 46 and 115), the landed-battery set the storage (90 kWh) |
+| Price sensitivity, Gbowele | noise 5.9 %; high and landed-battery sets beyond it | noise 7.2 %; all three sets beyond it: low prices 40.5 kWp and 20 kW against 34.5 and 15; high 23 kWp, 45 kWh, 10 kW; landed batteries 27 kWp, 45 kWh, a 12 kW set |
+| First stage, Samionta | 29 + 21 kWp, 125 kWh, 22.5 kW, 12 kW, the tree's own root, at 66 492 $ against 62 376 $, gap 6.19 %, not proven; 40 programmes, 9 boxes pruned by a programme, none by the costless bound, 2 plants unresolved | 26 + 20 kWp, 115 kWh, 20 kW, 12 kW, the tree's own root, at 64 323 $ against 62 731 $, gap **2.48 %**, not proven; 40 programmes, 6 boxes pruned by a programme, none by the costless bound (14 308 $), 1 plant unresolved, bounded by the descent from above only; lattice of 352 512 plants |
+
+**Eight readings.**
+
+1. *The single years move with the demand, not the tree.* The bench plant grows by a tenth at
+   the central trajectory and a fifth at the slow one (the mills of the class tables of session
+   4 quinquies), and shrinks by a twentieth at the fast one; every certificate is still proven,
+   and the price of the controller on the year is 6.4 % rather than 5.8 %, between 5.0 and 7.6
+   % across the eight.
+2. *Samionta with its plant now adds a little.* Under its own slow growth and its customers at
+   their own levels, the certified year bills 18 144 kWh where the year of session 4 bis billed
+   15 608, and the year and the tree both add two kilowatts-peak to the 25.86 standing at
+   year 0. The tree then adds array on the battery's bus only (below). On this tree the
+   programme's bound lies above the controller's cost, by 933 $ or 3.0 % of a cost that is
+   almost all the standing plant (27 463 $ in all): the price of the heuristic is not
+   measurable there. The single year, simulated and bounded on the whole year, gives 2.1 %;
+   the 64 representative days the programme alone is compressed to are the likely reason,
+   which was not checked.
+3. *The price of the real controller over the plan* falls from 7.5 % to 3.3 % at Samionta and
+   from 6.9 % to 3.2 % at Gbowele with its plant, and stays at 5.9 % at Gbowele on bare ground.
+   The year-0 plant of Samionta's tree is a tenth smaller than session 4 bis's (46 kWp against
+   50, 115 kWh against 125), and smaller by as much than the bench's single year (50.5 kWp, 125 kWh),
+   the root's span being operated under three regimes, one of which (central connection, slow
+   growth, low prices) carries a third of the mass.
+4. *The value of the tree is no longer measurable.* Building the single year's plant at once,
+   rather than following the tree, costs 0.90 % more under the programme and 0.16 % less under
+   the controller, where it cost 2.15 % more; and the seed-to-seed noise of the expected cost
+   doubled, to 14 % under the programme and 19 % under the controller. The likeliest reason,
+   not isolated here: three regimes chosen by k-medoids among 27 depend on the seed more than
+   nine did, since which future of low or high prices, of slow or fast growth, stands for a
+   third of the mass moves with the draw. A value
+   of the tree of one per cent within a noise of fourteen is not a finding, as the module's
+   own rule says.
+5. *The orderings that need one ensemble fail.* The value of perfect information on growth is
+   negative, the wait-and-see over the three trajectories lying above the plan: the trees
+   whose growth weights differ are drawn on different ensembles, reduced to different three
+   regimes, so the theorem's premise of one scenario set does not hold, and the noise of point
+   4 covers the gap. The value of all information, each future solved on its own, is 15.2 %
+   under the programme and 18.3 % under the controller.
+6. *Build once* is worth less at Samionta, 9.2 % against 15.0 %, a smaller root extending on a
+   third of the mass at year 5, and as much at Gbowele, 5.8 %.
+7. *Price sensitivity.* The noise the price sets are measured against is four times wider at
+   Samionta than in session 4 bis, so only the high and landed-battery sets still move its
+   root beyond it; at Gbowele the noise stays near 7 % and all three sets do.
+8. *The first stage* holds the tree's root again, now at a gap of 2.48 % against 6.19 %, with
+   one plant of the lattice unresolved. Its gap is about the tree's price of the heuristic
+   (3.3 %), the programme lying 3.2 % below the descent at the root.
+
+**What each real village must add, and when.** Samionta's plant (25.86 kWp on the battery's
+bus, 95 kWh, 48 kW of conversion, the 16 kW set) and Gbowele's (16.31 + 6.14 kWp, 40 kWh,
+24 kW, the 16 kW set), by the trees with their plant (in expectation over the tree; the share
+of the mass on which the plant grows at that milestone; the largest addition at a node):
+
+| Milestone | Samionta | Gbowele |
+|---|---|---|
+| Year 0 | 2.0 kWp on the battery's bus, at every node | 14.5 kWp on the battery's bus, 11.5 kWp on the load's, 95 kWh; conversion and set as they stand |
+| Year 5 | 1.45 kWp, on 32 % of the mass (the high connection trajectory); at most 4.5 kWp | 1.45 + 2.9 kWp, 11.3 kWh, 1.1 kW, on 32 %; at most 4.5 + 9 kWp, 35 kWh, 3.5 kW |
+| Year 10 | 1.9 kWp, on 49 %; at most 6.5 kWp | 1.0 + 0.2 kWp, 0.7 kWh, 0.7 kW, on 26 % |
+| Year 15 | 0.5 kWp, on 24 % | 0.9 + 0.2 kWp, 0.5 kWh, 0.7 kW, on 49 % |
+| Year 20 | 1.25 kWp, on 62 % | 0.1 + 0.6 kWp, 0.4 kWh, 0.1 kW, on 62 % |
+
+Samionta needs array alone: storage, conversion and set suffice to year 20 under every regime
+the tree keeps. Gbowele's year-0 extension is smaller than session 4 bis's (6 kWp less on the
+load's bus, 20 kWh less) and its year-5 extension is held to the high connection trajectory.
+The single certified year asks for more conversion at once at Gbowele (32.5 kW against the
+standing 24), as in session 4 bis.
+
+**How many futures extend the plant at each milestone** (futures are the leaves; a future
+extends at a milestone when its node there holds more than its parent):
+
+| Tree | Year 5 | Year 10 | Year 15 | Year 20 | Never after year 0 |
+|---|---|---|---|---|---|
+| Samionta, session 4 bis (9 futures) | 3 | 3 | 2 | 3 | 5 (56 % of the mass) |
+| Samionta (24 futures) | 8 | 8 | 8 | 4 | 16 (66 %) |
+| Gbowele, session 4 bis (9) | 3 | 2 | 3 | 3 | 6 (56 %) |
+| Gbowele (24) | 8 | 4 | 4 | 5 | 16 (59 %) |
+| Samionta with its plant, session 4 bis (9) | 0 | 0 | 0 | 0 | 9 (100 %) |
+| Samionta with its plant (24) | 8 | 16 | 10 | 16 | 1 (17 %) |
+| Gbowele with its plant, session 4 bis (9) | 5 | 5 | 4 | 4 | 4 (47 %) |
+| Gbowele with its plant (24) | 8 | 8 | 8 | 13 | 1 (1 %) |
+
+On Samionta's tree on bare ground only the high connection trajectory's eight futures extend
+from year 5 to 15, and four of the 24 at year 20 (the programme's first extension: year 5 on
+34 % of the mass, never on 66 %).
+
+**Sensitivities** (`results/sensitivities/`, one directory each, the runs of session 4 bis in
+the archive's `sensitivities/`; the base case is this session's):
+
+| Sensitivity | Run | Session 4 bis | Session 4 quater |
+|---|---|---|---|
+| 7a, node year `first` (point 18) | Samionta's tree | root 6.5 + 4.5 kWp, 25 kWh, 5 kW, 8 kW, extended at year 5 on every path; 34 877 $ against 34 153 $; 2.1 %; −47.5 % against `last` | root 6.5 + 4.5 kWp, 30 kWh, 5 kW, 8 kW, extended at year 5 on every path (22.6 + 16.3 kWp, 103 kWh, 17.4 kW in expectation); 38 660 $ against 39 144 $, −1.2 %; **−39.9 %** against `last` |
+| 7b, high plateau at the census (decision 1) | bench certificate | 136 households; 32.5 + 25 kWp, 145 kWh, 25 kW, 8 kW; 5 296 $/yr (+24 %), proven; 5.3 % | 136 households; 32.5 + 25 kWp, 150 kWh, 25 kW, 8 kW; 5 510 $/yr (**+17.5 %**), proven; 6.3 % |
+| 7b | Samionta's tree | root 32.5 + 25 kWp, 150 kWh, 25 kW, 8 kW, extended at year 5 on 44 %; 74 175 $ (+11.6 %) against 70 546 $; 5.1 % | root 39 + 28 kWp, 170 kWh, 30 kW, 8 kW, extended at year 5 on 44 %; 81 481 $ (**+26.7 %**) against 80 554 $; 1.2 % |
+| 7c, Gbowele at 171 households (point 10), curves refitted | greenfield certificate | 81 households; 19.5 + 14.5 kWp, 90 kWh, 15 kW, 8 kW; 3 249 $/yr (+3 %), proven; 5.7 % | 81 households; 19.5 + 15 kWp, 90 kWh, 15 kW, 8 kW; 3 360 $/yr (**+7.0 %**), proven; 6.4 % |
+| 7c | brownfield certificate | 149 households; 42.25 + 18.75 kWp, 155 kWh, 32.5 kW, 16 kW; 4 923 $/yr (+13 %), proven; 5.7 % | 149 households; 42.25 + 13.25 kWp, 160 kWh, 32.5 kW, 16 kW; 4 598 $/yr (**+7.5 %**), proven; 4.8 % |
+| 7d, productive intensity × 44/60.8 (point 14) | bench certificate | 26 + 16.5 kWp, 115 kWh, 20 kW, 8 kW; 4 013 $/yr (−5.8 %), proven; 5.0 % | 26 + 18 kWp, 120 kWh, 20 kW, 8 kW; 4 295 $/yr (**−8.4 %**), proven; 5.7 % |
+| 7d, × 16/11.4 | bench certificate | 35.75 + 24.25 kWp, 140 kWh, 27.5 kW, 8 kW; 5 189 $/yr (+21.8 %), proven; 5.0 % | 32.5 + 24.5 kWp, 135 kWh, 25 kW, 8 kW; 5 274 $/yr (**+12.4 %**), proven; 6.5 % |
+
+The node year is still the largest of the four: under `first` the plan costs 40 % less than
+under `last`, its year-0 plant a quarter of the size, extended at year 5 on every path. On that
+tree too the programme lies above the controller, by 1.2 %, as on Samionta's with its plant:
+the year-0 plant is small, and what the 64 days get wrong weighs more against it. The census
+plateau now moves the tree more than the bench year (26.7 % against 17.5 %), the tree's root
+growing to 67 kWp and 170 kWh, beyond the bench's 57.5 kWp and 150 kWh, and one of its three
+regimes, 44 % of the mass, extending at year 5. The productive
+intensity moves the bench less than in session 4 bis on the high side (+12.4 % against
++21.8 %) and more on the low side (−8.4 % against −5.8 %); the field census of Gbowele moves
+both its certificates by 7 %.
+
+**Times**, against session 4 bis. Two heavy jobs at a time throughout, the pools built by a
+short script of the session, in parallel on ten processes, beside the other lane; the first
+stage alone, as section 12 of session 4 bis asks.
+
+| Run | Session 4 bis | Session 4 quater |
+|---|---|---|
+| Pools, Samionta and Gbowele greenfield | 90 in 61 min on 11 processes | 45 in 40 min and 45 in 26 min, on 10 |
+| Pools, both villages with their plant | 75 in 206 min on 5, beside two programmes | 10 in 1 min and 15 in 7 min, on 10 |
+| Pools, node year `first` and the census plateau | 75 new in 273 min on 6 | 45 in 32 min and 45 in 41 min, on 10 |
+| A single certified year, 13 runs | 52 to 387 s each, the year built | 20 to 262 s each, the year built; 32 min in all |
+| `run`, each tree | Samionta 40 min, Gbowele 113 min (swapping); with their plant 15 and 21 min | Samionta 30 min, Gbowele 20 min; with their plant 15 and 19 min |
+| Value of the tree, 16 cases and the wait-and-see | 5 to 30 min a case, 6 h in all | 10 to 23 min a case, 4 h 56 min in all, the wait-and-see over 24 futures 19 min |
+| Build once | 21 min (Samionta), 37 min (Gbowele) | 22 and 22 min |
+| Price sensitivity, 4 sets and 3 seeds | 104 min (Samionta), 114 min (Gbowele) | 109 and 142 min |
+| Sensitivity trees 7a and 7b | not given | 28 and 19 min |
+| `first_stage`, Samionta, alone | 1 h 23 min: tree 9 min, incumbent 6 min, 40 programmes in 67 min | 1 h 16 min: tree 11 min, incumbent 4 min, 40 programmes in 61 min |
+| The full suite | 1 h 12 min (481 passed) | 1 h 04 min, 510 passed and 1 skipped, beside the trees 7a and 7b |
+
+A tree of 49 nodes peaked near 28 GB, beside another job of the same size and the host's
+virtual machine; the host swapped lightly and never thrashed.
+
 ## 13. Files each session touches
 
 Session 2, from the files read in session 1:
@@ -2145,6 +2584,29 @@ Session 4 quinquies:
 - new `tests/test_record_levels.py`; `tests/test_own_levels.py` reads `RecordUser`,
   `build_own_levels` and the households of the record.
 
+Session 4 quater, beside `results/` (section 12):
+
+- `demand/build_own_levels.py`: `MIN_LEVEL_DAYS`, `own_levels(min_days=..., season=...)`,
+  `seasonal_factors`, the columns `days_read`, `level_source` and `factor_source`;
+  `own_levels.csv` rebuilt, identical to the shipped table but for the twelve customers drawn
+  from the laws and the seventy households' seasonal factors;
+- `demand/productive.py`: `peak_ratios`, `with_ceilings`, `class_cap`, the ceiling in
+  `monthly_profile_parts` and, for a customer of the record without a level, in
+  `own_level_parts`; `demand/uses.py`: the community calibration carries its ceilings;
+- `demand/record_check.py`: `held_out_state(min_days=...)`, `check(min_days=...)` and
+  `--min-days`, the held-out check with and without the rule;
+- `config.py`: `regime_branches = 3`, `regime_fan = None` read as `(1, 1, 2, 2, 2)` on the five
+  milestones (`ModelConfig.fan`); prose of `exact/first_stage.py` and `ui/static/app.js`;
+- `docs/formulation/model.tex`: the level's four weeks, the seasonal index of a household
+  without a year, the ceiling of a class unit, the size of the reference programme;
+- `data/ramp_params/reference/README.md` and `data/README.md`: the new columns;
+- `tests/`: the three rules (`test_record_levels.py`), the shipped table under them
+  (`test_own_levels.py`), the default tree's fan (`test_persistent_tree.py`,
+  `test_progressive_connection.py`);
+- `results/`: every result archived in
+  `results/superseded/2026-11-11_before_fan_and_anchored_demand/` and computed again;
+  `results/superseded/README.md`, `results/sensitivities/README.md`.
+
 ## 14. Points left to the author
 
 | | Question | Default |
@@ -2155,7 +2617,7 @@ Session 4 quinquies:
 | 4 | Reference year of the single certified year (8) | the root's year |
 | 5 | Year a tree node stands for (9.3) | last year of its span, from session 4 |
 | 6 | The root's own period operated under every regime (9.4) | yes, through operating-only nodes |
-| 7 | Tree shape (9.6) | nine regimes, no fan: 46 nodes |
+| 7 | Tree shape (9.6) | nine regimes, no fan: 46 nodes. **Revised (2026-11-11, session 4 quater):** three regimes and a fan of two below every node from year 5, `(1, 1, 2, 2, 2)`: 49 nodes and 24 futures. The default of nine regimes without a fan dropped what the formulation requires, a fan within each regime over climate and inter-annual variability (section 9.6) |
 | 8 | Base and form of the network loss (10) | 13 % of the injection, proportional, kept (session 4); the form is left to the work on the distribution network |
 | 9 | Growth beyond 24 months (15) | maturity bands unchanged in sessions 2 and 3 |
 
@@ -2207,12 +2669,18 @@ Left open by session 4 quinquies, for the author:
 
 | | Question | State |
 |---|---|---|
-| 29 | A level taken over few days | A customer's level is its mean power over whatever readings its window holds. In the held-out check, 0052SAM, connected on 29 April 2026, takes 3.9 kWh a day from 1.6 days of readings, probably its installation, where its next six months give 0.15, and makes Samionta's households fail there (section 12). In the shipped table 16 customers' levels rest on fewer than 28 days of readings: the October 2026 connections (0208 to 0211GBO, 0212GBO, a productive user at 2.2 kWh a day over five days, 0267 to 0269SAM), 0050GBO, and households whose meters fell silent at a level of zero (0133, 0146, 0196 and 0198GBO, the codes of point 13, 0137GBO and 0195GBO), which an anchored household keeps beyond `T`. A month of readings at least for a level, the laws drawing the others, is the alternative; it was not applied, the held-out version being reported and not tuned on. **Unchanged** |
-| 30 | A busy day of a new site's class unit | The longer days hold the record's customers, whose meters bound them; a unit the rule adds, and every unit of a new site, keeps the plain scaling of its mean day. With `milling` at 7.13 kWh a day and a spread of 1.19, the bench's certified year peaks at 20.8 kW against 15.8 before, 23.0 against 16.9 over four seeds, the mills alone at 15.4 against 7.1 (section 12). A ceiling per class, from the recorded peaks of its units, with the longer days under it, would hold it. **Unchanged** |
-| 31 | An anchored customer through a month without readings | A level stands in every month the customer is on the grid, a month without any reading included. Samionta's 0007SAM, a place of worship with readings in ten of its last twelve months, draws its level in the other two, and the places of worship draw 492 kWh against the meters' 392, about 0.6 % of the village's billed energy. **Unchanged** |
-| 32 | Archetype 0's peak | The household calibration over each reading's own period moves archetype 0's mean peak from 92.2 W to 83.1, and the shipped scaling draws it 10.2 % above the new target, at the edge of the fit's own residual of about 10 %; the energies stay within 3 %. Not fitted again, by the rule of point 21; a refit belongs with the next change to the appliance calibration. **Unchanged** |
-| 33 | The 25+ band of a household connected after the record | An anchored household is held at 24 months; a household connected after `T` follows the law, whose 25+ band stands: under the fast law a household of HH1 is expected at 0.605 kWh a day past 24 months and 0.400 at 13 to 24, 51 % more, while the slow law gives 0.300 and 0.294. Gbowele's brownfield certified year, with 44 such households, bills 2.16 times its meters. Decision 9 read for every household, the 25+ band set to the 13-24 one, would hold them alike, and would move the greenfield bench. **Unchanged** |
-| 34 | The brownfield peak below the meters | Over the record's last twelve months the brownfield year peaks at 10.4 kW against the meters' 11.2 at Samionta and 5.7 against 7.0 at Gbowele, and the mean of the monthly peaks lies a fifth below theirs at both. A customer's day is its shape's mean day run longer or shorter, so a motor that runs an hour at its rating is spread over the hours its class may run: Gbowele's sawmill peaks at 1.8 kW against its meter's 4.3. Nothing was tuned on it. **Unchanged** |
+| 29 | A level taken over few days | A customer's level is its mean power over whatever readings its window holds. In the held-out check, 0052SAM, connected on 29 April 2026, takes 3.9 kWh a day from 1.6 days of readings, probably its installation, where its next six months give 0.15, and makes Samionta's households fail there (section 12). In the shipped table 16 customers' levels rest on fewer than 28 days of readings: the October 2026 connections (0208 to 0211GBO, 0212GBO, a productive user at 2.2 kWh a day over five days, 0267 to 0269SAM), 0050GBO, and households whose meters fell silent at a level of zero (0133, 0146, 0196 and 0198GBO, the codes of point 13, 0137GBO and 0195GBO), which an anchored household keeps beyond `T`. A month of readings at least for a level, the laws drawing the others, is the alternative; it was not applied, the held-out version being reported and not tuned on. **Unchanged** **Decided (session 4 quater):** a level needs 28 days of readings in its window; a customer still on the grid with fewer is drawn from the model's laws from its own connection month, as a household connected after `T` or a unit of its class, and one that left the stock keeps its level. Twelve of the sixteen are drawn from the laws, the four silent households of May 2026 at Gbowele among them, which the law now gives about 0.2 kWh a day where their meters recorded nothing (point 13). The rule was found through the held-out check: there Samionta's households go from +29.7 % to +11.6 % with it (section 12). **Closed** |
+| 30 | A busy day of a new site's class unit | The longer days hold the record's customers, whose meters bound them; a unit the rule adds, and every unit of a new site, keeps the plain scaling of its mean day. With `milling` at 7.13 kWh a day and a spread of 1.19, the bench's certified year peaks at 20.8 kW against 15.8 before, 23.0 against 16.9 over four seeds, the mills alone at 15.4 against 7.1 (section 12). A ceiling per class, from the recorded peaks of its units, with the longer days under it, would hold it. **Unchanged** **Decided (session 4 quater):** a unit of a productive or community class, on a new site or added after `T`, and a customer of the record without a level, run longer days under a ceiling per class, the unit's mean hourly power times the median over the class's metered units of their highest hourly power over their mean (`productive.peak_ratios`: 25.4 for the mills, 16.0 for the small traders, 4.3 to 80.5 for the others). The bench's certified year peaks at 20.6 kW against 23.0, its mills at 12.5 against 15.4, with the energy unchanged (section 12). The rule's known error is point 34. **Closed** |
+| 31 | An anchored customer through a month without readings | A level stands in every month the customer is on the grid, a month without any reading included. Samionta's 0007SAM, a place of worship with readings in ten of its last twelve months, draws its level in the other two, and the places of worship draw 492 kWh against the meters' 392, about 0.6 % of the village's billed energy. **Unchanged** **A limit (session 4 quater):** kept as it is. A level stands for every month on the grid; in the held-out months the places of worship of Samionta draw 242 kWh against the meters' 86, in the record's last year 491 against 392 (section 12) |
+| 32 | Archetype 0's peak | The household calibration over each reading's own period moves archetype 0's mean peak from 92.2 W to 83.1, and the shipped scaling draws it 10.2 % above the new target, at the edge of the fit's own residual of about 10 %; the energies stay within 3 %. Not fitted again, by the rule of point 21; a refit belongs with the next change to the appliance calibration. **Unchanged** **A limit (session 4 quater):** kept as it is, by the rule of point 21 |
+| 33 | The 25+ band of a household connected after the record | An anchored household is held at 24 months; a household connected after `T` follows the law, whose 25+ band stands: under the fast law a household of HH1 is expected at 0.605 kWh a day past 24 months and 0.400 at 13 to 24, 51 % more, while the slow law gives 0.300 and 0.294. Gbowele's brownfield certified year, with 44 such households, bills 2.16 times its meters. Decision 9 read for every household, the 25+ band set to the 13-24 one, would hold them alike, and would move the greenfield bench. **Unchanged** **A limit (session 4 quater):** kept as it is. Decomposed (section 12, session 4 quater): Gbowele's certified year bills 43 574 kWh against the meters' 19 559, 2.23 times; of the 24 015 more, 9 250 are the 44 households connected after `T`, 9 043 the productive units the rule adds with them, 2 261 the growth of the anchored households, 1 737 the eight households of the record drawn from the laws (point 29), 1 246 a whole year for every anchored household, the campaign of May 2026 among them, and 483 the anchored productive users. Gbowele's own law lies 28 to 43 % below its record from four to 24 months and 12 % above it past 24 (0.605 kWh a day against 0.540 over 28 household-months) |
+| 34 | The brownfield peak below the meters | Over the record's last twelve months the brownfield year peaks at 10.4 kW against the meters' 11.2 at Samionta and 5.7 against 7.0 at Gbowele, and the mean of the monthly peaks lies a fifth below theirs at both. A customer's day is its shape's mean day run longer or shorter, so a motor that runs an hour at its rating is spread over the hours its class may run: Gbowele's sawmill peaks at 1.8 kW against its meter's 4.3. Nothing was tuned on it. **Unchanged** **A limit (session 4 quater):** kept as it is, and it is the known error of point 30's ceiling as well: a class unit's busy day is spread over the hours its class's mean day uses. Over the record's last twelve months the brownfield year now peaks at 9.8 kW against 11.2 at Samionta and 5.6 against 7.0 at Gbowele |
+
+Raised by session 4 quater:
+
+| | Question | State |
+|---|---|---|
+| 35 | The seasonality of anchored households without a year | Session 4 quinquies left the residual seasonal index off every anchored household, its own months holding its season. That holds for a household whose window gives it a year of its own (37 of 50 at Samionta, 33 of 99 at Gbowele, five more there having twelve months but one covered less than half), not for the others: a household read from May to October was drawn all year at its rainy-season level, about 16 % below its annual mean under the index, and without the peak of January to March. **Decided (session 4 quater):** an anchored household without a year of its own takes the index, divided by its mean over the months the household was read, each weighted by the time its readings cover in it, so that over those months it draws its measured level (12 households at Samionta, 58 at Gbowele, the five among them). Households only, the index being theirs. In the held-out check it brings Samionta's households from +44.8 % to +29.7 % before point 29's rule; in Gbowele's brownfield certified year the households rise by 9.7 %, with the eight of point 29 (section 12). **Closed** |
 
 ## 15. Out of scope
 
@@ -2242,6 +2710,31 @@ Left open by session 4 quinquies, for the author:
   again, the two brownfield certificates with the village's own growth among them, and the
   trees with a fan within each regime. Points 13, 19 and 28, and the school of point 27, are
   questions for the operator; points 29 to 34 are the author's.
+- **Session 4 quater** applied the author's decisions on points 29, 30 and 35, kept points 31
+  to 34 as limits, gave the tree the fan within each regime of the formulation (decision 7
+  revised, 49 nodes), archived every result in
+  `results/superseded/2026-11-11_before_fan_and_anchored_demand/` and computed every one of
+  them again with the settings of session 4 bis (section 12).
+- **Left open after session 4 quater.**
+  - *The value of the tree at 49 nodes.* With three regimes for the ensemble's 27 the
+    seed-to-seed noise of the expected cost is 14 % under the programme and 19 % under the
+    controller, and the value of the tree, 0.9 % and −0.16 %, lies within it; the value of
+    perfect information on growth comes out negative, its trees being drawn on different
+    ensembles. Nine regimes with the same fan (145 nodes, about three times the programme),
+    or several seeds averaged per case, are the ways to measure it again; neither was run.
+  - *The programme above the controller* on the trees whose year-0 plant is small or mostly
+    standing: Samionta with its plant (−3.0 %) and the node year `first` (−1.2 %). The 64
+    representative days are the likely reason; a run at 365 days would settle it and was not
+    made.
+  - *Points 31 to 34* stand as limits, point 33 with its decomposition (section 12). Points 13,
+    19 and 28 and the school of point 27 remain questions for the operator; the four silent
+    households of point 13 are now drawn from the laws (point 29).
+  - *The file names of the two brownfield certificates* carry each village's own growth since
+    session 4 quinquies's decision, `slow` at Samionta and `fast` at Gbowele, where the
+    records of session 4 bis carried `central`; the keys inside are unchanged. The writings
+    outside the repository read neither name.
+  - The roster record (point 11) as a sensitivity, and the first-stage certificate of Gbowele,
+    are still not computed, as after session 4 bis.
 - **Growth beyond 24 months [decision 9].** Cohort ageing keeps the community's demand moving
   while households keep connecting, but each household still stops growing in the 25+ band,
   because no record runs much past two years: Gbowele's ends at 25 months and the fast trajectory
